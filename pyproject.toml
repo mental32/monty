@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "monty"
+version = "0.1.0"
+description = "The elegant Python compiler"
+authors = ["mental <m3nta1@yahoo.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+click = "^7.1.1"
+llvmlite = "^0.31.0"
+cranelift = { git = "https://github.com/mental32/monty-cranelift.git", branch = "master" }
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["setuptools", "wheel", "setuptools-rust", "poetry>=0.12"]
+build-backend = "poetry.masonry.api"
