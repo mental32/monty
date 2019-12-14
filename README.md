@@ -11,14 +11,18 @@
 
 Monty is a Python compiler supporting the cranelift and LLVM backends.
 
+This repository is using a step-by-step development tactic, based on
+Abdulaziz Ghuloum's [paper](https://github.com/namin/inc/blob/master/docs/paper.pdf?raw=true)
+(*An Incremental Approach to Compiler Construction*.)
+
 ### The pitch
 
- 1) Take the Python language as it is today (Py3 not Py2)
- 2) Enforce static typing via type annotations.
- 3) Move or remove functions from the stdlib that would otherwise make compiling a bitch.
-   3a) Remove functions that would be otherwise impossible to compile.
-   3b) Mark or move functions whose return value or behaviour could be computed at compile time.   
- 4) Implement a lightweight runtime that handles memory management and exception tracebacks.
+ 1. Take the Python language as it is today (Py3 not Py2)
+ 2. Enforce static typing via type annotations.
+ 3. Move or remove functions from the stdlib that would otherwise make compiling a bitch.
+    - Remove functions that would be otherwise impossible to compile.
+    - Mark or move functions whose return value or behaviour could be computed at compile time.
+ 4. Implement a lightweight runtime that handles memory management and exception tracebacks.
 
 ## Examples
 
