@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from . import Module, Scope, Function, Pipeline, Argument, ArgKind, RawType
 from .errors import CompilationError, MissingTypeAnnotation, BadReturnType
 
+class UnsupportedNode(CompilationError):
+    """Raised when a node does not have a visitor."""
+
 
 @dataclass
 class BaseVisitor(ast.NodeVisitor):
@@ -15,18 +18,12 @@ class BaseVisitor(ast.NodeVisitor):
     module: Module
     func: Optional[Function] = field(default=None)
 
-    # def __getattribute__(self, key):
-    #     # if key.startswith("visit_"):
-    #     #     print(f"0x{hex(id(self)).upper()[2:]} @ {type(self).__name__} :: {key}")
-
-    #     return object.__getattribute__(self, key)
-
     def find_visitor(self, node) -> "BaseVisitor":
         node_type = type(node)
 
         visitor_type = VISITORS.get(node_type := type(node), None)
         if visitor_type is None:
-            raise CompilationError(f"Unsupported node kind! {node_type!r}")
+            raise UnsupportedNode(f"Unsupported node kind! {node_type!r}")
 
         visitor = visitor_type(
             pipeline=self.pipeline, module=self.module, func=self.func,
@@ -45,23 +42,30 @@ class BaseVisitor(ast.NodeVisitor):
                 pipeline=self.pipeline, module=self.module, func=func
             )
 
-            with suppress(CompilationError):
+            try:
                 visitor.visit(func_node)
+            except UnsupportedNode:
+                raise
+            except CompilationError:
+                pass
 
 
 @dataclass
 class FunctionVisitor(BaseVisitor):
     def visit_FunctionDef(self, func_node):
+        if self.func.current_block is None:
+            self.func.current_block = self.func.create_block()
+
         for subnode in func_node.body:
             visitor = self.find_visitor(subnode)
             visitor.visit(node=subnode)
-
-        print(self.func)
 
 
 class ReturnVisitor(BaseVisitor):
     def visit_Return(self, node):
         return_block = self.func.create_block()
+
+        self.func.current_block = return_block
 
         if isinstance(node.value, ast.Constant):
             ssa_value = ConstantVisitor.encode_with_block(
@@ -75,22 +79,14 @@ class ReturnVisitor(BaseVisitor):
             visitor = self.find_visitor(return_node := node.value)
             visitor.visit(node=return_node)
 
-            if self.func.current_block is not return_block:
-                ssa_value = return_block.add_kwarg(name="value", kind=self.func.returns)
+            assert self.func.current_block is return_block
+            assert return_block.ssa_map, repr(return_block)
 
-                return_value_block = self.func.current_block
-                return_value_block.jump(
-                    return_block, kwargs={"value": max(return_value_block.ssa_map)}
-                )
-                return_type = return_value_block.return_type
-            else:
-                return_type = self.func.returns
-                ssa_value = max(return_block.ssa_map)
+            return_type = self.func.returns
+            ssa_value = max(return_block.ssa_map)
 
         if return_type != self.func.returns:
             raise BadReturnType(module=self.module, func=self.func, actual=return_type)
-
-        print(return_block)
 
         return_block.return_(ssa_value)
 
@@ -161,9 +157,37 @@ class BinOpVisitor(BaseVisitor):
         else:
             func(kind, x=left, y=right)
 
+
+class AssignVisitor(BaseVisitor):
+    def visit_Assign(self, node):
+        visitor = self.find_visitor(value := node.value)
+        visitor.visit(node=value)
+
+        top_value = max((block := self.func.current_block).ssa_map)
+        value_kind = block.ssa_map[top_value]
+
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                assert isinstance(target.ctx, ast.Store), f"Target name context was not store for an assignment! {ast.dump(node)}"
+                self.func.variables[target.id] = value_kind
+            else:
+                self.pipeline.raise_exc(CompilationError(f"Assignment target not supported yet! {ast.dump(target)}"))
+
+        block.def_var(target.id, top_value)
+
+
+class NameVisitor(BaseVisitor):
+    def visit_Name(self, node):
+        if isinstance(node.ctx, ast.Load):
+            value = self.func.current_block.use_var(ident=node.id, kind=self.func.variables[node.id])
+        else:
+            self.pipeline.raise_exc(CompilationError(f"Unsopported context on NameVisitor for node {ast.dump(node)=}"))
+
 T = TypeVar("T")
 VISITORS: Dict[Type[T], Type[BaseVisitor]] = {
     ast.Return: ReturnVisitor,
     ast.Constant: ConstantVisitor,
     ast.BinOp: BinOpVisitor,
+    ast.Assign: AssignVisitor,
+    ast.Name: NameVisitor,
 }
