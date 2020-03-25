@@ -29,6 +29,7 @@ class Function:
     returns: RawType
     linkage: str = field(default="Export")
     arguments: Dict[str, Argument] = field(default_factory=dict)
+    variables: Dict[str, RawType] = field(default_factory=dict)
     blocks: Dict[Union[int, str], AbstractBlock] = field(default_factory=dict)
     scope: Scope = field(default_factory=Scope)
     current_block: Optional[AbstractBlock] = field(init=False, default=None)
@@ -121,4 +122,10 @@ class Function:
             "blocks": blocks,
             "linkage": self.linkage,
             "scope": {key: value.name for key, value in self.scope.names.items()},
+            "variables": {
+                name: refs.get(value.name, value.name)
+                if isinstance(value, RawType)
+                else value
+                for name, value in self.variables.items()
+            },
         }
