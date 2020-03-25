@@ -9,7 +9,7 @@ license = "MIT"
 python = "^3.8"
 click = "^7.1.1"
 llvmlite = "^0.31.0"
-cranelift = { git = "https://github.com/mental32/monty-cranelift.git", branch = "master" }
+cranelift = { git = "https://github.com/mental32/monty-cranelift.git", branch = "devel" }
 
 [tool.poetry.dev-dependencies]
 

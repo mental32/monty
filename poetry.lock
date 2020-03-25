@@ -18,7 +18,7 @@ version = "0.1.0"
 setuptools-rust = "*"
 
 [package.source]
-reference = "7e33915f1eba187f655bad0d2d94836e566e3a01"
+reference = "42f4f919b7a3ef04a4e4cb304b56327b3d3cf5db"
 type = "git"
 url = "https://github.com/mental32/monty-cranelift.git"
 [[package]]
@@ -58,7 +58,7 @@ python-versions = "*"
 version = "0.10.0"
 
 [metadata]
-content-hash = "1c7f1113156c9cd12a1f45d3a5ae73375a2045cd8ab90c50f0c9137f54866e49"
+content-hash = "b4cd07a264d7a7b7c9a9e01d8d1f74edf7485fccbacf1540ff494e058fd67dba"
 python-versions = "^3.8"
 
 [metadata.files]

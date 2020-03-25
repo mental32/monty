@@ -29,9 +29,29 @@ class Function:
     returns: RawType
     linkage: str = field(default="Export")
     arguments: Dict[str, Argument] = field(default_factory=dict)
+    variables: Dict[str, RawType] = field(default_factory=dict)
     blocks: Dict[Union[int, str], AbstractBlock] = field(default_factory=dict)
     scope: Scope = field(default_factory=Scope)
-    current_block: Optional[AbstractBlock] = field(init=False, default=None)
+
+    _current_block: Optional[AbstractBlock] = None
+
+    @property
+    def current_block(self) -> Optional[AbstractBlock]:
+        return self._current_block
+
+    @current_block.setter
+    def current_block(self, next_block: AbstractBlock):
+        assert isinstance(next_block, AbstractBlock), repr(next_block)
+
+        if (
+            (block := self.current_block) is not None
+            and (instr := block.instructions)
+            and instr[-1]["instr"] != "Jump"
+            and not next_block.params
+        ):
+            block.jump(next_block)
+
+        self._current_block = next_block
 
     # Alternate constructors
 
@@ -94,7 +114,7 @@ class Function:
 
     def create_block(self) -> AbstractBlock:
         ident = max(self.blocks) + 1 if self.blocks else 0
-        self.blocks[ident] = block = AbstractBlock()
+        self.blocks[ident] = block = AbstractBlock(ident)
         return block
 
     def into_raw(self, refs) -> dict:
@@ -121,4 +141,10 @@ class Function:
             "blocks": blocks,
             "linkage": self.linkage,
             "scope": {key: value.name for key, value in self.scope.names.items()},
+            "variables": {
+                name: refs.get(value.name, value.name)
+                if isinstance(value, RawType)
+                else value
+                for name, value in self.variables.items()
+            },
         }
