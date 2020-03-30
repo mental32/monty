@@ -5,8 +5,20 @@ from pathlib import Path
 from contextlib import suppress
 from dataclasses import dataclass, field
 
-from . import Module, Scope, Function, Pipeline, Argument, ArgKind, RawType
+from .ir import Module, Scope, Function, Argument, ArgKind, RawType
 from .errors import CompilationError, MissingTypeAnnotation, BadReturnType
+
+__all__ = (
+    "BaseVisitor",
+    "UnsupportedNode",
+    "FunctionVisitor",
+    "ReturnVisitor",
+    "AssignVisitor",
+    "NameVisitor",
+    "ConstantVisitor",
+    "BinOpVisitor",
+)
+
 
 class UnsupportedNode(CompilationError):
     """Raised when a node does not have a visitor."""
@@ -14,7 +26,6 @@ class UnsupportedNode(CompilationError):
 
 @dataclass
 class BaseVisitor(ast.NodeVisitor):
-    pipeline: Pipeline
     module: Module
     func: Optional[Function] = field(default=None)
 
@@ -25,9 +36,7 @@ class BaseVisitor(ast.NodeVisitor):
         if visitor_type is None:
             raise UnsupportedNode(f"Unsupported node kind! {node_type!r}")
 
-        visitor = visitor_type(
-            pipeline=self.pipeline, module=self.module, func=self.func,
-        )
+        visitor = visitor_type(module=self.module, func=self.func,)
 
         return visitor
 
@@ -35,12 +44,10 @@ class BaseVisitor(ast.NodeVisitor):
         try:
             func = Function.from_ast_node(self.module.qualname, func_node)
         except CompilationError as exc:
-            self.pipeline.raise_exc(exc)
+            raise exc
         else:
             self.module.add_function(func)
-            visitor = FunctionVisitor(
-                pipeline=self.pipeline, module=self.module, func=func
-            )
+            visitor = FunctionVisitor(module=self.module, func=func)
 
             try:
                 visitor.visit(func_node)
@@ -153,7 +160,7 @@ class BinOpVisitor(BaseVisitor):
         try:
             func = match[type(node.op)]
         except KeyError:
-            self.pipeline.raise_exc(CompilationError(f"Op not implemented yet! {ast.dump(node)}"))
+            raise CompilationError(f"Op not implemented yet! {ast.dump(node)}")
         else:
             func(kind, x=left, y=right)
 
@@ -168,10 +175,14 @@ class AssignVisitor(BaseVisitor):
 
         for target in node.targets:
             if isinstance(target, ast.Name):
-                assert isinstance(target.ctx, ast.Store), f"Target name context was not store for an assignment! {ast.dump(node)}"
+                assert isinstance(
+                    target.ctx, ast.Store
+                ), f"Target name context was not store for an assignment! {ast.dump(node)}"
                 self.func.variables[target.id] = value_kind
             else:
-                self.pipeline.raise_exc(CompilationError(f"Assignment target not supported yet! {ast.dump(target)}"))
+                raise CompilationError(
+                    f"Assignment target not supported yet! {ast.dump(target)}"
+                )
 
         block.def_var(target.id, top_value)
 
@@ -179,9 +190,14 @@ class AssignVisitor(BaseVisitor):
 class NameVisitor(BaseVisitor):
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
-            value = self.func.current_block.use_var(ident=node.id, kind=self.func.variables[node.id])
+            value = self.func.current_block.use_var(
+                ident=node.id, kind=self.func.variables[node.id]
+            )
         else:
-            self.pipeline.raise_exc(CompilationError(f"Unsopported context on NameVisitor for node {ast.dump(node)=}"))
+            raise CompilationError(
+                f"Unsopported context on NameVisitor for node {ast.dump(node)=}"
+            )
+
 
 T = TypeVar("T")
 VISITORS: Dict[Type[T], Type[BaseVisitor]] = {

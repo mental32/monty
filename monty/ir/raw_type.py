@@ -3,6 +3,8 @@ from typing import Type, TypeVar, Optional
 
 T = TypeVar("T")
 
+__all__ = ("RawType",)
+
 
 @dataclass
 class RawType:

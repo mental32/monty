@@ -6,6 +6,8 @@ from typing import List
 
 from . import Scope, Function
 
+__all__ = ("Module",)
+
 
 @dataclass
 class Module:

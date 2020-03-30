@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Set, Union
 
+__all__ = ("Scope",)
+
 
 @dataclass
 class Scope:

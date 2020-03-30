@@ -5,6 +5,8 @@ from typing import List, Union, Dict, Optional
 
 from . import RawType, Scope, AbstractBlock
 
+__all__ = ("Argument", "ArgKind", "Function")
+
 
 class ArgKind(IntEnum):
     PosOnly = auto()
