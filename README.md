@@ -96,32 +96,38 @@ development tactic, based on Abdulaziz Ghuloum's
 
 ## Examples
 
-### Basic demo
+### Bottles on the wall
+#### *NOTE: WIP, this example currently will not compile.*
 
 Lets take the classic [bottles of beer on the wall](https://github.com/python/cpython/blob/master/Tools/demo/beer.py).
 Save the following code under `bottles.py`:
 
 ```py
 """Bottle of beer on the wall, a recreation of the classic by Guido."""
-from sys import argv
+from sys import argv, exit
+from typing import Tuple
 
 if len(argv) >= 2:
     upper = int(argv[1])
 else:
     upper = 100
 
-bottles = {
-    0: "No more bottles of beer",
-    1: "One bottle of beer",
-}
+if upper <= 0:
+    exit("The number of bottles must be a positive integer!")
 
-for i in range(upper, 0, -1):
-    bottle: str = bottles.get(i, f"{i} bottles of beer")
-    print(f"{bottle} on the wall,")
-    print(f"{bottle}.")
+def to_message(n: int) -> Tuple[str, Option[str]]:
+    assert n >= 1
+
+    if n == 1:
+        return ("One bottle of beer", "No more bottles of beer")
+    else:
+        return (f"{n} bottles of beer", f"{n - 1} bottles of beer")
+
+for (currently, following) in map(to_message, range(upper, 0, -2)):
+    print(f"{currently} on the wall,")
+    print(f"{currently}.")
     print("Take one down, pass it around,")
-    bottle = bottles.get(i - 1, f"{i - 1} bottles of beer")
-    print(f"{bottle} on the wall.")
+    print(f"{following} on the wall.")
 ```
 
 Compiling it is as simple as:
