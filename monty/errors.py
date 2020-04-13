@@ -24,6 +24,7 @@ class MissingTypeAnnotation(CompilationError):
         self.func = func
         self.arg = arg
 
+
 class BadReturnType(CompilationError):
     """Raised when the type of a return value does not match the function return annotation."""
 

@@ -15,7 +15,9 @@ class AbstractBlock:
     instructions: List[dict] = field(default_factory=list)
 
     def _next_ssa_value(self) -> SSAValue:
-        return SSAValue(max(map((lambda v: v[-1]), self.ssa_map)) + 1 if self.ssa_map else 0)
+        return SSAValue(
+            max(map((lambda v: v[-1]), self.ssa_map)) + 1 if self.ssa_map else 0
+        )
 
     def _insert_new_kind(self, kind: RawType, block: Optional[int] = None) -> SSAValue:
         value = self._next_ssa_value()
@@ -62,10 +64,21 @@ class AbstractBlock:
                 node = {**node, "kind": refs.get(kind, kind)}
 
             if "rvals" in node:
-                node = {**node, "rvals": [(block << 32 | discrim) for block, discrim in node["rvals"]]}
+                node = {
+                    **node,
+                    "rvals": [
+                        (block << 32 | discrim) for block, discrim in node["rvals"]
+                    ],
+                }
 
             if "block" in node:
-                node = {**node, "block": node["block"].block_ident, "args": [(block << 32 | discrim) for block, discrim in node["args"]]}
+                node = {
+                    **node,
+                    "block": node["block"].block_ident,
+                    "args": [
+                        (block << 32 | discrim) for block, discrim in node["args"]
+                    ],
+                }
 
             for key in ("ssa_value", "x", "y"):
                 try:
@@ -73,35 +86,46 @@ class AbstractBlock:
                 except KeyError:
                     continue
                 else:
-                    node[key] = (block << 32 | discrim)
+                    node[key] = block << 32 | discrim
 
             return node
 
         return {
             "ssa_map": sanitize(self.ssa_map),
             "params": sanitize(self.params),
-            "kwargs": {key: (block << 32 | discrim) for key, (block, discrim) in self.kwargs.items()},
+            "kwargs": {
+                key: (block << 32 | discrim)
+                for key, (block, discrim) in self.kwargs.items()
+            },
             "code": [sanitize_instruction(instr) for instr in self.instructions],
         }
 
     # Instructions
 
-    def __binop(self, instr: str, kind:  RawType, x: SSAValue, y: SSAValue) -> SSAValue:
+    def __binop(self, instr: str, kind: RawType, x: SSAValue, y: SSAValue) -> SSAValue:
         block, discrim, = self._insert_new_kind(kind)
-        self.instructions.append({"instr": instr, "x": x, "y": y, "kind": kind, "ssa_discrim": discrim})
+        self.instructions.append(
+            {"instr": instr, "x": x, "y": y, "kind": kind, "ssa_discrim": discrim}
+        )
         return (block, discrim)
 
     def def_var(self, ident: str, value: SSAValue):
-        self.instructions.append({"instr": "DefVar", "ident": ident, "ssa_value": value})
+        self.instructions.append(
+            {"instr": "DefVar", "ident": ident, "ssa_value": value}
+        )
 
     def use_var(self, ident: str, kind: RawType) -> SSAValue:
         ssa_value = self._insert_new_kind(kind)
-        self.instructions.append({"instr": "UseVar", "ident": ident, "kind": kind, "ssa_value": ssa_value})
+        self.instructions.append(
+            {"instr": "UseVar", "ident": ident, "kind": kind, "ssa_value": ssa_value}
+        )
         return ssa_value
 
     def iconst(self, kind: RawType, imm: int) -> SSAValue:
         block, discrim, = self._insert_new_kind(kind)
-        self.instructions.append({"instr": "Const", "kind": kind, "imm": imm, "ssa_discrim": discrim})
+        self.instructions.append(
+            {"instr": "Const", "kind": kind, "imm": imm, "ssa_discrim": discrim}
+        )
         return (block, discrim)
 
     def sub(self, kind: RawType, x: SSAValue, y: SSAValue) -> SSAValue:
