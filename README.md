@@ -23,6 +23,12 @@ where Monty disallows existing Python syntax in a backwards compatible manner.
 
 ## Motivation
 
+> *Warning:* This section is mostly me ranting and raving about why **I** think
+> this is needed, it doesn't actually (currently) address real world scenarios
+> and motivations about why tools like monty need to exist.
+>
+> **you have been warned!! :D**
+
 ### Preface
 
 Python is a programming language. A tool just like any other of its kind.
