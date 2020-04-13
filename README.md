@@ -11,6 +11,7 @@
  - [Motivation](#Motivation)
  - [Approach](#Approach)
  - [Examples](#Examples)
+ - [Related projects](#Related-projects)
 
 ## Brief
 
@@ -145,3 +146,14 @@ Compiling it is as simple as:
 Now an executable file will be emitted with the same name `bottle`.
 
  - `./bottle`
+
+## Related projects
+
+> In other words ["prior art"](https://github.com/rust-lang/rfcs/blob/master/text/2333-prior-art.md)
+
+ - [Cython](https://github.com/cython/cython)
+ - [Numba](https://github.com/numba/numba)
+ - [Nuitka](https://github.com/Nuitka/Nuitka)
+ - [Peggen](https://github.com/gvanrossum/pegen)
+ - [MyPy](https://github.com/python/mypy)
+ - [PyPy](https://foss.heptapod.net/pypy/pypy)
