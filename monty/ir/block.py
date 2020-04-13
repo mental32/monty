@@ -29,6 +29,12 @@ class AbstractBlock:
 
     # Public API
 
+    def is_pristine(self) -> bool:
+        return all(
+            not value
+            for value in [self.ssa_map, self.params, self.kwargs, self.instructions]
+        )
+
     def add_kwarg(self, *, name: str, kind: RawType) -> SSAValue:
         ident = self._insert_new_kind(kind)
         self.params[ident] = kind
