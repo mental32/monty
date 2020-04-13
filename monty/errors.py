@@ -1,6 +1,6 @@
 import ast
 
-__all__ = ("MontyException", "CompilationError", "MissingTypeAnnotation", "BadReturnType")
+__all__ = ("MontyException", "CompilationError", "MissingTypeAnnotation", "BadReturnType", "UnsupportedNode")
 
 
 class MontyException(Exception):
@@ -12,6 +12,11 @@ class MontyException(Exception):
 
 class CompilationError(MontyException):
     """A generic compilation error base class."""
+
+
+class UnsupportedNode(CompilationError):
+    """Raised when a node does not have a visitor."""
+
 
 
 class MissingTypeAnnotation(CompilationError):
