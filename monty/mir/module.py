@@ -37,4 +37,9 @@ class Module:
             },
         }
 
+        from pprint import pprint
+
+        pprint(blob)
+        print(repr(self))
+
         return blob

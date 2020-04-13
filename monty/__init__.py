@@ -3,5 +3,5 @@ __version__ = "0.1.0"
 __license__ = "MIT"
 
 from .errors import *
-from .ir import *
+from .mir import *
 from .visitors import *
