@@ -8,6 +8,8 @@
 
  - [Index](#Index)
  - [Brief](#Brief)
+ - [Motivation](#Motivation)
+ - [Approach](#Approach)
  - [Examples](#Examples)
 
 ## Brief
@@ -91,9 +93,9 @@ Enjoying the performance boost out of the box with 0 extra tooling overhead
 (and thus 0 extra non-language documentation to read) allowing Python users
 to enjoy the speed of JS on a hot v8 instance or Rust with all the advanced
 dark magic tricks used would be brilliant and something I definitely want to
-see!
+see! therefore I will attempt to make it a reality :D
 
-### Approach
+## Approach
 
 Currently (since this is such a huge project) I'm using step-by-step
 development tactic, based on Abdulaziz Ghuloum's
