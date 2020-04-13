@@ -103,6 +103,54 @@ development tactic, based on Abdulaziz Ghuloum's
 [paper](https://github.com/namin/inc/blob/master/docs/paper.pdf?raw=true)
 (*An Incremental Approach to Compiler Construction*.)
 
+In terms of the architecture, the compiler is divided into at least two pieces:
+
+ - Frontend (This repo!)
+ - Backend ([montyc](https://github.com/mental32/montyc))
+
+I specified "at least" because the design of the architecture holds a core
+focus on increasing API surface wherever possible; hacking, hooking into and
+or extending the capabilities of this dialect of Python is very much
+encouraged!
+
+### The frontend
+
+The frontend, or in other words this repository, is written in Python intended
+to be run on the latest released version of CPython (`3.8>=`) and its designed
+and distributed as bog standard a zero dependency typical Python package that
+concerns itself purely with the translating and dealing with the language
+dialect semantics.
+
+The frontend is divided into four main phases:
+
+ 1) CPython `ast.parse`
+ 2) Monty typed-ast transform
+ 3) Complex/Heavy semantic checking
+ 4) typed-ast to lower level SSA form IR (MIR - Monty IR) 
+
+### The backend(s)
+
+The backend element is where Monty likes to show off a little, The dialect is
+only ever enforced by the frontend; this includes the various semantics and
+nitty gritty implementation details of the more magical aspects of typical
+Python.
+
+The dialect is ultimately a guided style of Python. It's no more real than type
+annotations without a static type checker to use them and no more enforced than
+PEP8 without a linter/formatter to constantly correct the source style.
+
+The style only becomes enforced once the frontend gets used and the frontend
+holds a very particular law that it must always be as backend agnostic as
+possible. As long as this rule holds true a tremendous amount of freedom and
+flexibility is then gained automatically, if users want to use LLVM or
+Cranelift or compile to WASM or even use a runtime interpreter to run MIR
+straight off the bat, they should be able to do so!
+
+Currently the reference backend is [montyc](https://github.com/mental32/montyc)
+and it's a MIR to machine code compiler that uses the
+[Cranelift](https://github.com/bytecodealliance/wasmtime/tree/master/cranelift)
+code generator backend and its written in Rust!
+
 ## Examples
 
 ### Bottles on the wall
