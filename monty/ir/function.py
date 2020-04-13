@@ -114,7 +114,14 @@ class Function:
 
     # Public API
 
-    def create_block(self) -> AbstractBlock:
+    def create_block(self, *, recycle: bool = True) -> AbstractBlock:
+        if (
+            recycle
+            and self.blocks
+            and (cur := self.blocks[max(self.blocks)]).is_pristine()
+        ):
+            return cur
+
         ident = max(self.blocks) + 1 if self.blocks else 0
         self.blocks[ident] = block = AbstractBlock(ident)
         return block
