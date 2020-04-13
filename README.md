@@ -15,12 +15,13 @@
 
 ## Brief
 
-Monty is an attempt to provide a completely organic dialect of Python that is
-capable of being AOT compiled in the same manner as C, Haskell or Rust are.
+Monty (/ˈmɒntɪ/) is an attempt to provide a completely organic dialect of
+Python that is capable of being AOT compiled in the same manner as C,
+Haskell or Rust are.
 
 At a high level monty can be closely compared with what TypeScript does for the
 JavaScript community. The core contrast between Monty and TypeScript however is
-that TS is a strict syntactical superset of JS Monty is a strict syntactical
+that TS is a strict syntactical superset of JS, Monty is a strict syntactical
 subset of Python. Meaning that TS adds backwards incompatible syntax to JS
 where Monty disallows existing Python syntax in a backwards compatible manner.
 
