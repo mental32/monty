@@ -1,8 +1,6 @@
-# Monty
+<h1 align="center">Monty</h1>
 
-[![Join the chat at https://gitter.im/mental32-monty/community](https://badges.gitter.im/mental32-monty/community.svg)](https://gitter.im/mental32-monty/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
-## The elegant Python compiler
+<h1 align="center">The elegant Python compiler</h1>
 
 ## Index
 
@@ -205,3 +203,7 @@ Now an executable file will be emitted with the same name `bottle`.
  - [Peggen](https://github.com/gvanrossum/pegen)
  - [MyPy](https://github.com/python/mypy)
  - [PyPy](https://foss.heptapod.net/pypy/pypy)
+
+<hr>
+
+[![Join the chat at https://gitter.im/mental32-monty/community](https://badges.gitter.im/mental32-monty/community.svg)](https://gitter.im/mental32-monty/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
