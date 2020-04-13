@@ -173,15 +173,14 @@ else:
 if upper <= 0:
     exit("The number of bottles must be a positive integer!")
 
-def to_message(n: int) -> Tuple[str, Option[str]]:
+def to_message(n: int) -> Tuple[str, str]:
     assert n >= 1
+    return (f"{n} bottles of beer", f"{n - 1} bottles of beer")
 
-    if n == 1:
-        return ("One bottle of beer", "No more bottles of beer")
-    else:
-        return (f"{n} bottles of beer", f"{n - 1} bottles of beer")
+others = map(to_message, range(upper, 0, -2))
+final = [("One bottle of beer", "No more bottles of beer")]
 
-for (currently, following) in map(to_message, range(upper, 0, -2)):
+for (currently, following) in chain(others, final):
     print(f"{currently} on the wall,")
     print(f"{currently}.")
     print("Take one down, pass it around,")
