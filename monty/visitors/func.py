@@ -1,3 +1,6 @@
+from . import BaseVisitor
+
+
 class FunctionVisitor(BaseVisitor):
     def visit_FunctionDef(self, func_node):
         if self.func.current_block is None:

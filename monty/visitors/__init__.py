@@ -5,7 +5,7 @@ from pathlib import Path
 from contextlib import suppress
 from dataclasses import dataclass, field
 
-from ..ir import Module, Scope, Function, Argument, ArgKind, RawType
+from ..mir import Module, Scope, Function, Argument, ArgKind, RawType
 from ..errors import CompilationError, MissingTypeAnnotation, BadReturnType
 
 class UnsupportedNode(CompilationError):
@@ -26,10 +26,13 @@ __all__ = (
 from .base import BaseVisitor
 from .func import FunctionVisitor
 from .name import NameVisitor
-from .
+from .assign import AssignVisitor
+from .const import ConstantVisitor
+from .return_ import ReturnVisitor
+from .binop import BinOpVisitor
 
 T = TypeVar("T")
-_VISITORS: Dict[Type[T], Type[BaseVisitor]] = {
+VISITORS: Dict[Type[T], Type[BaseVisitor]] = {
     ast.Return: ReturnVisitor,
     ast.Constant: ConstantVisitor,
     ast.BinOp: BinOpVisitor,

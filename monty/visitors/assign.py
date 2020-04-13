@@ -1,3 +1,8 @@
+import ast
+
+from . import BaseVisitor
+
+
 class AssignVisitor(BaseVisitor):
     def visit_Assign(self, node):
         visitor = self.find_visitor(value := node.value)

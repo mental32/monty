@@ -1,3 +1,8 @@
+import ast
+
+from .. import CompilationError
+from . import BaseVisitor
+
 
 class BinOpVisitor(BaseVisitor):
     def visit_BinOp(self, node):

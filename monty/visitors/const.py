@@ -1,3 +1,7 @@
+import ast
+
+from . import BaseVisitor
+
 class ConstantVisitor(BaseVisitor):
     @staticmethod
     def encode_with_block(

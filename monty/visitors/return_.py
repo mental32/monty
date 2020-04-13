@@ -1,3 +1,7 @@
+import ast
+
+from . import BaseVisitor
+
 
 class ReturnVisitor(BaseVisitor):
     def visit_Return(self, node):
