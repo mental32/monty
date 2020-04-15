@@ -23,6 +23,13 @@ that TS is a strict syntactical superset of JS, Monty is a strict syntactical
 subset of Python. Meaning that TS adds backwards incompatible syntax to JS
 where Monty disallows existing Python syntax in a backwards compatible manner.
 
+**Monty is not a replacement for other implementations**, it does not intend to
+succeed CPython or undermine the work nuitka is doing for the community. Monty
+is merely another enhancement to the Python ecosystem designed to compliment a
+specific kind of workflow.
+
+<hr>
+
 ## Motivation
 
 > *Warning:* This section is mostly me ranting and raving about why **I** think
@@ -94,6 +101,8 @@ Enjoying the performance boost out of the box with 0 extra tooling overhead
 to enjoy the speed of JS on a hot v8 instance or Rust with all the advanced
 dark magic tricks used would be brilliant and something I definitely want to
 see! therefore I will attempt to make it a reality :D
+
+<hr>
 
 ## Approach
 
