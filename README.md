@@ -152,7 +152,16 @@ code generator backend and its written in Rust!
 
 ## Examples
 
+### *"Hello, World!"*
+
+Unchanged and remains simply as:
+
+```py
+print("Hello, World!")
+```
+
 ### Bottles on the wall
+
 #### *NOTE: WIP, this example currently will not compile.*
 
 Lets take the classic [bottles of beer on the wall](https://github.com/python/cpython/blob/master/Tools/demo/beer.py).
