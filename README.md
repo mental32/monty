@@ -8,6 +8,8 @@
  - [Brief](#Brief)
  - [Motivation](#Motivation)
  - [Approach](#Approach)
+   - [Progress](#Progress)
+ - [FAQ](#faq)
  - [Examples](#Examples)
  - [Related projects](#Related-projects)
 
@@ -174,6 +176,31 @@ development.
 Additionally, a new module will be introduced. `__monty__` is to be used by
 private implementation specific and compiler intrinsic components, it is NOT
 to be used as a public API nor should users expect it to be stable.
+
+### Progress
+
+ [ ] MVP:
+    [ ] Type inference
+    [ ] Code gen
+    [ ] `libc` support
+    [ ] `typing` support
+    [ ] MIRI
+    [ ] Multiple target support
+    [ ] Lint phases
+    [ ] Basic comptime optimizations
+
+## FAQ
+
+ - Q: *What, or how much of regular Python behavior, will be supported?*
+
+In a perfect world, everything. Alas this is a lot to cram into one answer
+so in short: everything that Rust, Zig and Cpp supports Monty will to.
+This is because the Rust, Zig and Cpp mainline implementations will be
+used as reference material for any issues I encounter here (i.e. async/await)
+
+The more "dynamic" aspects of the language suited towards scripting or hacking
+the environment probably wont be supported i.e. the `local` and `global`
+builtins.
 
 ## Examples
 
