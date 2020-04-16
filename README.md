@@ -159,6 +159,22 @@ and it's a MIR to machine code compiler that uses the
 [Cranelift](https://github.com/bytecodealliance/wasmtime/tree/master/cranelift)
 code generator backend and its written in Rust!
 
+### The Standard Library
+
+The standard library will be ported piecemeal from CPython. This is of course
+partly motivated by the requirement that monty supports the stdlib and so that
+I could explore and learn about the current stdlib in increasingly interesting
+detail.
+
+[pep594](https://www.python.org/dev/peps/pep-0594) will be exercised in advance
+because it: reduces initial stdlib porting work, helping towards a quicker
+transition and keeps monty ahead of the curve in accordance with CPythons
+development.
+
+Additionally, a new module will be introduced. `__monty__` is to be used by
+private implementation specific and compiler intrinsic components, it is NOT
+to be used as a public API nor should users expect it to be stable.
+
 ## Examples
 
 ### *"Hello, World!"*
