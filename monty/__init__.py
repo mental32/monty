@@ -5,3 +5,4 @@ __license__ = "MIT"
 from .errors import *
 from .mir import *
 from .ast import *
+from .types import *
