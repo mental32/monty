@@ -18,7 +18,6 @@ class UnsupportedNode(CompilationError):
     """Raised when a node does not have a visitor."""
 
 
-
 class MissingTypeAnnotation(CompilationError):
     """An exception that gets raised when a type annotationg was expected but found missing."""
 
