@@ -142,4 +142,4 @@ cython_debug/
 media
 static
 
-/monty/ast/_native
+/__*/

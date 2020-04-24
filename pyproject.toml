@@ -9,6 +9,9 @@ license = "MIT"
 python = "^3.8"
 
 [tool.poetry.dev-dependencies]
+pytest = "^5.4.3"
+rope = "^0.17.0"
+pylint = "<2.0.0"
 
 [build-system]
 requires = ["poetry>=0.12"]

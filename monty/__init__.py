@@ -1,8 +1,10 @@
 __author__ = "mental"
-__version__ = "0.1.0"
 __license__ = "MIT"
 
-from .errors import *
-from .mir import *
-from .ast import *
-from .types import *
+from . import utils
+from . import errors
+from . import typechecker
+from . import language
+from . import diagnostic
+from . import mir
+from . import driver
