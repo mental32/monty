@@ -29,6 +29,9 @@ class Primitive(TypeInfo, IntEnum):
     LValue = auto()
     Module = auto()
     Return = auto()
+    Integer = auto()
+    Nothing = auto()
+    None_ = auto()
 
     def reconstruct(self, tcx) -> str:
         return self.name
