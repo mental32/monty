@@ -1,5 +1,6 @@
 from monty.typechecker import Primitive, Ref, List, Callable, TypeInfo, TypeId
 from monty.utils import SSAMap
+from monty.errors import TypeCheckError
 
 __all__ = ("InferenceEngine",)
 
@@ -31,7 +32,7 @@ class InferenceEngine(SSAMap[TypeInfo]):
             self.unify(left_ty.output, right_ty.output)
 
         else:
-            raise NotImplementedError(f"Unhandled case {left_ty} U {right_ty}")
+            raise TypeCheckError(f"Failed to unify ({left_ty} U {right_ty})")
 
     def get_id_or_insert(self, thing: TypeInfo) -> TypeId:
         return self.get_by_value(thing) or self.insert(thing)
