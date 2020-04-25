@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import IntEnum, auto
+from typing import Set
 
 import monty
 from monty.errors import TypeCheckError
@@ -62,3 +63,10 @@ class Ref(TypeInfo):
 
     def reconstruct(self, tcx):
         return tcx.reconstruct(self.target)
+
+
+@dataclass
+class TypeVar(TypeInfo):
+    """A type variable."""
+
+    constraints: Set["TypeVarConstraint"] = field(default_factory=set)
