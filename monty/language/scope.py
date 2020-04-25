@@ -1,7 +1,7 @@
 import ast
 from dataclasses import dataclass, field
 from enum import IntEnum, auto
-from typing import List, Iterator, Union
+from typing import List, Iterator, Union, Optional
 
 from monty.typechecker import Callable, Primitive
 
@@ -16,6 +16,7 @@ class Scope:
 
     node: ast.AST
     items: List["Item"] = field(default_factory=list)
+    parent: Optional["Scope"] = None
 
     def __hash__(self):
         return hash(self.node)
@@ -42,6 +43,9 @@ class ScopeWalker(ast.NodeVisitor):
     scope: Scope
 
     def add_item(self, item):
+        if item.scope is not None:
+            item.scope.parent = self.scope
+
         self.scope.items.append(item)
 
     # Visitors
