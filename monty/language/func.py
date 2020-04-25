@@ -24,7 +24,7 @@ class Function:
             + ([Argument(args.kwarg, ArgumentKind.Kwargs)] if args.kwarg else [])
         )
 
-        self.return_type = self.node.returns.id
+        self.return_type = self.node.returns or ast.Constant(value=None, kind=None)
 
     def __repr__(self) -> str:
         args = ", ".join(map(str, self.arguments))
