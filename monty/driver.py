@@ -1,4 +1,5 @@
 import ast
+import builtins
 from dataclasses import dataclass, field
 from typing import Union, TextIO, List, Dict, Optional, Tuple
 from io import IOBase
@@ -16,7 +17,6 @@ SourceInput = Union[TextIO, str]
 @dataclass
 class CompilationUnit:
     module_name: str
-    items: Dict[ast.AST, Item] = field(default_factory=dict)
     type_ctx: InferenceEngine = field(default_factory=InferenceEngine)
 
     _functions: Dict[str, Function] = field(default_factory=dict)
@@ -25,16 +25,50 @@ class CompilationUnit:
         type_id = self.type_ctx.insert(Primitive.Unknown)
         assert type_id == 0, f"Failed to slot Primitive.Unknown at type_id 0!"
 
-    def resolve_annotation(self, ann_node: Union[ast.Str, ast.Subscript, ast.Name, ast.Attribute]) -> TypeId:
+    def resolve_annotation(
+        self,
+        scope: Scope,
+        ann_node: Union[ast.Str, ast.Subscript, ast.Name, ast.Attribute],
+    ) -> TypeId:
         if isinstance(ann_node, ast.Str):
             tree = ast.parse(ann_node, mode="eval")
-            assert isinstance(tree, (ast.Subscript, ast.Name, ast.Attribute, ast.Constant)), ast.dump(tree)
+            assert isinstance(
+                tree, (ast.Subscript, ast.Name, ast.Attribute, ast.Constant)
+            ), ast.dump(tree)
         else:
             tree = ann_node
 
-        print(f"RESOLVE {ast.dump(tree)=!r}")
+        def check_parent_scope(parent_scope: Scope) -> Optional[TypeId]:
+            return None
 
-        return 0
+        def check_builtins() -> Optional[TypeId]:
+
+            builtin_map = {
+                int: Primitive.Integer,
+                type(None): Primitive.None_
+            }
+
+            if isinstance(tree, ast.Constant):
+                assert (value := tree.value) is None or isinstance(value, (str, int))
+
+                return self.type_ctx.get_id_or_insert(builtin_map.get(type(value), Primitive.Unknown))
+
+            elif isinstance(tree, ast.Name) and (builtin := getattr(builtins, tree.id)):
+                assert isinstance(tree.ctx, ast.Load)
+
+                if (ty := builtin_map.get(builtin, None)) is None:
+                    raise Exception("Unsupported builtin type!")
+
+                return self.type_ctx.get_id_or_insert(ty)
+
+            else:
+                return None
+
+        return (
+            check_parent_scope(scope.parent)
+            or check_builtins()
+            or self.type_ctx.get_id_or_insert(Primitive.Unknown)
+        )
 
     def get_function(self, name: str) -> Optional[Function]:
         return self._functions.get(name, None)
@@ -70,7 +104,9 @@ def compile_source(
         raise CompilationException(issues)
 
     # TODO: Lowering AST/Items (root_items) into HIR/Items (lowered_root)
+    # lowered_root = lower_into_hir(root_items)
 
     # TODO: Lowering HIR/Items (lowered_root) into MIR/Items (compiled_root)
+    # compiled_root = lower_into_mir(lowered_root)
 
     return unit
