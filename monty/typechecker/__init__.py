@@ -1,5 +1,5 @@
 import ast
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 from dataclasses import dataclass, field
 
 from .type_info import *
@@ -16,7 +16,7 @@ class LValue:
     kind: TypeInfo = field(default=Primitive.Unknown)
 
 
-def typecheck(item: Item, unit: CompilationUnit):
+def typecheck(item: Item, unit: CompilationUnit, *, item_type_id: TypeId = 0, type_errors = None):
     assert isinstance(
         getattr(unit, "type_ctx", None), InferenceEngine
     ), "Malformed CompilationUnit does not have a valid InferenceEngine at `unit.type_ctx`"
@@ -24,9 +24,9 @@ def typecheck(item: Item, unit: CompilationUnit):
     if (scope := item.scope) is None:
         raise ValueError(f"Item was expected to be scopeable but was not! {item=!r}")
 
-    # We need some sort of type-level scope resolution here.
+    type_errors = type_errors or []
 
-    # We are going to be using a "Rib"-based approach similar to the Rustc compiler.
+    # We are going to be using a "Rib"-based approach for name/type tracking in scopes like the Rustc compiler.
     # See also: https://rustc-dev-guide.rust-lang.org/name-resolution.html?highlight=rib#scopes-and-ribs
 
     ribs: List[Dict[str, TypeInfo]] = []
@@ -36,7 +36,7 @@ def typecheck(item: Item, unit: CompilationUnit):
         node = scoped_item.node
 
         type_id = (
-            tcx.get_id_or_insert(scoped_item.ty)
+            tcx.get_id_or_insert(real_ty)
             if isinstance(real_ty := scoped_item.ty, TypeInfo)
             else real_ty
         )
@@ -47,8 +47,12 @@ def typecheck(item: Item, unit: CompilationUnit):
             tcx[type_id] == Primitive.Unknown
             and (func := scoped_item.function) is not None
         ):
-            tcx[type_id] = Callable()
-            print(tcx)
+            arguments = tcx.get_id_or_insert(Primitive.Nothing if not func.arguments else Primitive.Unknown)
+            output = unit.resolve_annotation(scope, func.return_type)
+
+            tcx[type_id] = Callable(arguments, output)
+
+            return typecheck(scoped_item, unit, item_type_id=type_id)
 
         real_ty = tcx[type_id]
 
@@ -59,16 +63,19 @@ def typecheck(item: Item, unit: CompilationUnit):
 
             ident = node.target.id
 
-            if (ann := node.annotation) is not None:
-                annotation = tcx[unit.resolve_annotation(ann)]
-            else:
-                annotation = Primitive.Unknown
-
             assert isinstance(ident, str)
 
+            if (ann := node.annotation) is not None:
+                annotation_id = unit.resolve_annotation(scope, ann)
+            else:
+                annotation_id = tcx.get_id_or_insert(Primitive.Unknown)
+
+            assert type(annotation_id) is TypeId, f"{type(annotation_id)!r}"
+
+            annotation = tcx[annotation_id]
+
             if node.value is not None:
-                # TODO: Type inference on RValue and assert the TypeId matches that of annotation.
-                pass
+                pass  # TODO: Type inference on RValue and assert the TypeId matches that of annotation.
 
             last_rib = (ribs and ribs[-1]) or {}
 
@@ -78,15 +85,24 @@ def typecheck(item: Item, unit: CompilationUnit):
                 node.target, ast.Name
             ), f"Can't handle other target forms yet."
 
-            print(f"+ : {ident}: {tcx.reconstruct(annotation)}")
-            print(ribs)
+            # print(f"+ : {ident}: {tcx.reconstruct(annotation_id)}")
+            # print(ribs)
 
         elif real_ty is Primitive.Return:
             assert isinstance(item.node, ast.FunctionDef)
-            print(f"Need to infer for {ast.dump(node)=!r}")
+            value = node.value
 
-        elif isinstance(real_ty, Callable):
-            typecheck(scoped_item, unit)
+            if isinstance(value, ast.Constant):
+                expr_ty = unit.resolve_annotation(scope, value)
+            else:
+                expr_ty = tcx.get_id_or_insert(Primitive.Unknown)
+
+            if expr_ty != tcx[item_type_id].output:
+                type_errors.append(TypeCheckError(f"Bad return value for function!"))
 
         else:
-            raise TypeCheckError(f"Failed typechecking for a scoped item {scoped_item=!r}")
+            raise TypeCheckError(
+                f"Failed typechecking for a scoped item {scoped_item=!r}"
+            )
+
+    return type_errors
