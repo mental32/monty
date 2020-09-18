@@ -1,11 +1,12 @@
 <h1 align="center">Monty</h1>
 
-<h1 align="center">A Strongly Typed Python Dialect </h1>
+<h1 align="center">A Strongly Typed Python Dialect</h1>
 
 ## Index
 
 - [Index](#index)
 - [Brief](#brief)
+- [Examples](#examples)
 - [Related projects](#related-projects)
   - [montyc](#montyc)
   - ["prior art"](#prior-art)
@@ -24,6 +25,21 @@ JavaScript community. The core contrast between Monty and TypeScript however is
 that TS is a strict syntactical superset of JS, Monty is a strict syntactical
 subset of Python. Meaning that TS adds backwards incompatible syntax to JS
 where Monty disallows existing Python syntax in a backwards compatible manner.
+
+## Examples
+
+```py
+import monty
+
+HELLO_WORLD = """
+def main():
+    print('Hello, World!')
+"""
+
+code = monty.compile(HELLO_WORLD)
+
+print(code.disassemble())
+```
 
 ## Related projects
 
