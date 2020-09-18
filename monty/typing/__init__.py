@@ -17,7 +17,11 @@ if TYPE_CHECKING:
 
 
 def typecheck(
-    item: "Item", unit: "CompilationUnit", *, item_type_id: TypeId = 0, type_errors: Optional[_List["Diagnostic"]] = None
+    item: "Item",
+    unit: "CompilationUnit",
+    *,
+    item_type_id: TypeId = 0,
+    type_errors: Optional[_List["Diagnostic"]] = None,
 ) -> _List["Diagnostic"]:
     assert isinstance(getattr(unit, "tcx", None), TypeContext)
 

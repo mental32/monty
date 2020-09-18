@@ -24,10 +24,11 @@ class TypeContext(SSAMap[TypeInfo]):
             "bool": self.mapping[Primitive.Bool],
         }
 
+    # fmt: off
     def get_id_or_insert(self, type_info: TypeInfo) -> TypeId:
-        inverse = {value: type_id for value, type_id, in self.mapping.items()}
-
-        try:
-            return inverse[type_info]
-        except KeyError:
+        for type_id, value, in self.mapping.items():
+            if type_info == value:
+                return type_id
+        else:
             return self.insert(type_info)
+    # fmt: on

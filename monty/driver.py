@@ -16,7 +16,11 @@ from monty.unit import CompilationUnit
 __all__ = ("compile",)
 
 
-def compile(source: Union[TextIO, str], module_name: str = "__main__", unit: Optional[CompilationUnit] = None):
+def compile(
+    source: Union[TextIO, str],
+    module_name: str = "__main__",
+    unit: Optional[CompilationUnit] = None,
+):
     """Attempt to compile some `source` code into a compiled module.
 
     The steps should be taken as following:

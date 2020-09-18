@@ -66,7 +66,9 @@ class CompilationUnit:
             func = item.function
 
             if func is not None and target == func.name:
-                assert hasattr(func, "type_id"), f"function object did not have a `type_id` {func=!r}"
+                assert hasattr(
+                    func, "type_id"
+                ), f"function object did not have a `type_id` {func=!r}"
                 return func
         else:
             return None
