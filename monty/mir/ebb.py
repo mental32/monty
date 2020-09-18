@@ -256,10 +256,11 @@ class FluidBlock:
     ) -> SSAValue:
         return self._emit(op=InstrOp.BranchIntCmp, args=[mode, left, right, target])
 
-    def return_(self, value: SSAValue):
+    def return_(self, value: Optional[SSAValue]):
         """Return from the function with a value."""
         self._typecheck(value, expected=self.returns)
-        return self._emit(op=InstrOp.Return, args=[value], ret=None)
+        args = [value] if value is not None else []
+        return self._emit(op=InstrOp.Return, args=args, ret=None)
 
     def call(self, function: SSAValue, *args) -> SSAValue:
         return self._emit(op=InstrOp.Call, args=[function, args])

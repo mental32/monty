@@ -99,10 +99,14 @@ class MirBuilder(ast.NodeVisitor):
     def visit_Return(self, ret):
         ret_value_node = ret.value
 
-        with self._visiting_names():
-            self.generic_visit(ret)
+        if ret_value_node is not None:
+            with self._visiting_names():
+                self.generic_visit(ret)
 
-        ret_value = self._ast_node_to_ssa[ret_value_node]
+            ret_value = self._ast_node_to_ssa[ret_value_node]
+        else:
+            ret_value = None
+
         self._ebb.return_(value=ret_value)
 
     def visit_Name(self, name):

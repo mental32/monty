@@ -1,8 +1,8 @@
 import monty
 
 HELLO_WORLD = """
-def oof():
-    pass
+def main():
+    return
 """
 
 code = monty.compile(HELLO_WORLD)
