@@ -2,9 +2,11 @@ __all__ = ("TypeId", "TypeInfo", "Primitive", "List", "Callable", "Ref")
 
 TypeId = int
 
+import ast
 from typing import List as _List, Optional
 
 from monty.diagnostic import Error
+from monty.errors import TypeCheckError
 
 from .type_info import *
 from .primitives import *
@@ -44,26 +46,27 @@ def typecheck(
         if tcx[type_id] == Primitive.Unknown and (func := target.function) is not None:
             # TODO: hack here args and ret are Unknown for the moment
             arguments_type = type_id
-            output_type = type_id
+            output_type = unit.resolve_annotation(scope, func.return_type)
 
             func.type_id = tcx.insert(Callable(arguments_type, output_type))
 
-            return typecheck(target, unit, item_type_id=type_id)
+            return typecheck(target, unit, item_type_id=func.type_id)
 
         real_type = tcx[type_id]
 
         if real_type is Primitive.Return:
             assert isinstance(item.node, ast.FunctionDef)
-            raise NotImplementedError()
-            # value = node.value
+            if (value := node.value) is not None:
+                expr_ty = unit.reveal_type(value, scope)
+            else:
+                expr_ty = tcx.get_id_or_insert(Primitive.None_)
 
-            # expr_ty = unit.reveal_type(value, scope)
+            # "return f(...)" check `f`.output == `func`.output
+            if isinstance(tcx[expr_ty], Callable):
+                expr_ty = tcx[expr_ty].output
 
-            # if tcx.is_callable(expr_ty):  # "return f(...)" check `f`.output == `func`.output
-            #     expr_ty = tcx[expr_ty].output
-
-            # if expr_ty != tcx[item_type_id].output:
-            #     type_errors.append(TypeCheckError(f"Bad return value for function!"))
+            if expr_ty != tcx[item_type_id].output:
+                type_errors.append(TypeCheckError(f"Bad return value for function!"))
         else:
             raise TypeCheckError(
                 f"Failed typechecking for a scoped item {scoped_item=!r}"
