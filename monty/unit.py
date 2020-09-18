@@ -1,10 +1,10 @@
 import ast
 import textwrap
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 
 from monty.language import Scope, Function
-from monty.typing import Primitive, TypeContext
+from monty.typing import Primitive, TypeContext, TypeId
 
 
 @dataclass
@@ -73,123 +73,111 @@ class CompilationUnit:
         else:
             return None
 
+    def reveal_type(self, node: ast.AST, scope: Scope) -> Optional[TypeId]:
+        """Attempt to reveal the [product] type of a AST node."""
+        assert isinstance(node, ast.AST), f"{node=!r}"
+        assert isinstance(scope, Scope), f"{scope=!r}"
 
-# def reveal_type(self, node: ast.AST, scope: Scope) -> Optional[TypeId]:
-#     """Attempt to reveal the [product] type of a AST node."""
-#     assert isinstance(node, ast.AST)
-#     assert isinstance(scope, Scope), f"{scope=!r}"
+        if isinstance(node, ast.BinOp):
+            op = node.op
 
-#     print(f"{ast.dump(node)=!r}")
+            lhs = self.reveal_type(node.left, scope)
+            rhs = self.reveal_type(node.right, scope)
 
-#     if isinstance(node, ast.BinOp):
-#         op = node.op
+            lty = self.tcx[lhs]
+            rty = self.tcx[rhs]
 
-#         if isinstance(op, ast.Add):
-#             op = constraints.Operation.Add
-#         elif isinstance(op, ast.Sub):
-#             op = constraints.Operation.Sub
-#         else:
-#             assert False
+            if lty == Primitive.I64 and rty == Primitive.I64:
+                return self.tcx.get_id_or_insert(Primitive.I64)
+            else:
+                raise RuntimeError(f"{lty}, {rty}")
 
-#         lhs = self.reveal_type(node.left, scope)
-#         rhs = self.reveal_type(node.right, scope)
+        elif isinstance(node, ast.Call):
+            return self.reveal_type(node.func, scope)
 
-#         lty = self.type_ctx[lhs]
-#         rty = self.type_ctx[rhs]
+        elif isinstance(
+            node, ast.Compare
+        ):  # All comparisions produce a boolean value anyway.
+            return self.tcx.get_id_or_insert(Primitive.Bool)
 
-#         if lty == Primitive.I64 and rty == Primitive.I64:
-#             return self.type_ctx.get_id_or_insert(Primitive.I64)
-#         else:
-#             raise RuntimeError(f"{lty}, {rty}")
+        elif isinstance(node, ast.Constant):
+            return self.resolve_annotation(Scope(node), node)
 
-#     elif isinstance(node, ast.Call):
-#         return self.reveal_type(node.func, scope)
+        elif isinstance(node, ast.Name):
+            assert isinstance(node.ctx, ast.Load), f"{ast.dump(node)}"
+            target = node.id
 
-#     elif isinstance(node, ast.Compare):  # All comparisions produce a boolean value anyway.
-#         return self.type_ctx.get_id_or_insert(Primitive.Bool)
+            # FIXME: Multiple instances of the same name in the same function scope are going to be wrong here.
+            #
+            #     x: int = ...
+            #     x: bool = ...
+            #
+            #    When revealing for the first `x` during AST lowering we'll get the `bool` definition.
+            #    we need to mangle every ast.Name node with a ast.Store context...
+            for stack in scope.ribs[::-1]:
+                if target in stack:
+                    return self.tcx.get_id_or_insert(stack[target])
 
-#     elif isinstance(node, ast.Constant):
-#         return self.resolve_annotation(Scope(node), node)
+            for item_ in scope.items:
+                # print(f">>", item_)
+                func = item_.function
 
-#     elif isinstance(node, ast.Name):
-#         assert isinstance(node.ctx, ast.Load), f"{ast.dump(node)}"
-#         target = node.id
+                if func is not None and target == func.name:
+                    assert hasattr(
+                        func, "type_id"
+                    ), f"function object did not have a `type_id` {func=!r}"
+                    return func.type_id
 
-#         # FIXME: Multiple instances of the same name in the same function scope are going to be wrong here.
-#         #
-#         #     x: int = ...
-#         #     x: bool = ...
-#         #
-#         #    When revealing for the first `x` during AST lowering we'll get the `bool` definition.
-#         #    we need to mangle every ast.Name node with a ast.Store context...
-#         for stack in scope.ribs[::-1]:
-#             if target in stack:
-#                 return self.type_ctx.get_id_or_insert(stack[target])
+            # couldn't find the name in the local function scope.
+            # search the module's global scope...
+            module_scope = scope.module.scope
 
-#         for item_ in scope.items:
-#             # print(f">>", item_)
-#             func = item_.function
+            return self.reveal_type(node, module_scope)
 
-#             if func is not None and target == func.name:
-#                 assert hasattr(func, "type_id"), f"function object did not have a `type_id` {func=!r}"
-#                 return func.type_id
+        raise RuntimeError(f"We don't know jack... {ast.dump(node)}")
 
-#         # couldn't find the name in the local function scope.
-#         # search the module's global scope...
-#         module_scope = scope.module.scope
+    def resolve_annotation(
+        self,
+        scope: Scope,
+        ann_node: Union[ast.Str, ast.Subscript, ast.Name, ast.Attribute],
+    ) -> TypeId:
+        if isinstance(ann_node, ast.Str):
+            tree = ast.parse(ann_node, mode="eval")
+        else:
+            tree = ann_node
 
-#         return self.reveal_type(node, module_scope)
+        allowed = (ast.Subscript, ast.Name, ast.Attribute, ast.Constant)
+        assert isinstance(tree, allowed), ast.dump(tree)
 
-#     raise RuntimeError(f"We don't know jack... {ast.dump(node)}")
+        def check_builtins() -> Optional[TypeId]:
+            builtin_map = {
+                int: Primitive.I64,
+                float: Primitive.Number,
+                bool: Primitive.Bool,
+                type(None): Primitive.None_,
+            }
 
-# def resolve_annotation(
-#     self,
-#     scope: Scope,
-#     ann_node: Union[ast.Str, ast.Subscript, ast.Name, ast.Attribute],
-# ) -> TypeId:
-#     if isinstance(ann_node, ast.Str):
-#         tree = ast.parse(ann_node, mode="eval")
-#         assert isinstance(
-#             tree, (ast.Subscript, ast.Name, ast.Attribute, ast.Constant)
-#         ), ast.dump(tree)
-#     else:
-#         tree = ann_node
+            if isinstance(tree, ast.Constant):
+                value = tree.value
+                assert value is None or isinstance(value, (str, int))
 
-#     def check_parent_scope(parent_scope: Scope) -> Optional[TypeId]:
-#         return None
+                kind = builtin_map.get(type(value), Primitive.Unknown)
 
-#     def check_builtins() -> Optional[TypeId]:
-#         builtin_map = {
-#             int: Primitive.I64,
-#             float: Primitive.Number,
-#             bool: Primitive.Bool,
-#             type(None): Primitive.None_,
-#         }
+                return self.tcx.get_id_or_insert(kind)
 
-#         if isinstance(tree, ast.Constant):
-#             value = tree.value
-#             assert value is None or isinstance(value, (str, int))
+            elif isinstance(tree, ast.Name) and (builtin := getattr(builtins, tree.id)):
+                assert isinstance(tree.ctx, ast.Load)
 
-#             kind = builtin_map.get(type(value), Primitive.Unknown)
+                if (ty := builtin_map.get(builtin, None)) is None:
+                    raise Exception("Unsupported builtin type!")
 
-#             return self.type_ctx.get_id_or_insert(kind)
+                return self.tcx.get_id_or_insert(ty)
 
-#         elif isinstance(tree, ast.Name) and (builtin := getattr(builtins, tree.id)):
-#             assert isinstance(tree.ctx, ast.Load)
+            else:
+                return None
 
-#             if (ty := builtin_map.get(builtin, None)) is None:
-#                 raise Exception("Unsupported builtin type!")
+        return check_builtins() or self.tcx.get_id_or_insert(Primitive.Unknown)
 
-#             return self.type_ctx.get_id_or_insert(ty)
-
-#         else:
-#             return None
-
-#     return (
-#         check_parent_scope(scope.parent)
-#         or check_builtins()
-#         or self.type_ctx.get_id_or_insert(Primitive.Unknown)
-#     )
 
 # def get_function(self, name: str) -> Optional[Function]:
 #     module, name, *_ = name.split(".", maxsplit=1)
