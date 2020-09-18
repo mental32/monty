@@ -1,10 +1,2 @@
-__author__ = "mental"
+__version__ = "0.0.0"
 __license__ = "MIT"
-
-from . import utils
-from . import errors
-from . import typechecker
-from . import language
-from . import diagnostic
-from . import mir
-from . import driver

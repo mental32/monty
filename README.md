@@ -1,22 +1,23 @@
 <h1 align="center">Monty</h1>
 
-<h1 align="center">The elegant Python compiler</h1>
-
-> **WARNING! USE AT YOUR OWN PERIL**
+<h1 align="center">A Strongly Typed Python Dialect </h1>
 
 ## Index
 
- - [Index](#Index)
- - [Brief](#Brief)
- - [Examples](#Examples)
- - [Related projects](#Related-projects)
+- [Index](#index)
+- [Brief](#brief)
+- [Related projects](#related-projects)
+  - [montyc](#montyc)
+  - ["prior art"](#prior-art)
 
 
 ## Brief
 
 Monty (/ˈmɒntɪ/) is an attempt to provide a completely organic dialect of
-Python that is capable of being AOT compiled in the same manner as C,
-Haskell or Rust are.
+Python equipped with a stronger Rust-like type system.
+
+The initial goal for this library is to produce IR that can be further consumed
+for further analysis or for execution such as an interpreter or compiler.
 
 At a high level monty can be closely compared with what TypeScript does for the
 JavaScript community. The core contrast between Monty and TypeScript however is
@@ -24,42 +25,22 @@ that TS is a strict syntactical superset of JS, Monty is a strict syntactical
 subset of Python. Meaning that TS adds backwards incompatible syntax to JS
 where Monty disallows existing Python syntax in a backwards compatible manner.
 
-## Examples
-
-```py
-import monty
-
-FIBONACCI = """
-def fib(n: int) -> int:
-    a = 0
-    b = 1
-
-    for _ in range(n):
-        a, b, = b, b + a
-
-    return b
-
-def main():
-    print(fib(10))
-"""
-
-compilation_unit = monty.driver.compile_source(FIBONACCI)
-
-from monty.ext import miri
-
-miri.exec(compilation_unit)  # "89"
-```
-
 ## Related projects
 
-> In other words ["prior art"](https://github.com/rust-lang/rfcs/blob/master/text/2333-prior-art.md)
+### [montyc](https://github.com/mental32/montyc)
 
- - [Cython](https://github.com/cython/cython)
- - [Numba](https://github.com/numba/numba)
- - [Nuitka](https://github.com/Nuitka/Nuitka)
- - [Peggen](https://github.com/gvanrossum/pegen)
- - [MyPy](https://github.com/python/mypy)
- - [PyPy](https://foss.heptapod.net/pypy/pypy)
+Additionally work is being done on [montyc](https://github.com/mental32/montyc).
+It is interpreter that consumes MIR and programs LLVM/cranelift module builders
+in order to produce running executables.
+
+### ["prior art"](https://github.com/rust-lang/rfcs/blob/master/text/2333-prior-art.md)
+
+- [Cython](https://github.com/cython/cython)
+- [Numba](https://github.com/numba/numba)
+- [Nuitka](https://github.com/Nuitka/Nuitka)
+- [Peggen](https://github.com/gvanrossum/pegen)
+- [MyPy](https://github.com/python/mypy)
+- [PyPy](https://foss.heptapod.net/pypy/pypy)
 
 <hr>
 
