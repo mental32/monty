@@ -23,7 +23,12 @@ class SSAMap(Generic[V]):
     def mapping(self) -> MappingProxyType:
         return MappingProxyType(self.__internal)
 
-    def insert(self, value: V) -> int:
+    def insert(self, value: V, clobber: bool = False) -> int:
+        if not clobber:
+            for value_id, value_ in self.__internal.items():
+                if value_ == value:
+                    return value_id
+
         self.__counter += 1
         self.__internal[self.__counter] = value
         return self.__counter
