@@ -29,6 +29,9 @@ class InstrOp(IntEnum):
     StackLoad = auto()
     StackAddr = auto()
 
+    DataLoad = auto()
+    DataStore = auto()
+
     Jump = auto()
     IntCmp = auto()
 

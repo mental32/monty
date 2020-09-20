@@ -232,14 +232,16 @@ class FluidBlock:
         return slot
 
     def stack_load(self, slot: SSAValue) -> SSAValue:
-        (
-            size,
-            slot_memory_type,
-        ) = self.stack_slots[slot]
+        (size, slot_memory_type,) = self.stack_slots[slot]
         return self._emit(op=InstrOp.StackLoad, args=[slot, size, slot_memory_type])
 
     def stack_store(self, slot: SSAValue, value: SSAValue) -> SSAValue:
         return self._emit(op=InstrOp.StackStore, args=[slot, value], ret=None)
+
+    # Data load/store
+
+    def load_data(self, data_ref: SSAValue) -> SSAValue:
+        return self._emit(op=InstrOp.DataLoad, args=[data_ref])
 
     # Flow-control
 

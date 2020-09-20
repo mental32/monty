@@ -57,13 +57,25 @@ class MirBuilder(ast.NodeVisitor):
     def _visiting_names(self):
         def visit_name(self, name):
             assert isinstance(name.ctx, ast.Load)
-            # self._ast_node_to_ssa[name] = value = self._ebb.use(name.id)
-            # print(f"{self._name_to_stack_slot=!r}")
-            slot = self._name_to_stack_slot[name.id]
-            self._ast_node_to_ssa[name] = value = self._ebb.stack_load(slot)
-            self._ebb.ssa_value_types[value] = self.unit.reveal_type(
-                name, self.item.scope
-            )
+
+            target = name.id
+
+            if target in self._name_to_stack_slot:
+                slot = self._name_to_stack_slot[target]
+                value = self._ebb.stack_load(slot)
+                value_type = self.unit.reveal_type(
+                    name, self.item.scope
+                )
+
+            else:
+                item, *_ = self.item.scope.lookup(target)
+                data_ref = self.unit.data.fetch_by_origin(item)
+                value = self._ebb.load_data(data_ref)
+                value_type = self.unit.reveal_type(item.node, item.scope)
+
+            self._ast_node_to_ssa[name] = value
+            self._ebb.ssa_value_types[value] = value_type
+
 
         with swapattr(self, "_visit_name", None, visit_name):
             yield
@@ -160,10 +172,7 @@ class MirBuilder(ast.NodeVisitor):
         op = type(binop.op)
 
         if kind in (Primitive.I64, Primitive.I32, Primitive.Integer):
-            fn = {
-                ast.Add: self._ebb.int_add,
-                ast.Sub: self._ebb.int_sub,
-            }[op]
+            fn = {ast.Add: self._ebb.int_add, ast.Sub: self._ebb.int_sub,}[op]
 
             value = fn(lhs, rhs)
             self._ebb.ssa_value_types[value] = self.unit.tcx.get_id_or_insert(
@@ -204,10 +213,7 @@ class MirBuilder(ast.NodeVisitor):
 
         i64 = self.unit.tcx.get_id_or_insert(Primitive.I64)
 
-        for (
-            op,
-            rvalue,
-        ) in zip(compare.ops, compare.comparators):
+        for (op, rvalue,) in zip(compare.ops, compare.comparators):
             rvalue_type = self.unit.reveal_type(rvalue, self.item.scope)
 
             self.visit(rvalue)
@@ -234,11 +240,7 @@ class MirBuilder(ast.NodeVisitor):
 
         result_ty = self.unit.tcx[result_ty]
 
-        if result_ty in (
-            Primitive.I64,
-            Primitive.I32,
-            Primitive.Integer,
-        ):
+        if result_ty in (Primitive.I64, Primitive.I32, Primitive.Integer,):
             result = self._ebb.bool_const(result, is_ssa_value=True)
 
         self._ast_node_to_ssa[compare] = result
