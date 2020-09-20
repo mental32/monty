@@ -159,7 +159,8 @@ class CompilationUnit:
             # search the module's global scope...
             module_scope = scope.module.scope
 
-            return self.reveal_type(node, module_scope)
+            if scope != scope.module.scope:
+                return self.reveal_type(node, module_scope)
 
         raise RuntimeError(f"We don't know jack... {ast.dump(node)}")
 
