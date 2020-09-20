@@ -15,6 +15,7 @@ class Primitive(TypeInfo, IntEnum):
     LValue = auto()
     Module = auto()
     Return = auto()
+    String = auto()
 
     Nothing = auto()
     None_ = auto()
