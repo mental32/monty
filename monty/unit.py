@@ -7,6 +7,25 @@ from typing import Dict, Any, Optional, Union
 from monty.language import Scope, Function
 from monty.typing import Primitive, TypeContext, TypeId
 
+@dataclass
+class DataContext:
+    _mapping: Dict[int, Any] = field(default_factory=dict)
+    _origin: Dict[int, Any] = field(default_factory=dict)
+
+    def insert(self, value, origin) -> int:
+        ident = max(self._mapping) if self._mapping else -1
+        ident += 1
+        self._mapping[ident] = value
+        self._origin[ident] = origin
+        return ident
+
+    def fetch_by_origin(self, origin) -> int:
+        for ident, target, in self._origin.items():
+            if target == origin:
+                return ident
+        else:
+            raise KeyError(origin)
+
 
 @dataclass
 class CompilationUnit:
@@ -17,6 +36,9 @@ class CompilationUnit:
 
     # "__main__.main" => "<Function: signature='main() -> None'>"
     functions: Dict[str, "Function"] = field(default_factory=dict, repr=False)
+
+    # 'd0' => "Hello, World!"
+    data: DataContext = field(default_factory=DataContext)
 
     def __post_init__(self):
         assert not self.tcx.mapping
@@ -34,6 +56,12 @@ class CompilationUnit:
 
         INDENT = " " * 2
 
+        st += "data:\n"
+        for n, value in self.data._mapping.items():
+            st += f"{INDENT}s{n} = {value!r}\n"
+        else:
+            st += "\n"
+
         for name, module in self.modules.items():
             st += f"{name!s}:\n{INDENT}"
 
@@ -50,7 +78,7 @@ class CompilationUnit:
                     for instr in block.body:
                         st += f"\n{INDENT * 3}{instr!s};"
 
-                st += F"\n\n"
+                st += f"\n\n"
 
         return st.strip()
 
