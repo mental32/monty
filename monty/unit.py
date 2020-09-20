@@ -1,4 +1,5 @@
 import ast
+import builtins
 import textwrap
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, Union
@@ -37,7 +38,7 @@ class CompilationUnit:
             st += f"{name!s}:\n{INDENT}"
 
             for name, ebb, in module.output.items():
-                ret = self.tcx[ebb.return_value].reconstruct(self.tcx)
+                ret = self.tcx[ebb.return_value].as_str(self.tcx)
                 st += f"func {name!s}({ebb.parameters}) -> {ret}\n"
 
                 for n, obj, in ebb.refs.items():
@@ -79,8 +80,6 @@ class CompilationUnit:
         assert isinstance(scope, Scope), f"{scope=!r}"
 
         if isinstance(node, ast.BinOp):
-            op = node.op
-
             lhs = self.reveal_type(node.left, scope)
             rhs = self.reveal_type(node.right, scope)
 
@@ -146,29 +145,25 @@ class CompilationUnit:
         else:
             tree = ann_node
 
-        allowed = (ast.Subscript, ast.Name, ast.Attribute, ast.Constant)
-        assert isinstance(tree, allowed), ast.dump(tree)
+        if __debug__:
+            allowed = (ast.Subscript, ast.Name, ast.Attribute, ast.Constant)
+            assert isinstance(tree, allowed), ast.dump(tree)
 
         def check_builtins() -> Optional[TypeId]:
-            builtin_map = {
-                int: Primitive.I64,
-                float: Primitive.Number,
-                bool: Primitive.Bool,
-                type(None): Primitive.None_,
-            }
-
             if isinstance(tree, ast.Constant):
                 value = tree.value
                 assert value is None or isinstance(value, (str, int))
 
-                kind = builtin_map.get(type(value), Primitive.Unknown)
+                kind = Primitive.from_builtin_type(type(value)) or Primitive.Unknown
 
                 return self.tcx.get_id_or_insert(kind)
 
-            elif isinstance(tree, ast.Name) and (builtin := getattr(builtins, tree.id)):
+            elif isinstance(tree, ast.Name) and (
+                builtin_type := getattr(builtins, tree.id)
+            ):
                 assert isinstance(tree.ctx, ast.Load)
 
-                if (ty := builtin_map.get(builtin, None)) is None:
+                if (ty := Primitive.from_builtin_type(builtin_type)) is None:
                     raise Exception("Unsupported builtin type!")
 
                 return self.tcx.get_id_or_insert(ty)
@@ -177,13 +172,3 @@ class CompilationUnit:
                 return None
 
         return check_builtins() or self.tcx.get_id_or_insert(Primitive.Unknown)
-
-
-# def get_function(self, name: str) -> Optional[Function]:
-#     module, name, *_ = name.split(".", maxsplit=1)
-
-#     for item in self.modules[module].walk_function_items():
-#         if (func := item.function).name == name:
-#             return func
-#     else:
-#         return None

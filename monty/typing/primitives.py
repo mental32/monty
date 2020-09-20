@@ -1,4 +1,5 @@
 from enum import IntEnum, auto
+from typing import Optional
 
 from . import TypeInfo
 
@@ -31,6 +32,17 @@ class Primitive(TypeInfo, IntEnum):
         """Get the size of this type in bytes."""
         return _PRIMITIVE_SIZE_MAP.get(self, 0)
 
+    @staticmethod
+    def from_builtin_type(ty: type) -> Optional["Primitive"]:
+        return _PRIMITIVE_BUILTIN_MAP.get(ty, None)
+
+
+_PRIMITIVE_BUILTIN_MAP = {
+    bool: Primitive.Bool,
+    int: Primitive.Integer,
+    str: Primitive.String,
+    type(None): Primitive.None_,
+}
 
 _PRIMITIVE_SIZE_MAP = {
     Primitive.Bool: 1,
