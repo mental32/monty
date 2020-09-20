@@ -7,12 +7,12 @@ from monty import typing
 from monty.language import Item
 from monty.typing import TypeId, TypeInfo, Primitive
 from monty.utils import swapattr
+from monty.unit import CompilationUnit
 
 from . import Ebb, SSAValue, FluidBlock
 
-__all__ = ("Module", "MirBuilder")
 
-CompilationUnit = "monty.driver.CompilationUnit"
+__all__ = ("Module", "MirBuilder")
 
 
 @dataclass
@@ -202,8 +202,6 @@ class MirBuilder(ast.NodeVisitor):
 
     def visit_Compare(self, compare):
         left = compare.left
-
-        # print(f"@@ {ast.dump(compare)=!r}")
 
         with self._visiting_names():
             self.visit(left)
