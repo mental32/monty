@@ -24,7 +24,7 @@ class Callable(TypeInfo):
     parameters: TypeId = field(default=Primitive.Unknown)
     output: TypeId = field(default=Primitive.Unknown)
 
-    def reconstruct(self, tcx: "TypeContext") -> str:
+    def as_str(self, tcx: "TypeContext") -> str:
         return f"Callable[{tcx.reconstruct(self.parameters)}, {tcx.reconstruct(self.output)}]"
 
 
@@ -34,5 +34,5 @@ class Ref(TypeInfo):
 
     target: TypeId
 
-    def reconstruct(self, tcx: "TypeContext"):
+    def as_str(self, tcx: "TypeContext"):
         return tcx.reconstruct(self.target)

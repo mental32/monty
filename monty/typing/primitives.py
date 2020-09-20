@@ -25,7 +25,7 @@ class Primitive(TypeInfo, IntEnum):
     I64 = auto()
     I32 = auto()
 
-    def reconstruct(self, tcx) -> str:
+    def as_str(self, tcx) -> str:
         return self.name
 
     def size(self) -> int:

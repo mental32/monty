@@ -2,7 +2,7 @@ from typing import Dict
 
 from monty.utils import SSAMap
 
-from . import TypeInfo, TypeId
+from . import TypeInfo, TypeId, Primitive
 
 __all__ = ("TypeContext",)
 

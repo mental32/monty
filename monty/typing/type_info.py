@@ -10,7 +10,7 @@ __all__ = ("TypeInfo",)
 class TypeInfo:
     """Base class for all comprehensible types."""
 
-    def reconstruct(self, tcx: "InferenceEngine") -> str:
+    def as_str(self, tcx: "TypeContext") -> str:
         """Produce a locally constructed representation of the type."""
         raise NotImplementedError("Failed to implement reconstruct.")
 

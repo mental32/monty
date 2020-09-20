@@ -1,7 +1,5 @@
 import ast
 
-# import builtins
-# from dataclasses import dataclass, field
 from typing import Union, TextIO, List, Dict, Optional, Tuple, Any
 from io import IOBase
 
