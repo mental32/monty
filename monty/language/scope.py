@@ -55,6 +55,22 @@ class Scope:
         else:
             return None
 
+    def lookup(self, target_name: str) -> Optional[List[Item]]:
+        """Perform a scope lookup of a particular name."""
+        results = []
+
+        for item in self.items:
+            if item.ty is Primitive.LValue:
+                assert isinstance(item.node, ast.AnnAssign)
+                assert isinstance(item.node.target, ast.Name)
+
+                if item.node.target.id == target_name:
+                    results.append(item)
+        else:
+            if (parent := self.parent) is not None:
+                results += parent.lookup(target_name)
+
+        return results or None
 
 @dataclass
 class ScopeWalker(ast.NodeVisitor):
