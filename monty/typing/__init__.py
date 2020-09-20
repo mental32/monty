@@ -33,6 +33,9 @@ def typecheck(
     type_errors = type_errors or []
     tcx = unit.tcx
 
+    ribs: List[Dict[str, TypeInfo]] = []
+    item.scope.ribs = ribs
+
     for target in scope.items:
         node = target.node
 
@@ -67,9 +70,48 @@ def typecheck(
 
             if expr_ty != tcx[item_type_id].output:
                 type_errors.append(TypeCheckError(f"Bad return value for function!"))
+
+        # Re-definition or addition of new name.
+        elif real_type is Primitive.LValue:
+            assert isinstance(node, (ast.Assign, ast.AnnAssign))
+            assert isinstance(node, ast.AnnAssign)
+            assert isinstance(
+                node.target, ast.Name
+            ), f"Can't handle other target forms yet."
+
+            ident = node.target.id
+
+            assert isinstance(ident, str)
+
+            if (ann := node.annotation) is not None:
+                annotation_id = unit.resolve_annotation(scope, ann)
+            else:
+                annotation_id = tcx.get_id_or_insert(Primitive.Unknown)
+
+            assert type(annotation_id) is TypeId, f"{type(annotation_id)!r}"
+
+
+            if node.value is not None:
+                value_type_id = unit.reveal_type(node.value, scope)
+
+            if value_type_id != annotation_id:
+                value_type = tcx[value_type_id]
+                annotation = tcx[annotation_id]
+                raise TypeCheckError(
+                    f"Type mismatch! expected {value_type.as_str(tcx)} instead got {annotation.as_str(tcx)}"
+                )
+            else:
+                annotation = tcx[annotation_id]
+                last_rib = (ribs and ribs[-1]) or {}
+                ribs.append({**last_rib, ident: annotation})
+
+            if tcx[annotation_id] is Primitive.String:
+                assert isinstance(node.value, ast.Constant)
+                assert type(node.value.value) == str
+                st = node.value.value
+                unit.data.insert(value=st, origin=target)
+
         else:
-            raise TypeCheckError(
-                f"Failed typechecking for a scoped item {scoped_item=!r}"
-            )
+            raise TypeCheckError(f"Failed typechecking for a scoped item {target=!r}")
 
     return type_errors
