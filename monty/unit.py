@@ -105,7 +105,7 @@ class CompilationUnit:
     def reveal_type(self, node: ast.AST, scope: Scope) -> Optional[TypeId]:
         """Attempt to reveal the [product] type of a AST node."""
         assert isinstance(node, ast.AST), f"{node=!r}"
-        assert isinstance(scope, Scope), f"{scope=!r}"
+        assert scope is None or isinstance(scope, Scope), f"{scope=!r}"
 
         if isinstance(node, ast.BinOp):
             lhs = self.reveal_type(node.left, scope)
@@ -118,6 +118,9 @@ class CompilationUnit:
                 return self.tcx.get_id_or_insert(Primitive.I64)
             else:
                 raise RuntimeError(f"{lty}, {rty}")
+
+        elif isinstance(node, ast.AnnAssign):
+            return self.resolve_annotation(scope, node.annotation)
 
         elif isinstance(node, ast.Call):
             return self.reveal_type(node.func, scope)
