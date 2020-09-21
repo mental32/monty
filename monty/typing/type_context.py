@@ -32,3 +32,6 @@ class TypeContext(SSAMap[TypeInfo]):
         else:
             return self.insert(type_info)
     # fmt: on
+
+    def reconstruct(self, kind: TypeId) -> str:
+        return self[kind].as_str(self)
