@@ -1,3 +1,4 @@
+import typing
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -5,6 +6,15 @@ from . import Primitive, TypeId, TypeInfo
 
 if TYPE_CHECKING:
     from monty.typing import TypeContext
+
+@dataclass
+class Tuple(TypeInfo):
+    """A tuple, which is essentially a struct with anonymous fields."""
+    inner: typing.Optional[typing.List[TypeId]] = field(default=None)
+
+    def as_str(self, tcx: "TypeContext") -> str:
+        inner = ", ".join(map(tcx.reconstruct, self.inner))
+        return f"Tuple[{inner}]"
 
 
 @dataclass
