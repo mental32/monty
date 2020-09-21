@@ -105,7 +105,7 @@ def typecheck(
                 last_rib = (ribs and ribs[-1]) or {}
                 ribs.append({**last_rib, ident: annotation})
 
-            if tcx[annotation_id] is Primitive.String:
+            if tcx[annotation_id] is Primitive.Str:
                 assert isinstance(node.value, ast.Constant)
                 assert type(node.value.value) == str
                 st = node.value.value

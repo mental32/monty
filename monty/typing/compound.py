@@ -13,7 +13,7 @@ class List(TypeInfo):
 
     kind: TypeId
 
-    def reconstruct(self, tcx: "TypeContext") -> str:
+    def as_str(self, tcx: "TypeContext") -> str:
         return f"List[{tcx.reconstruct(self.kind)}]"
 
 
@@ -35,4 +35,4 @@ class Ref(TypeInfo):
     target: TypeId
 
     def as_str(self, tcx: "TypeContext"):
-        return tcx.reconstruct(self.target)
+        return tcx[self.target].as_str(tcx)

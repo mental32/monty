@@ -139,7 +139,7 @@ class MirBuilder(ast.NodeVisitor):
         if ty is str:
             _ = self.unit.intern_string(value)
             fn = self._ebb.str_const
-            value_ty = self.unit.tcx.get_id_or_insert(Primitive.String)
+            value_ty = self.unit.tcx.get_id_or_insert(Primitive.Str)
 
         elif ty is bool:
             fn = self._ebb.bool_const
@@ -171,7 +171,7 @@ class MirBuilder(ast.NodeVisitor):
         kind = self.unit.type_ctx[ty]
         op = type(binop.op)
 
-        if kind in (Primitive.I64, Primitive.I32, Primitive.Integer):
+        if kind in (Primitive.I64, Primitive.I32, Primitive.Int):
             fn = {ast.Add: self._ebb.int_add, ast.Sub: self._ebb.int_sub,}[op]
 
             value = fn(lhs, rhs)
@@ -223,7 +223,7 @@ class MirBuilder(ast.NodeVisitor):
                 rvalue_ssa = self._ebb.cast_bool_to_int(i64, rvalue_ssa)
                 rvalue_type = Primitive.I64
 
-            if rvalue_type in (Primitive.I64, Primitive.I32, Primitive.Integer):
+            if rvalue_type in (Primitive.I64, Primitive.I32, Primitive.Int):
                 ops = {ast.Eq: "eq", ast.NotEq: "neq", ast.Gt: "gt"}
 
                 if (op := type(op)) not in ops:
@@ -238,7 +238,7 @@ class MirBuilder(ast.NodeVisitor):
 
         result_ty = self.unit.tcx[result_ty]
 
-        if result_ty in (Primitive.I64, Primitive.I32, Primitive.Integer,):
+        if result_ty in (Primitive.I64, Primitive.I32, Primitive.Int,):
             result = self._ebb.bool_const(result, is_ssa_value=True)
 
         self._ast_node_to_ssa[compare] = result

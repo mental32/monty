@@ -16,17 +16,17 @@ class Primitive(TypeInfo, IntEnum):
     LValue = auto()
     Module = auto()
     Return = auto()
-    String = auto()
+    Str = auto()
 
     Nothing = auto()
     None_ = auto()
 
-    Integer = auto()
+    Int = auto()
     I64 = auto()
     I32 = auto()
 
     def as_str(self, tcx) -> str:
-        return self.name
+        return self.name.lower()
 
     def size(self) -> int:
         """Get the size of this type in bytes."""
@@ -39,8 +39,8 @@ class Primitive(TypeInfo, IntEnum):
 
 _PRIMITIVE_BUILTIN_MAP = {
     bool: Primitive.Bool,
-    int: Primitive.Integer,
-    str: Primitive.String,
+    int: Primitive.Int,
+    str: Primitive.Str,
     type(None): Primitive.None_,
 }
 
@@ -48,7 +48,7 @@ _PRIMITIVE_SIZE_MAP = {
     Primitive.Bool: 1,
     Primitive.I64: 8,
     Primitive.I32: 4,
-    Primitive.Integer: 4,
+    Primitive.Int: 4,
     Primitive.None_: 1,
     Primitive.Nothing: 0,
 }
