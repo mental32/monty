@@ -46,18 +46,23 @@ def typecheck(
 
         assert isinstance(type_id, TypeId), f"{type_id=!r}"
 
-        if tcx[type_id] == Primitive.Unknown and (func := target.function) is not None:
-            # TODO: hack here args and ret are Unknown for the moment
-            arguments_type = type_id
-            output_type = unit.resolve_annotation(scope, func.return_type)
+        if (func := target.function) is not None:
+            if tcx[type_id] == Primitive.Unknown or not hasattr(func, "type_id"):
 
-            func.type_id = tcx.insert(Callable(arguments_type, output_type))
+                arguments = Tuple()
+                arguments.inner = [unit.resolve_annotation(scope, arg.node.annotation) for arg in func.arguments]
 
-            return typecheck(target, unit, item_type_id=func.type_id)
+                arguments_type = tcx.insert(arguments)
+                output_type = unit.resolve_annotation(scope, func.return_type)
 
-        real_type = tcx[type_id]
+                func.type_id = tcx.insert(Callable(arguments_type, output_type))
 
-        if real_type is Primitive.Return:
+            unit.functions[func.name] = func
+
+            typecheck(target, unit, item_type_id=func.type_id)
+            continue
+
+        elif (real_type := tcx[type_id]) is Primitive.Return:
             assert isinstance(item.node, ast.FunctionDef)
             if (value := node.value) is not None:
                 expr_ty = unit.reveal_type(value, scope)
