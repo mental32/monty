@@ -20,6 +20,7 @@ class Primitive(TypeInfo, IntEnum):
 
     Nothing = auto()
     None_ = auto()
+    Import = auto()
 
     Int = auto()
     I64 = auto()

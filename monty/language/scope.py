@@ -105,6 +105,13 @@ class ScopeWalker(ast.NodeVisitor):
         else:
             self.add_item(Item(node=func))
 
+    def visit_Import(self, imp):
+        self.add_item(Item(node=imp, ty=Primitive.Import))
+        raise Exception(ast.dump(imp))
+
+    def visit_ImportFrom(self, imp):
+        raise Exception(ast.dump(imp))
+
     def visit_ClassDef(self, klass):
         raise NotImplementedError("Classes are not supported!")
 

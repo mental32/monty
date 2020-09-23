@@ -313,6 +313,10 @@ class Module:
     root: Item
     output: Any = field(default=None)
 
+    @property
+    def imports(self) -> "Set[ImportDecl]":
+        return set()
+
     def walk_function_items(self) -> Iterator[Item]:
         seen = set()
 
