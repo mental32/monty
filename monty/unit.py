@@ -82,25 +82,15 @@ class CompilationUnit:
 
         return st.strip()
 
-    def resolve_into_function(self, obj: Any, scope: Scope) -> Optional[Function]:
+    def resolve_into_function(self, obj: ast.AST, scope: Scope) -> Optional[Function]:
         assert isinstance(obj, ast.Call), f"{obj=!r}"
 
         # FIXME: at the moment `ast.FunctionDef`s only live in the module scope.
 
         assert isinstance(obj.func, ast.Name), "Cant do attribute access yet..."
 
-        target = obj.func.id
-
-        for item in scope.items:
-            func = item.function
-
-            if func is not None and target == func.name:
-                assert hasattr(
-                    func, "type_id"
-                ), f"function object did not have a `type_id` {func=!r}"
-                return func
-        else:
-            return None
+        results = scope.lookup(obj.func.id)
+        return results[0] if results is not None else None
 
     def reveal_type(self, node: ast.AST, scope: Scope) -> Optional[TypeId]:
         """Attempt to reveal the [product] type of a AST node."""

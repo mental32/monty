@@ -66,11 +66,19 @@ class Scope:
 
                 if item.node.target.id == target_name:
                     results.append(item)
+
+            elif (
+                isinstance(item.scope.node, ast.FunctionDef)
+                and item.function.name == target_name
+            ):
+                results.append(item)
+
         else:
             if (parent := self.parent) is not None:
-                results += parent.lookup(target_name)
+                results += parent.lookup(target_name) or []
 
         return results or None
+
 
 @dataclass
 class ScopeWalker(ast.NodeVisitor):
