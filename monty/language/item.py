@@ -6,7 +6,7 @@ from typing import List, Iterator, Union, Optional
 from monty.typing import TypeId, Primitive
 from monty.diagnostic import Diagnostic, Error
 
-ScopeableNodes = Union[ast.FunctionDef, ast.Lambda, ast.Module]
+ScopeableNodes = Union[ast.FunctionDef, ast.Lambda, ast.Module, ast.ClassDef]
 
 
 @dataclass
