@@ -1,5 +1,5 @@
 import ast
-
+import subprocess
 from typing import Union, TextIO, List, Dict, Optional, Tuple, Any
 from io import IOBase
 
@@ -18,6 +18,7 @@ def compile(
     source: Union[TextIO, str],
     module_name: str = "__main__",
     unit: Optional[CompilationUnit] = None,
+    arch: Optional[str] = None,
 ):
     """Attempt to compile some `source` code into a compiled module.
 
@@ -38,6 +39,16 @@ def compile(
 
         module_name (str): the name of the initial module default: `__main__`
 
+        unit (Optional[CompilationUnit]): compile and typecheck the source with
+            the provided unit, otherwise just make a new one and use that.
+
+            Note that this should not typically be supplied by the user, it is
+            an argument that the library can use to recursively compile modules.
+
+        arch: (Optional[str]): The target architecture to compile for.
+
+            Defaults to the native architecture this code is running on.
+
     Returns:
         The compiled module(s) as a `CompilationUnit`.
     """
@@ -48,6 +59,11 @@ def compile(
         raise TypeError(
             f"Expected `source` to be a string or file-like object, instead got {ty!r}"
         )
+
+    if arch is not None:
+        raise NotImplementedError("Support for custom targets is not implemented yet.")
+    else:
+        arch = subprocess.check_output("gcc -dumpmachine", shell=True).decode("utf-8").strip()
 
     root_node = ast.parse(source_input)
 
