@@ -2,7 +2,7 @@ import monty
 
 HELLO_WORLD = """
 def main():
-    return
+    print('Hello, World!')
 """
 
 code = monty.compile(HELLO_WORLD)
