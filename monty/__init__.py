@@ -4,7 +4,7 @@ __license__ = "MIT"
 from . import utils
 from . import errors
 from . import diagnostic
-from . import typing
 from . import language
+from . import typing
 from . import mir
 from .driver import *
