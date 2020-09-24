@@ -2,9 +2,10 @@ import ast
 import subprocess
 from typing import Union, TextIO, List, Dict, Optional, Tuple, Any
 from io import IOBase
+from pathlib import Path
 
 import monty
-from monty.language import Item
+from monty.language import Item, Module
 from monty.errors import CompilationException
 
 from monty.mir import Ebb, Module as ModuleBuilder
@@ -13,12 +14,15 @@ from monty.unit import CompilationUnit
 
 __all__ = ("compile",)
 
+_STDLIB_PATH = (Path(".").parent / "stdlib").resolve().absolute()
+
 
 def compile(
     source: Union[TextIO, str],
     module_name: str = "__main__",
     unit: Optional[CompilationUnit] = None,
     arch: Optional[str] = None,
+    path_to_stdlib: Optional[Path] = None,
 ):
     """Attempt to compile some `source` code into a compiled module.
 
@@ -65,6 +69,11 @@ def compile(
     else:
         arch = subprocess.check_output("gcc -dumpmachine", shell=True).decode("utf-8").strip()
 
+    path_to_stdlib = path_to_stdlib or _STDLIB_PATH
+
+    assert isinstance(path_to_stdlib, Path), type(path_to_stdlib)
+    assert path_to_stdlib.exists(), f"provided path to stdlib does not exist! {path_to_stdlib=!r}"
+
     root_node = ast.parse(source_input)
 
     assert isinstance(root_node, ast.Module), "Can only process ast.Modules as roots!"
@@ -75,12 +84,17 @@ def compile(
         raise CompilationException(issues)
 
     if unit is None:
-        unit = CompilationUnit()
+        unit = CompilationUnit(path_to_stdlib=path_to_stdlib)
 
     if issues := monty.typing.typecheck(item=root_item, unit=unit):
         raise CompilationException(issues)
 
-    unit.modules[module_name] = builder = ModuleBuilder(unit=unit, root=root_item)
+    if module_name not in unit.modules:
+        unit.modules[module_name] = module = Module(name=module_name, path=None)
+    else:
+        module = unit.modules[module_name]
+
+    module.builder = builder = ModuleBuilder(unit=unit, root=root_item)
     builder.output = builder.lower_into_mir()
 
     return unit

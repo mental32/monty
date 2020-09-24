@@ -1,11 +1,13 @@
 import ast
 import builtins
 import textwrap
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
+from pathlib import Path
 from typing import Dict, Any, Optional, Union
 
-from monty.language import Scope, Function
+from monty.language import Scope, Function, ImportDecl, Module
 from monty.typing import Primitive, TypeContext, TypeId
+
 
 @dataclass
 class DataContext:
@@ -20,7 +22,10 @@ class DataContext:
         return ident
 
     def fetch_by_origin(self, origin) -> int:
-        for ident, target, in self._origin.items():
+        for (
+            ident,
+            target,
+        ) in self._origin.items():
             if target == origin:
                 return ident
         else:
@@ -29,10 +34,13 @@ class DataContext:
 
 @dataclass
 class CompilationUnit:
+    # 'Path(~/.monty/stdlib)'
+    path_to_stdlib: InitVar[Path]
+
     tcx: TypeContext = field(default_factory=TypeContext)
 
     # "sys" => "<Module: name='sys'>"
-    modules: Dict[str, "ModuleBuilder"] = field(default_factory=dict)
+    modules: Dict[str, Module] = field(default_factory=dict)
 
     # "__main__.main" => "<Function: signature='main() -> None'>"
     functions: Dict[str, "Function"] = field(default_factory=dict, repr=False)
@@ -40,7 +48,7 @@ class CompilationUnit:
     # 'd0' => "Hello, World!"
     data: DataContext = field(default_factory=DataContext)
 
-    def __post_init__(self):
+    def __post_init__(self, path_to_stdlib: Path):
         assert not self.tcx.mapping
 
         unknown = self.tcx.insert(Primitive.Unknown)
@@ -51,6 +59,7 @@ class CompilationUnit:
         self.tcx.insert(Primitive.Bool)
         self.tcx.insert(Primitive.None_)
 
+        self._stdlib_path = path_to_stdlib
     def disassemble(self) -> str:
         st = ""
 
@@ -65,11 +74,17 @@ class CompilationUnit:
         for name, module in self.modules.items():
             st += f"{name!s}:\n{INDENT}"
 
-            for name, ebb, in module.output.items():
+            for (
+                name,
+                ebb,
+            ) in module.builder.output.items():
                 ret = self.tcx[ebb.return_value].as_str(self.tcx)
                 st += f"func {name!s}({ebb.parameters}) -> {ret}\n"
 
-                for n, obj, in ebb.refs.items():
+                for (
+                    n,
+                    obj,
+                ) in ebb.refs.items():
                     st += f"{INDENT * 2}r{n} = {obj}\n"
 
                 for block_id, block in ebb.blocks.items():
@@ -78,7 +93,7 @@ class CompilationUnit:
                     for instr in block.body:
                         st += f"\n{INDENT * 3}{instr!s};"
 
-                st += f"\n\n"
+            st += "\n\n"
 
         return st.strip()
 
