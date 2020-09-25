@@ -14,6 +14,9 @@ class DataContext:
     _mapping: Dict[int, Any] = field(default_factory=dict)
     _origin: Dict[int, Any] = field(default_factory=dict)
 
+    def __getitem__(self, key):
+        return self._mapping[key]
+
     def insert(self, value, origin) -> int:
         ident = max(self._mapping) if self._mapping else -1
         ident += 1
@@ -21,7 +24,7 @@ class DataContext:
         self._origin[ident] = origin
         return ident
 
-    def fetch_by_origin(self, origin) -> int:
+    def fetch_by_origin(self, origin) -> Optional[int]:
         for (
             ident,
             target,
@@ -29,7 +32,7 @@ class DataContext:
             if target == origin:
                 return ident
         else:
-            raise KeyError(origin)
+            return None
 
 
 @dataclass
@@ -63,6 +66,9 @@ class CompilationUnit:
 
     def import_module(self, decl: ImportDecl) -> Optional[Module]:
         """Attempt to import a module from an import declaration into the current unit."""
+        if (idx := self.data.fetch_by_origin(origin=decl)) is not None:
+            return self.data[idx]
+
         paths_to_inspect = [Path("."), self._stdlib_path]
 
         assert decl.qualname
@@ -106,6 +112,7 @@ class CompilationUnit:
 
             if final_path is not None:
                 module = Module(name=".".join(decl.qualname), path=final_path)
+                self.data.insert(value=module, origin=decl)
 
         return module
 
