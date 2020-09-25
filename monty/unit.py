@@ -60,6 +60,55 @@ class CompilationUnit:
         self.tcx.insert(Primitive.None_)
 
         self._stdlib_path = path_to_stdlib
+
+    def import_module(self, decl: ImportDecl) -> Optional[Module]:
+        """Attempt to import a module from an import declaration into the current unit."""
+        paths_to_inspect = [Path("."), self._stdlib_path]
+
+        assert decl.qualname
+
+        def search(curdir: Path, expected: str) -> Optional[Path]:
+            for path in curdir.iterdir():
+                is_py_file = path.is_file() and path.name.endswith(".py")
+
+                # We cant have "." in module names.
+                if not is_py_file and "." in path.name:
+                    continue
+
+                if is_py_file:
+                    name = path.name[:-3]
+                else:
+                    name = path.name
+
+                if name == part:
+                    return path
+            else:
+                return None
+
+        module: Optional[Module] = None
+
+        for target in paths_to_inspect:
+            qualname = iter(decl.qualname)
+            final_path = None
+
+            # "x.y" <- ("x", "y")
+            # "./x/y.py"
+            while (part := next(qualname, None)) is not None:
+                final_path = search(target, part)
+ 
+            # "./x/y/__init__.py"
+            if (
+                final_path is not None
+                and final_path.is_dir()
+                and not (final_path / "__init__.py").exists()
+            ):
+                final_path = None
+
+            if final_path is not None:
+                module = Module(name=".".join(decl.qualname), path=final_path)
+
+        return module
+
     def disassemble(self) -> str:
         st = ""
 

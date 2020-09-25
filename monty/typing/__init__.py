@@ -5,8 +5,10 @@ TypeId = int
 import ast
 from typing import List as _List, Optional
 
+
 from monty.diagnostic import Error
 from monty.errors import TypeCheckError
+from monty.language import ImportDecl
 
 from .type_info import *
 from .primitives import *
@@ -25,6 +27,8 @@ def typecheck(
     item_type_id: TypeId = 0,
     type_errors: Optional[_List["Diagnostic"]] = None,
 ) -> _List["Diagnostic"]:
+    import monty
+
     assert isinstance(getattr(unit, "tcx", None), TypeContext)
 
     if (scope := item.scope) is None:
@@ -115,6 +119,25 @@ def typecheck(
                 assert type(node.value.value) == str
                 st = node.value.value
                 unit.data.insert(value=st, origin=target)
+
+        elif real_type is Primitive.Import:
+            for alias in target.node.names:
+                module = unit.import_module(decl := ImportDecl(node=alias))
+
+                if module is None:
+                    raise ModuleNotFoundError(repr(decl))
+
+                unit.modules[module.name] = module
+                assert module.path.exists()
+
+                if module.path.is_file():
+                    file_name = module.path
+                else:
+                    assert module.path.is_dir()
+                    file_name = module.path / "__init__.py"
+
+                with open(file_name) as inf:
+                    monty.compile(inf, unit=unit, module_name=module.name)
 
         else:
             raise TypeCheckError(f"Failed typechecking for a scoped item {target=!r}")

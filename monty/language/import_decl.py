@@ -1,4 +1,7 @@
 import ast
+from dataclasses import dataclass
+from typing import List
+from functools import lru_cache
 
 __all__ = ("ImportDecl",)
 
@@ -20,4 +23,10 @@ class ImportDecl:
     @property
     @lru_cache(maxsize=1)
     def realname(self) -> str:
-        return self.node.alias or self.node.name
+        return self.node.asname or self.node.name
+
+    def __hash__(self) -> int:
+        return hash(self.node)
+
+    def __str__(self) -> str:
+        return self.realname
