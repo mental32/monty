@@ -3,9 +3,9 @@ import builtins
 import textwrap
 from dataclasses import dataclass, field, InitVar
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 
-from monty.language import Scope, Function, ImportDecl, Module
+from monty.language import Scope, Function, ImportDecl, Module, Item
 from monty.typing import Primitive, TypeContext, TypeId
 
 
@@ -63,6 +63,7 @@ class CompilationUnit:
         self.tcx.insert(Primitive.None_)
 
         self._stdlib_path = path_to_stdlib
+        self._monty_module = Module(name="__monty", path=None)
 
     def import_module(self, decl: ImportDecl) -> Optional[Module]:
         """Attempt to import a module from an import declaration into the current unit."""
@@ -73,6 +74,15 @@ class CompilationUnit:
 
         assert decl.qualname
 
+        if isinstance(decl.parent, ast.ImportFrom):
+            qualname = [decl.parent.module] + decl.qualname
+        else:
+            qualname = decl.qualname
+
+        assert qualname
+        if qualname[0] == "__monty":
+            return self._monty_module
+
         def search(curdir: Path, expected: str) -> Optional[Path]:
             for path in curdir.iterdir():
                 is_py_file = path.is_file() and path.name.endswith(".py")
@@ -81,10 +91,10 @@ class CompilationUnit:
                 if not is_py_file and "." in path.name:
                     continue
 
+                name = path.name
+
                 if is_py_file:
                     name = path.name[:-3]
-                else:
-                    name = path.name
 
                 if name == part:
                     return path
@@ -93,28 +103,39 @@ class CompilationUnit:
 
         module: Optional[Module] = None
 
+        def insert_module(final_path: Path, qualname: List[str]):
+            module = Module(name=".".join(qualname), path=final_path)
+            self.data.insert(value=module, origin=decl)
+            return module
+
         for target in paths_to_inspect:
-            qualname = iter(decl.qualname)
+            qualname_iter = iter(qualname)
+            final_qualname = []
             final_path = None
 
             # "x.y" <- ("x", "y")
             # "./x/y.py"
-            while (part := next(qualname, None)) is not None:
-                final_path = search(target, part)
- 
-            # "./x/y/__init__.py"
-            if (
-                final_path is not None
-                and final_path.is_dir()
-                and not (final_path / "__init__.py").exists()
-            ):
-                final_path = None
+            while (part := next(qualname_iter, None)) is not None:
+                final_path = target = search(target, part)
 
-            if final_path is not None:
-                module = Module(name=".".join(decl.qualname), path=final_path)
-                self.data.insert(value=module, origin=decl)
+                if target is None:
+                    break
 
-        return module
+                elif final_path.is_dir() and (final_path / "__init__.py").exists():
+                    # special case?
+                    # "./x/y/__init__.py"
+                    #
+                    # from x.y import z
+                    #
+                    # or
+                    #
+                    # from x import y
+                    return insert_module(final_path, qualname=final_qualname + [part])
+
+                else:
+                    final_qualname.append(part)
+
+        return insert_module(final_path, qualname=qualname) if final_path is not None else None
 
     def disassemble(self) -> str:
         st = ""

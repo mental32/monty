@@ -127,6 +127,9 @@ def typecheck(
                 if module is None:
                     raise ModuleNotFoundError(repr(decl))
 
+                elif module.name == "__monty":
+                    continue
+
                 unit.modules[module.name] = module
                 assert module.path.exists()
 
