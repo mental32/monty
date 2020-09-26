@@ -122,7 +122,7 @@ def typecheck(
 
         elif real_type is Primitive.Import:
             for alias in target.node.names:
-                module = unit.import_module(decl := ImportDecl(node=alias))
+                module = unit.import_module(decl := ImportDecl(node=alias, parent=target.node))
 
                 if module is None:
                     raise ModuleNotFoundError(repr(decl))

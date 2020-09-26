@@ -1,5 +1,5 @@
 import ast
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from enum import IntEnum, auto
 from typing import List, Iterator, Union, Optional
 
@@ -12,13 +12,20 @@ ScopeableNodes = Union[ast.FunctionDef, ast.Lambda, ast.Module, ast.ClassDef]
 @dataclass
 class Item:
     node: ast.AST = field(repr=False)
+    unit: InitVar["CompilationUnit"] = field(default=None)
     ty: Union[TypeId, Primitive] = field(default=Primitive.Unknown)
 
     scope: Optional["Scope"] = None
     function: Optional["Function"] = None
 
-    def __post_init__(self):
+    def __hash__(self) -> int:
+        return hash(self.node)
+
+    def __post_init__(self, unit):
         from monty.language import Scope, Function
+        from monty.unit import CompilationUnit
+
+        assert unit is None or isinstance(unit, CompilationUnit)
 
         if not isinstance(self.ty, (TypeId, Primitive)):
             raise TypeError(
@@ -27,7 +34,7 @@ class Item:
 
         if self.scope is None and self.is_scopable:
             module = self if isinstance(self.node, ast.Module) else None
-            self.scope = Scope.from_node(self.node, module=module)
+            self.scope = Scope.from_node(self.node, module=module, unit=unit)
 
         if self.function is None and isinstance(self.node, ast.FunctionDef):
             self.function = Function(self.node)

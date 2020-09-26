@@ -78,13 +78,13 @@ def compile(
 
     assert isinstance(root_node, ast.Module), "Can only process ast.Modules as roots!"
 
-    root_item = Item(node=root_node, ty=Primitive.Module)
+    if unit is None:
+        unit = CompilationUnit(path_to_stdlib=path_to_stdlib)
+
+    root_item = Item(node=root_node, ty=Primitive.Module, unit=unit)
 
     if issues := root_item.recursively_validate():
         raise CompilationException(issues)
-
-    if unit is None:
-        unit = CompilationUnit(path_to_stdlib=path_to_stdlib)
 
     if issues := monty.typing.typecheck(item=root_item, unit=unit):
         raise CompilationException(issues)

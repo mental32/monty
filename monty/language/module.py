@@ -11,7 +11,6 @@ __all__ = ("Module",)
 @dataclass
 class Module:
     """Represents an imported module."""
-
     # Fully qualified name
     name: str
 
@@ -27,7 +26,7 @@ class Module:
 
         def produce_import_decls():
             return {
-                ImportDecl(node=node)
+                ImportDecl(node=node, parent=item.node)
                 for item in self.builder.root.scope.items
                 for node in item.node.names
                 if item.ty is Primitive.Import

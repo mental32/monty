@@ -141,6 +141,7 @@ class CompilationUnit:
                     n,
                     obj,
                 ) in ebb.refs.items():
+                    obj = repr(obj.function) if isinstance(obj, Item) and obj.function is not None else repr(obj)
                     st += f"{INDENT * 2}r{n} = {obj}\n"
 
                 for block_id, block in ebb.blocks.items():
@@ -153,7 +154,7 @@ class CompilationUnit:
 
         return st.strip()
 
-    def resolve_into_function(self, obj: ast.AST, scope: Scope) -> Optional[Function]:
+    def resolve_into_function(self, obj: ast.Call, scope: Scope) -> Optional[Function]:
         assert isinstance(obj, ast.Call), f"{obj=!r}"
 
         # FIXME: at the moment `ast.FunctionDef`s only live in the module scope.

@@ -1,6 +1,6 @@
 import ast
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import List, Union
 from functools import lru_cache
 
 __all__ = ("ImportDecl",)
@@ -13,7 +13,11 @@ __all__ = ("ImportDecl",)
 # scope.lookup("z") == ImportDecl(qualname = ("x", "y"))
 @dataclass
 class ImportDecl:
-    node: ast.alias
+    node: ast.alias = field(repr=False)
+    parent: Union[ast.Import, ast.ImportFrom] = field(repr=False)
+
+    def __repr__(self) -> str:
+        return f"ImportDec({ast.dump(self.node)=!r})"
 
     @property
     @lru_cache(maxsize=1)
