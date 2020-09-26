@@ -37,3 +37,25 @@ class Module:
             if self.builder is not None
             else set()
         )
+
+    def getattr(self, attribute: str):
+        assert self.builder is not None, "How are we supposed to reference the root without it??"
+
+        results = self.builder.root.scope.lookup(attribute)
+
+        if results is None:
+            # Try checking the module's path.
+            #
+            # for instance:
+            #
+            #   from x import y
+            #
+            # Could have a structure like
+            #
+            #   x/y/__init__.py
+            #
+            # At that point we want the `y` module object.
+            raise NotImplementedError()
+        else:
+            assert results, "no..."
+            return results.pop()
