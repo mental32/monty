@@ -189,6 +189,10 @@ class FluidBlock:
         """Produce a boolean constant."""
         return self._emit(op=InstrOp.BoolConst, args=[is_ssa_value, value])
 
+    def str_const(self, const_idx: int) -> SSAValue:
+        assert isinstance(const_idx, int)
+        return self._emit(op=InstrOp.StrConst, args=[const_idx])
+
     # Data-casting
 
     def cast_bool_to_int(self, ty: TypeId, value: SSAValue) -> SSAValue:
@@ -264,5 +268,5 @@ class FluidBlock:
         args = [value] if value is not None else []
         return self._emit(op=InstrOp.Return, args=args, ret=None)
 
-    def call(self, function: SSAValue, *args) -> SSAValue:
+    def call(self, function: SSAValue, args: List[SSAValue]) -> SSAValue:
         return self._emit(op=InstrOp.Call, args=[function, args])

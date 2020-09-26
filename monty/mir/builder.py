@@ -132,12 +132,13 @@ class MirBuilder(ast.NodeVisitor):
         assert type(const.value) in (
             int,
             bool,
-        ), f"Only able to handle integer and string constants {ast.dump(const)=!r}"
+            str,
+        ), f"Only able to handle integer, boolean, and string constants {ast.dump(const)=!r}"
 
         ty = type(value := const.value)
 
         if ty is str:
-            _ = self.unit.intern_string(value)
+            value = self.unit.data.insert(value, origin=const)
             fn = self._ebb.str_const
             value_ty = self.unit.tcx.get_id_or_insert(Primitive.Str)
 

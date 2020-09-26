@@ -124,13 +124,13 @@ class BlockInstr(NamedTuple):
         elif op is InstrOp.Call:
             assert self.args is not None
             n, args, = self.args
-            args = ", ".join(map(str, args))
+            args = ", ".join([f"v{n}" for n in args])
             rest = f"call r{n}({args})"
 
         elif op is InstrOp.StrConst:
             assert self.args is not None
             value, *_ = self.args
-            rest = f"str.const({value=!r})"
+            rest = f"str.const(s{value})"
 
         elif op is InstrOp.Return:
             args = self.args
