@@ -195,9 +195,15 @@ class MirBuilder(ast.NodeVisitor):
         if func not in self._ebb.refs:
             func = self._ebb.reference(func)
 
-        # TODO: Argument passing...
+        args = []
 
-        result = self._ebb.call(func)
+        with self._visiting_names():
+            for arg in call.args:
+                self.visit(arg)
+                arg_value = self._ast_node_to_ssa[arg]
+                args.append(arg_value)
+
+        result = self._ebb.call(func, args=args)
 
         self._ast_node_to_ssa[call] = result
 
@@ -246,7 +252,6 @@ class MirBuilder(ast.NodeVisitor):
         self._ebb.ssa_value_types[result] = self.unit.tcx.get_id_or_insert(
             Primitive.Bool
         )
-        print(self._ast_node_to_ssa)
 
     def visit_If(self, if_):
         with self._visiting_names():

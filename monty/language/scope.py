@@ -100,7 +100,7 @@ class Scope:
                             module = self.unit.modules[item.node.module]
                             results.append(module)
 
-            else:
+            elif False:
                 raise NotImplementedError(item)
 
         else:
