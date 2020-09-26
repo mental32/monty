@@ -78,6 +78,31 @@ class Scope:
             ):
                 results.append(item)
 
+            elif item.ty is Primitive.Import:
+                if isinstance(item.node, ast.ImportFrom):
+                    for alias in item.node.names:
+                        if (
+                            alias.asname is not None
+                            and alias.asname == target_name
+                            or alias.name == target_name
+                        ):
+                            module = self.unit.modules[item.node.module]
+                            results.append(module.getattr(target_name))
+                else:
+                    assert isinstance(item.node, ast.Import)
+
+                    for module_name in item.node.names:
+                        if (
+                            module_name.asname is not None
+                            and module_name.asname == target_name
+                            or module_name.name == target_name
+                        ):
+                            module = self.unit.modules[item.node.module]
+                            results.append(module)
+
+            else:
+                raise NotImplementedError(item)
+
         else:
             if (parent := self.parent) is not None:
                 results += parent.lookup(target_name) or []
