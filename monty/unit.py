@@ -151,6 +151,10 @@ class CompilationUnit:
             st += "\n"
 
         for name, module in self.modules.items():
+            if module.builder is None:
+                st += f"{name!s}: <empty>\n"
+                continue
+
             st += f"{name!s}:\n{INDENT}"
 
             for (
@@ -179,15 +183,39 @@ class CompilationUnit:
 
         return st.strip()
 
-    def resolve_into_function(self, obj: ast.Call, scope: Scope) -> Optional[Function]:
+    def resolve_into_function(self, obj: ast.Call, scope: Scope) -> Optional[Union[Function, ExternalFunction]]:
         assert isinstance(obj, ast.Call), f"{obj=!r}"
 
-        # FIXME: at the moment `ast.FunctionDef`s only live in the module scope.
+        if isinstance(obj.func, ast.Name):
+            results = scope.lookup(obj.func.id)
+            return results[0] if results is not None else None
 
-        assert isinstance(obj.func, ast.Name), "Cant do attribute access yet..."
+        elif isinstance(obj.func, ast.Attribute):
+            def search(needle: ast.Attribute, haystack: Scope) -> Optional[Item]:
+                assert isinstance(needle, ast.Attribute), ast.dump(needle)
 
-        results = scope.lookup(obj.func.id)
-        return results[0] if results is not None else None
+                lhs: ast.AST = needle.value
+                rhs: str = needle.attr
+
+                # a.b.c
+                # Attribute(Attribute(value=Name(id="a"), attr="b"), attr="c")
+
+                if isinstance(lhs, ast.Attribute):
+                    left = search(lhs, haystack)
+
+                elif isinstance(lhs, ast.Name):
+                    left, *_ = haystack.lookup(lhs.id)
+
+                return left.getattr(rhs)
+
+            item = search(obj.func, scope)
+
+            if isinstance(item, ExternalFunction):
+                return item
+            else:
+                assert isinstance(item, Item)
+                assert item.function is not None
+                return item.function
 
     def reveal_type(self, node: ast.AST, scope: Scope) -> Optional[TypeId]:
         """Attempt to reveal the [product] type of a AST node."""
