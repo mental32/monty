@@ -46,6 +46,13 @@ class MirBuilder(ast.NodeVisitor):
         self._ebb.parameters += [callable_t.parameters]
         self._ebb.returns = callable_t.output
 
+        for arg in function.arguments:
+            value_ty = self.unit.resolve_annotation(scope=self.item.scope, ann_node=arg.node.annotation)
+            ty_size = self.unit.size_of(value_ty) if isinstance(value_ty, Primitive) else self.unit.tcx[value_ty].size()
+            self._name_to_stack_slot[arg.name] = slot = self._ebb.create_stack_slot(
+                ty_size, value_ty
+            )
+            
         with self._ebb.with_block():
             self.visit(function.node)
 
