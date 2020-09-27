@@ -264,7 +264,7 @@ class FluidBlock:
 
     def return_(self, value: Optional[SSAValue]):
         """Return from the function with a value."""
-        self._typecheck(value, expected=self.returns)
+        # self._typecheck(value, expected=self.returns)
         args = [value] if value is not None else []
         return self._emit(op=InstrOp.Return, args=args, ret=None)
 
