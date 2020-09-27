@@ -95,7 +95,7 @@ class MirBuilder(ast.NodeVisitor):
 
         # self._ebb.assign(ident=target_id, value=assign_value, ty=value_ty)
         if target_id not in self._name_to_stack_slot:
-            ty_size = self.unit.size_of(value_ty)
+            ty_size = self.unit.size_of(value_ty) if isinstance(value_ty, Primitive) else self.unit.tcx[value_ty].size()
             self._name_to_stack_slot[target_id] = slot = self._ebb.create_stack_slot(
                 ty_size, value_ty
             )
