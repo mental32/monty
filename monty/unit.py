@@ -5,8 +5,9 @@ from dataclasses import dataclass, field, InitVar
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
-from monty.language import Scope, Function, ImportDecl, Module, Item
-from monty.typing import Primitive, TypeContext, TypeId
+from monty.language import Scope, Function, ImportDecl, Module, MontyModule, Item
+from monty.typing import Primitive, TypeContext, TypeId, Callable
+from monty.mir import ExternalFunction
 
 
 @dataclass
@@ -63,7 +64,8 @@ class CompilationUnit:
         self.tcx.insert(Primitive.None_)
 
         self._stdlib_path = path_to_stdlib
-        self._monty_module = Module(name="__monty", path=None)
+        self._monty_module = monty_module = MontyModule(name="__monty", path=None, unit=self)
+        self.modules["__monty"] = monty_module
 
     def import_module(self, decl: ImportDecl) -> Optional[Module]:
         """Attempt to import a module from an import declaration into the current unit."""
@@ -170,6 +172,8 @@ class CompilationUnit:
 
                     for instr in block.body:
                         st += f"\n{INDENT * 3}{instr!s};"
+
+                st += f"\n\n{INDENT}"
 
             st += "\n\n"
 
