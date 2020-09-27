@@ -6,6 +6,7 @@ from typing import List, Iterator, Union, Optional, Dict, Callable as _Callable
 from monty.typing import Callable, Primitive, TypeInfo
 
 from .item import Item, ScopeableNodes
+from . import ImportDecl
 
 __all__ = ("Scope", "ScopeWalker")
 
@@ -15,11 +16,11 @@ class Scope:
     """Represents a semantic scope."""
 
     node: ast.AST
+    unit: "CompilationUnit" = field()
     items: List[Item] = field(default_factory=list)
     parent: Optional["Scope"] = None
     ribs: List[Dict[str, TypeInfo]] = field(default_factory=list)
     module: Optional[Item] = None
-    unit: Optional["CompilationUnit"] = None
 
     def __hash__(self):
         return hash(self.node)
@@ -32,6 +33,7 @@ class Scope:
         module: Optional["Item"] = None,
         unit: "CompilationUnit",
     ) -> "Scope":
+        assert unit is not None
         walker = ScopeWalker(scope=(s := Scope(node, module=module, unit=unit)))
         walker.visit(s.node)
         return walker.scope
@@ -114,6 +116,9 @@ class Scope:
 class ScopeWalker(ast.NodeVisitor):
     scope: Scope
 
+    def __post_init__(self):
+        assert self.scope is not None
+
     def add_item(self, item):
         if item.scope is not None:
             item.scope.parent = self.scope
@@ -125,7 +130,7 @@ class ScopeWalker(ast.NodeVisitor):
 
     def visit_Module(self, module):
         if self.scope.node is not module:
-            self.add_item(Item(ty=Primitive.Module, node=module))
+            self.add_item(Item(ty=Primitive.Module, node=module, unit=self.scope.unit))
 
         self.generic_visit(module)
 
@@ -133,13 +138,13 @@ class ScopeWalker(ast.NodeVisitor):
         if func is self.scope.node:
             self.generic_visit(func)
         else:
-            self.add_item(Item(node=func))
+            self.add_item(Item(node=func, unit=self.scope.unit))
 
     def visit_Import(self, imp):
-        self.add_item(Item(node=imp, ty=Primitive.Import))
+        self.add_item(Item(node=imp, ty=Primitive.Import, unit=self.scope.unit))
 
     def visit_ImportFrom(self, imp):
-        self.add_item(Item(node=imp, ty=Primitive.Import))
+        self.add_item(Item(node=imp, ty=Primitive.Import, unit=self.scope.unit))
 
     def visit_ClassDef(self, klass):
         raise NotImplementedError("Classes are not supported!")
@@ -148,10 +153,10 @@ class ScopeWalker(ast.NodeVisitor):
         raise NotImplementedError("Regular assignment is not supported!")
 
     def visit_AnnAssign(self, assign):
-        self.add_item(Item(ty=Primitive.LValue, node=assign))
+        self.add_item(Item(ty=Primitive.LValue, node=assign, unit=self.scope.unit))
 
     def visit_AugAssign(self, assign):
         raise NotImplementedError("AugAssign is not supported!")
 
     def visit_Return(self, ret):
-        self.add_item(Item(ty=Primitive.Return, node=ret))
+        self.add_item(Item(ty=Primitive.Return, node=ret, unit=self.scope.unit))
