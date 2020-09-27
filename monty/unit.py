@@ -249,7 +249,37 @@ class CompilationUnit:
             return self.tcx.get_id_or_insert(Primitive.Bool)
 
         elif isinstance(node, ast.Constant):
-            return self.resolve_annotation(Scope(node), node)
+            return self.resolve_annotation(scope=Scope(node, unit=self), ann_node=node)
+
+        elif isinstance(node, ast.Attribute):
+            def inspect(node: ast.Attribute) -> Item:
+                assert isinstance(node, ast.Attribute)
+
+                lhs: ast.AST = node.value
+                rhs: str = node.attr
+
+                # a.b.c
+                # Attribute(Attribute(value=Name(id="a"), attr="b"), attr="c")
+
+                if isinstance(lhs, ast.Attribute):
+                    left = inspect(lhs)
+
+                elif isinstance(lhs, ast.Name):
+                    left, *_ = scope.lookup(lhs.id)
+
+                return left.getattr(rhs)
+
+            item = inspect(node)
+
+            if not isinstance(item, Item) and hasattr(item, "into_item"):
+                item = item.into_item(self)
+
+            assert isinstance(item, Item)
+
+            if isinstance(item.ty, Primitive):
+                return self.tcx.get_id_or_insert(item.ty)
+            else:
+                return item.ty
 
         elif isinstance(node, ast.Name):
             assert isinstance(node.ctx, ast.Load), f"{ast.dump(node)}"
@@ -266,22 +296,12 @@ class CompilationUnit:
                 if target in stack:
                     return self.tcx.get_id_or_insert(stack[target])
 
-            for item_ in scope.items:
-                # print(f">>", item_)
-                func = item_.function
+            results = scope.lookup(target)
 
-                if func is not None and target == func.name:
-                    assert hasattr(
-                        func, "type_id"
-                    ), f"function object did not have a `type_id` {func=!r}"
-                    return func.type_id
-
-            # couldn't find the name in the local function scope.
-            # search the module's global scope...
-            module_scope = scope.module.scope
-
-            if scope != scope.module.scope:
-                return self.reveal_type(node, module_scope)
+            if results is not None:
+                item, *_ = results
+                assert isinstance(item, Item)
+                return self.tcx.get_id_or_insert(item.ty)
 
         raise RuntimeError(f"We don't know jack... {ast.dump(node)}")
 
