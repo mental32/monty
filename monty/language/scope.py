@@ -66,6 +66,16 @@ class Scope:
         """Perform a scope lookup of a particular name."""
         results = []
 
+        if isinstance(self.node, ast.FunctionDef):
+            item = next(filter((lambda it: it.node == self.node), self.parent.items))
+            assert item.function is not None
+            assert self.unit is not None
+
+            for arg in item.function.arguments:
+                if arg.name == target_name:
+                    arg_type = self.unit.resolve_annotation(ann_node=arg.node.annotation, scope=self)
+                    return [Item(ty=arg_type, node=arg)]
+
         for item in self.items:
             if item.ty is Primitive.LValue:
                 assert isinstance(item.node, ast.AnnAssign)
