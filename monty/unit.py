@@ -168,7 +168,11 @@ class CompilationUnit:
                     n,
                     obj,
                 ) in ebb.refs.items():
-                    obj = repr(obj.function) if isinstance(obj, Item) and obj.function is not None else repr(obj)
+                    if isinstance(obj, Item) and obj.function is not None:
+                        obj = repr(obj.function)
+                    else:
+                        obj = repr(obj)
+
                     st += f"{INDENT * 2}r{n} = {obj}\n"
 
                 for block_id, block in ebb.blocks.items():

@@ -20,8 +20,8 @@ class ExternalFunction:
         return hash(self.name)
 
     def __repr__(self) -> str:
-        args = ", ".join(map(repr, self.signature[0]))
-        signature = f"{self.name}({args}) -> {self.signature[1]!r}"
+        args = ", ".join(map((lambda arg: arg.name), self.signature[0]))
+        signature = f"{self.name}({args}) -> {self.signature[1].name}"
         return f"<ExternalFunction: {signature=!r}>"
 
     def into_item(self, unit: "CompilationUnit") -> Item:

@@ -127,6 +127,16 @@ class BlockInstr(NamedTuple):
             args = ", ".join([f"v{n}" for n in args])
             rest = f"call r{n}({args})"
 
+        elif op is InstrOp.StackLoad:
+            assert self.args is not None
+            slot, size, memory_type = self.args
+            rest = f"stack.load ss{slot!r}({size=!r} bytes, {memory_type=!r})"
+
+        elif op is InstrOp.StackStore:
+            assert self.args is not None
+            slot, value, = self.args
+            rest = f"stack.store v{value!r} => ss{slot!r}"
+
         elif op is InstrOp.StrConst:
             assert self.args is not None
             value, *_ = self.args
