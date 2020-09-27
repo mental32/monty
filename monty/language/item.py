@@ -1,8 +1,9 @@
 import ast
 from dataclasses import dataclass, field, InitVar
 from enum import IntEnum, auto
-from typing import List, Iterator, Union, Optional
+from typing import List, Iterator, Union, Optional, Any
 
+from . import Module
 from monty.typing import TypeId, Primitive
 from monty.diagnostic import Diagnostic, Error
 
@@ -25,7 +26,7 @@ class Item:
         from monty.language import Scope, Function
         from monty.unit import CompilationUnit
 
-        assert unit is None or isinstance(unit, CompilationUnit)
+        assert unit is None or isinstance(unit, CompilationUnit), repr(unit)
 
         if not isinstance(self.ty, (TypeId, Primitive)):
             raise TypeError(
@@ -73,3 +74,10 @@ class Item:
         if (scope := self.scope) is not None:
             for scoped_item in scope.items:
                 scoped_item.recursively_validate(diagnostics=diagnostics)
+
+    def getattr(self, attr: str) -> Any:
+        if self.ty is Primitive.Module:
+            assert isinstance(self.node, Module)
+            return self.node.getattr(attr)
+        else:
+            raise NotImplementedError(attr)
