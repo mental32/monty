@@ -99,8 +99,9 @@ class Scope:
                             and module_name.asname == target_name
                             or module_name.name == target_name
                         ):
-                            module = self.unit.modules[item.node.module]
-                            results.append(module)
+                            decl = ImportDecl(node=module_name, parent=item.node)
+                            module = self.unit.modules[decl.qualname[0]]
+                            results.append(module.as_item())
 
             elif False:
                 raise NotImplementedError(item)
