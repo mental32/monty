@@ -238,7 +238,10 @@ class CompilationUnit:
             return self.resolve_annotation(scope, node.annotation)
 
         elif isinstance(node, ast.Call):
-            return self.reveal_type(node.func, scope)
+            func_type_id = self.reveal_type(node.func, scope)
+            func_type = self.tcx[func_type_id]
+            assert isinstance(func_type, Callable), self.tcx.reconstruct(func_type_id)
+            return func_type.output
 
         elif isinstance(
             node, ast.Compare
