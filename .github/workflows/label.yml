@@ -5,21 +5,6 @@
 # file with configuration.  For more information, see:
 # https://github.com/actions/labeler
 
-A-stdlib:
-  - stldib/**/*
-
-A-mir:
-  - monty/mir/**/*
-
-A-tests:
-  - tests/**/*
-
-A-language:
-  - monty/language/**/*
-  
-A-typing:
-  - monty/typing/**/*
-
 name: Labeler
 on: [pull_request]
 

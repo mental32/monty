@@ -1,0 +1,14 @@
+stdlib:
+  - stldib/**/*
+
+mir:
+  - monty/mir/**/*
+
+tests:
+  - tests/**/*
+
+language:
+  - monty/language/**/*
+  
+typing:
+  - monty/typing/**/*
