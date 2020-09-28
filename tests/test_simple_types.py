@@ -12,7 +12,7 @@ def test_simple_function_types():
     code = monty.compile(s)
 
     oof = code.functions["oof"]
-    assert code.tcx.reconstruct(oof.type_id) == "Callable[Tuple[int, str], bool]"
+    assert code.tcx.reconstruct(oof.type_id) == "Callable[Tuple[Int, Pointer(StrSlice)], Bool]"
 
     foo = code.functions["foo"]
-    assert code.tcx.reconstruct(foo.type_id) == "Callable[Tuple[str, int], bool]"
+    assert code.tcx.reconstruct(foo.type_id) == "Callable[Tuple[Pointer(StrSlice), Int], Bool]"

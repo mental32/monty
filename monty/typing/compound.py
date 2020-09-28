@@ -39,10 +39,26 @@ class Callable(TypeInfo):
 
 
 @dataclass
-class Ref(TypeInfo):
+class PhantomRef(TypeInfo):
     """A reference type is used as a form of indirection when unifying types in the inference engine."""
 
     target: TypeId
 
     def as_str(self, tcx: "TypeContext"):
         return tcx[self.target].as_str(tcx)
+
+@dataclass
+class Pointer(TypeInfo):
+    """A generic pointer type."""
+
+    ty: TypeId
+
+    def as_str(self, tcx: "TypeContext"):
+        return f"Pointer({tcx[self.ty].as_str(tcx)})"
+
+    def size(self, *, bits: int = 64) -> int:
+        assert bits in {32, 64}, f"{bits=!r}"
+        return {
+            64: 8,
+            32: 4,
+        }[bits]

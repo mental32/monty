@@ -5,7 +5,7 @@ from typing import Dict, Any, Iterator
 
 from monty import typing
 from monty.language import Item
-from monty.typing import TypeId, TypeInfo, Primitive
+from monty.typing import TypeId, TypeInfo, Primitive, Pointer
 from monty.utils import swapattr
 from monty.unit import CompilationUnit
 
@@ -52,7 +52,7 @@ class MirBuilder(ast.NodeVisitor):
             self._name_to_stack_slot[arg.name] = slot = self._ebb.create_stack_slot(
                 ty_size, value_ty
             )
-            
+ 
         with self._ebb.with_block():
             self.visit(function.node)
 
@@ -147,7 +147,8 @@ class MirBuilder(ast.NodeVisitor):
         if ty is str:
             value = self.unit.data.insert(value, origin=const)
             fn = self._ebb.str_const
-            value_ty = self.unit.tcx.get_id_or_insert(Primitive.Str)
+            inner_ty = self.unit.tcx.get_id_or_insert(Primitive.StrSlice)
+            value_ty = self.unit.tcx.get_id_or_insert(Pointer(ty=inner_ty))
 
         elif ty is bool:
             fn = self._ebb.bool_const

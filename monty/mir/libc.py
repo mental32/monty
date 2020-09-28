@@ -50,7 +50,7 @@ class CDLL:
 
 
 fopen = ExternalFunction(
-    name="fopen", signature=([Primitive.I32, Primitive.Str], Primitive.Int)
+    name="fopen", signature=([Primitive.I32, Primitive.StrSlice], Primitive.Int)
 )
 
 fwrite = ExternalFunction(

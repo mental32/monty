@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
 from monty.language import Scope, Function, ImportDecl, Module, MontyModule, Item
-from monty.typing import Primitive, TypeContext, TypeId, Callable
+from monty.typing import Primitive, TypeContext, TypeId, Callable, Pointer
 from monty.mir import ExternalFunction
 
 
@@ -328,16 +328,25 @@ class CompilationUnit:
                 value = tree.value
                 assert value is None or isinstance(value, (str, int))
 
-                kind = Primitive.from_builtin_type(type(value)) or Primitive.Unknown
+                if (ty := type(value)) is str:
+                    value_ty = self.tcx.get_id_or_insert(Primitive.StrSlice)
+                    wrapper_ty = self.tcx.get_id_or_insert(Pointer(ty=value_ty))
+                else:
+                    kind = Primitive.from_builtin_type(ty) or Primitive.Unknown
+                    wrapper_ty = self.tcx.get_id_or_insert(kind)
 
-                return self.tcx.get_id_or_insert(kind)
+                return wrapper_ty
 
             elif isinstance(tree, ast.Name) and (
                 builtin_type := getattr(builtins, tree.id)
             ):
                 assert isinstance(tree.ctx, ast.Load)
 
-                if (ty := Primitive.from_builtin_type(builtin_type)) is None:
+                if builtin_type is str:
+                    value_ty = self.tcx.get_id_or_insert(Primitive.StrSlice)
+                    ty = Pointer(ty=value_ty)
+
+                elif (ty := Primitive.from_builtin_type(builtin_type)) is None:
                     raise Exception("Unsupported builtin type!")
 
                 return self.tcx.get_id_or_insert(ty)
