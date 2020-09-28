@@ -1,5 +1,6 @@
 __all__ = ("TypeId", "TypeInfo", "Primitive", "List", "Callable", "Ref")
 
+
 TypeId = int
 
 import ast
