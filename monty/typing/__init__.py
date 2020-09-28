@@ -40,6 +40,31 @@ def typecheck(
     ribs: List[Dict[str, TypeInfo]] = []
     item.scope.ribs = ribs
 
+    # Set the type_id of all function items first.
+    for target in filter((lambda item: item.function is not None), scope.items):
+        if isinstance(target.ty, TypeInfo):
+            type_id = tcx.get_id_or_insert(target.ty)
+        else:
+            type_id = target.ty
+
+        if (func := target.function) is not None:
+            if tcx[type_id] == Primitive.Unknown or not hasattr(func, "type_id"):
+
+                arguments = Tuple()
+                arguments.inner = [unit.resolve_annotation(scope, arg.node.annotation) for arg in func.arguments]
+
+                arguments_type = tcx.insert(arguments)
+                output_type = unit.resolve_annotation(scope, func.return_type)
+
+                func.type_id = tcx.insert(func_type := Callable(arguments_type, output_type))
+                target.ty = func_type
+
+            unit.functions[func.name] = func
+            continue
+
+        assert False, f"{target=!r}"
+
+    # Procede with the remaining items.
     for target in scope.items:
         node = target.node
 
@@ -51,18 +76,7 @@ def typecheck(
         assert isinstance(type_id, TypeId), f"{type_id=!r}"
 
         if (func := target.function) is not None:
-            if tcx[type_id] == Primitive.Unknown or not hasattr(func, "type_id"):
-
-                arguments = Tuple()
-                arguments.inner = [unit.resolve_annotation(scope, arg.node.annotation) for arg in func.arguments]
-
-                arguments_type = tcx.insert(arguments)
-                output_type = unit.resolve_annotation(scope, func.return_type)
-
-                func.type_id = tcx.insert(Callable(arguments_type, output_type))
-
-            unit.functions[func.name] = func
-
+            assert isinstance(tcx[func.type_id], Callable)
             typecheck(target, unit, item_type_id=func.type_id)
             continue
 
