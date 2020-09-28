@@ -8,5 +8,12 @@ def print(st: str):
     __monty.libc.fwrite(st, 1, len(st), stdout)
     __monty.libc.fflush(stdout)
 
+
+
 def len(st: str) -> int:
+    """A dummy len implementation."""
     return 20
+
+
+def int() -> int:
+    return 0
