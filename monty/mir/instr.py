@@ -85,7 +85,6 @@ class BlockInstr(NamedTuple):
             return [self.ret]
 
         elif op in (InstrOp.StrConst, InstrOp.Assign):
-            print("<<", repr(self), self.args)
             return self.args[:1]
 
         elif op in (InstrOp.BInt, InstrOp.BoolConst):
@@ -109,7 +108,7 @@ class BlockInstr(NamedTuple):
         else:
             raise Exception(f"Unhandled case! {op=!r}")
 
-    def __str__(self) -> str:
+    def debug(self, *, tcx: Optional["TypeContext"] = None) -> str:
         # pylint: disable=unpacking-non-sequence,not-an-iterable
         if self.ret is not None:
             ret = f"v{self.ret!r} = "
@@ -130,6 +129,10 @@ class BlockInstr(NamedTuple):
         elif op is InstrOp.StackLoad:
             assert self.args is not None
             slot, size, memory_type = self.args
+
+            if tcx is not None:
+                memory_type = tcx.reconstruct(memory_type)
+
             rest = f"stack.load ss{slot!r}({size=!r} bytes, {memory_type=!r})"
 
         elif op is InstrOp.StackStore:

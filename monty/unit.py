@@ -144,11 +144,12 @@ class CompilationUnit:
 
         INDENT = " " * 2
 
-        st += "data:\n"
-        for n, value in self.data._mapping.items():
-            st += f"{INDENT}s{n} = {value!r}\n"
-        else:
-            st += "\n"
+        if self.data._mapping:
+            st += "data:\n"
+            for n, value in self.data._mapping.items():
+                st += f"{INDENT}s{n} = {value!r}\n"
+            else:
+                st += "\n"
 
         for name, module in self.modules.items():
             if module.builder is None:
@@ -162,7 +163,9 @@ class CompilationUnit:
                 ebb,
             ) in module.builder.output.items():
                 ret = self.tcx[ebb.return_value].as_str(self.tcx)
-                st += f"func {name!s}({ebb.parameters}) -> {ret}\n"
+                parameters = ", ".join([self.tcx.reconstruct(type_id) for type_id in ebb.parameters])
+                st += f"func {name!s}({parameters}) -> {ret}\n"
+                del parameters
 
                 for (
                     n,
@@ -179,7 +182,7 @@ class CompilationUnit:
                     st += f"{INDENT * 2}b{block_id}:"
 
                     for instr in block.body:
-                        st += f"\n{INDENT * 3}{instr!s};"
+                        st += f"\n{INDENT * 3}{instr.debug(tcx=self.tcx)!s};"
 
                 st += f"\n\n{INDENT}"
 
@@ -244,7 +247,7 @@ class CompilationUnit:
         elif isinstance(node, ast.Call):
             func_type_id = self.reveal_type(node.func, scope)
             func_type = self.tcx[func_type_id]
-            assert isinstance(func_type, Callable), self.tcx.reconstruct(func_type_id)
+            assert isinstance(func_type, Callable), f"{self.tcx.reconstruct(func_type_id)=!r} {func_type}"
             return func_type.output
 
         elif isinstance(

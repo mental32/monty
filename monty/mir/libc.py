@@ -25,15 +25,13 @@ class ExternalFunction:
         return f"<ExternalFunction: {signature=!r}>"
 
     def into_item(self, unit: "CompilationUnit") -> Item:
-        (
-            args,
-            out,
-        ) = self.signature
+        # fmt: off
+        args, out = self.signature
+        # fmt: on
 
         func = Callable()
-        func.parameters = unit.tcx.get_id_or_insert(
-            Tuple(inner=[unit.tcx.get_id_or_insert(kind) for kind in args])
-        )
+        parameters = Tuple(inner=[unit.tcx.get_id_or_insert(kind) for kind in args])
+        func.parameters = unit.tcx.get_id_or_insert(parameters)
         func.output = unit.tcx.get_id_or_insert(out)
 
         ty = unit.tcx.get_id_or_insert(func)
