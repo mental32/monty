@@ -1,5 +1,4 @@
 SSAValue = int
-
 BlockId = int
 VariableId = int
 
