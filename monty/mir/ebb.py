@@ -114,27 +114,12 @@ class FluidBlock:
         variables = {**self.variables}
         stack_slots = {**self.stack_slots}
 
-        blocks = {}
-        for block_id, block in self.blocks.items():
-            if False and not block.parameters:
-                parameters = {}
-
-                referenced = block.get_all_referenced_values()
-                produced = block.get_all_produced_values()
-
-                print(
-                    f"{block_id=!r} {referenced=!r} {produced=!r}, {referenced.difference(produced)=!r}"
-                )
-
-                for foreign in referenced.difference(produced):
-                    parameters[foreign] = self.ssa_value_types[foreign]
-            else:
-                parameters = {**block.parameters}
-
-            body = tuple(block.body)
-
-            copy = BasicBlock(body=body, parameters=parameters)
-            blocks[block_id] = copy
+        blocks = {
+            block_id: BasicBlock(
+                body=tuple(block.body), parameters={**block.parameters}
+            )
+            for block_id, block in self.blocks.items()
+        }
 
         refs = {**self.refs}
 
