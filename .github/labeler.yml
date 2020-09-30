@@ -1,6 +1,9 @@
 stdlib:
   - stldib/**/*
 
+documentation:
+ - docs/**/*
+
 mir:
   - monty/mir/**/*
 
