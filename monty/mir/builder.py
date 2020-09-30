@@ -147,16 +147,16 @@ class MirBuilder(ast.NodeVisitor):
         if ty is str:
             value = self.unit.data.insert(value, origin=const)
             fn = self._ebb.str_const
-            inner_ty = self.unit.tcx.get_id_or_insert(Primitive.StrSlice)
-            value_ty = self.unit.tcx.get_id_or_insert(Pointer(ty=inner_ty))
+            inner_ty = self.unit.tcx.insert(Primitive.StrSlice)
+            value_ty = self.unit.tcx.insert(Pointer(ty=inner_ty))
 
         elif ty is bool:
             fn = self._ebb.bool_const
-            value_ty = self.unit.tcx.get_id_or_insert(Primitive.Bool)
+            value_ty = self.unit.tcx.insert(Primitive.Bool)
 
         elif ty is int:
             fn = self._ebb.int_const
-            value_ty = self.unit.tcx.get_id_or_insert(Primitive.I64)
+            value_ty = self.unit.tcx.insert(Primitive.I64)
 
         else:
             assert False, f"Unknown fn handler for {ty=!r}!"
@@ -184,7 +184,7 @@ class MirBuilder(ast.NodeVisitor):
             fn = {ast.Add: self._ebb.int_add, ast.Sub: self._ebb.int_sub,}[op]
 
             value = fn(lhs, rhs)
-            self._ebb.ssa_value_types[value] = self.unit.tcx.get_id_or_insert(
+            self._ebb.ssa_value_types[value] = self.unit.tcx.insert(
                 Primitive.I64
             )
         else:
@@ -224,7 +224,7 @@ class MirBuilder(ast.NodeVisitor):
         result_ty = self.unit.reveal_type(left, self.item.scope)
         result = self._ast_node_to_ssa[left]
 
-        i64 = self.unit.tcx.get_id_or_insert(Primitive.I64)
+        i64 = self.unit.tcx.insert(Primitive.I64)
 
         for (op, rvalue,) in zip(compare.ops, compare.comparators):
             rvalue_type = self.unit.reveal_type(rvalue, self.item.scope)
@@ -257,7 +257,7 @@ class MirBuilder(ast.NodeVisitor):
             result = self._ebb.bool_const(result, is_ssa_value=True)
 
         self._ast_node_to_ssa[compare] = result
-        self._ebb.ssa_value_types[result] = self.unit.tcx.get_id_or_insert(
+        self._ebb.ssa_value_types[result] = self.unit.tcx.insert(
             Primitive.Bool
         )
 
@@ -268,7 +268,7 @@ class MirBuilder(ast.NodeVisitor):
         expr_value = self._ast_node_to_ssa[if_.test]
 
         if self._ebb.ssa_value_types[expr_value] != (
-            i64 := self.unit.tcx.get_id_or_insert(Primitive.I64)
+            i64 := self.unit.tcx.insert(Primitive.I64)
         ):
             expr_value = self._ebb.cast_bool_to_int(i64, expr_value)
 
@@ -290,7 +290,7 @@ class MirBuilder(ast.NodeVisitor):
             self._ebb.jump(tail)
 
     def visit_While(self, while_):
-        i64 = self.unit.tcx.get_id_or_insert(Primitive.I64)
+        i64 = self.unit.tcx.insert(Primitive.I64)
 
         # print(f"{ast.dump(while_)=!r}")
 
@@ -303,7 +303,7 @@ class MirBuilder(ast.NodeVisitor):
                 self.visit(test := while_.test)
                 test_value = self._ast_node_to_ssa[test]
                 assert (a := self._ebb.ssa_value_types[test_value]) == (
-                    e := self.unit.tcx.get_id_or_insert(Primitive.Bool)
+                    e := self.unit.tcx.insert(Primitive.Bool)
                 ), f"{a=!r} {e=!r}"
                 const_one = self._ebb.int_const(1)
                 test_value = self._ebb.cast_bool_to_int(i64, test_value)

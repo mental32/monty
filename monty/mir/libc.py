@@ -30,11 +30,11 @@ class ExternalFunction:
         # fmt: on
 
         func = Callable()
-        parameters = Tuple(inner=[unit.tcx.get_id_or_insert(kind) for kind in args])
-        func.parameters = unit.tcx.get_id_or_insert(parameters)
-        func.output = unit.tcx.get_id_or_insert(out)
+        parameters = Tuple(inner=[unit.tcx.insert(kind) for kind in args])
+        func.parameters = unit.tcx.insert(parameters)
+        func.output = unit.tcx.insert(out)
 
-        ty = unit.tcx.get_id_or_insert(func)
+        ty = unit.tcx.insert(func)
         return Item(ty=ty, node=None, unit=unit)
 
 

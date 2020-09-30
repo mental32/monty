@@ -43,7 +43,7 @@ def typecheck(
     # Set the type_id of all function items first.
     for target in filter((lambda item: item.function is not None), scope.items):
         if isinstance(target.ty, TypeInfo):
-            type_id = tcx.get_id_or_insert(target.ty)
+            type_id = tcx.insert(target.ty)
         else:
             type_id = target.ty
 
@@ -69,7 +69,7 @@ def typecheck(
         node = target.node
 
         if isinstance(target.ty, TypeInfo):
-            type_id = tcx.get_id_or_insert(target.ty)
+            type_id = tcx.insert(target.ty)
         else:
             type_id = target.ty
 
@@ -85,7 +85,7 @@ def typecheck(
             if (value := node.value) is not None:
                 expr_ty = unit.reveal_type(value, scope)
             else:
-                expr_ty = tcx.get_id_or_insert(Primitive.None_)
+                expr_ty = tcx.insert(Primitive.None_)
 
             # "return f(...)" check `f`.output == `func`.output
             if isinstance(tcx[expr_ty], Callable):
@@ -109,7 +109,7 @@ def typecheck(
             if (ann := node.annotation) is not None:
                 annotation_id = unit.resolve_annotation(scope, ann)
             else:
-                annotation_id = tcx.get_id_or_insert(Primitive.Unknown)
+                annotation_id = tcx.insert(Primitive.Unknown)
 
             assert type(annotation_id) is TypeId, f"{type(annotation_id)!r}"
 

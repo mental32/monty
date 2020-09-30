@@ -253,7 +253,7 @@ class CompilationUnit:
         elif isinstance(
             node, ast.Compare
         ):  # All comparisions produce a boolean value anyway.
-            return self.tcx.get_id_or_insert(Primitive.Bool)
+            return self.tcx.insert(Primitive.Bool)
 
         elif isinstance(node, ast.Constant):
             return self.resolve_annotation(scope=Scope(node, unit=self), ann_node=node)
@@ -284,7 +284,7 @@ class CompilationUnit:
             assert isinstance(item, Item)
 
             if isinstance(item.ty, Primitive):
-                return self.tcx.get_id_or_insert(item.ty)
+                return self.tcx.insert(item.ty)
             else:
                 return item.ty
 
@@ -301,14 +301,14 @@ class CompilationUnit:
             #    we need to mangle every ast.Name node with a ast.Store context...
             for stack in scope.ribs[::-1]:
                 if target in stack:
-                    return self.tcx.get_id_or_insert(stack[target])
+                    return self.tcx.insert(stack[target])
 
             results = scope.lookup(target)
 
             if results is not None:
                 item, *_ = results
                 assert isinstance(item, Item)
-                return self.tcx.get_id_or_insert(item.ty)
+                return self.tcx.insert(item.ty)
 
         raise RuntimeError(f"We don't know jack... {ast.dump(node)}")
 
@@ -332,11 +332,11 @@ class CompilationUnit:
                 assert value is None or isinstance(value, (str, int))
 
                 if (ty := type(value)) is str:
-                    value_ty = self.tcx.get_id_or_insert(Primitive.StrSlice)
-                    wrapper_ty = self.tcx.get_id_or_insert(Pointer(ty=value_ty))
+                    value_ty = self.tcx.insert(Primitive.StrSlice)
+                    wrapper_ty = self.tcx.insert(Pointer(ty=value_ty))
                 else:
                     kind = Primitive.from_builtin_type(ty) or Primitive.Unknown
-                    wrapper_ty = self.tcx.get_id_or_insert(kind)
+                    wrapper_ty = self.tcx.insert(kind)
 
                 return wrapper_ty
 
@@ -346,15 +346,15 @@ class CompilationUnit:
                 assert isinstance(tree.ctx, ast.Load)
 
                 if builtin_type is str:
-                    value_ty = self.tcx.get_id_or_insert(Primitive.StrSlice)
+                    value_ty = self.tcx.insert(Primitive.StrSlice)
                     ty = Pointer(ty=value_ty)
 
                 elif (ty := Primitive.from_builtin_type(builtin_type)) is None:
                     raise Exception("Unsupported builtin type!")
 
-                return self.tcx.get_id_or_insert(ty)
+                return self.tcx.insert(ty)
 
             else:
                 return None
 
-        return check_builtins() or self.tcx.get_id_or_insert(Primitive.Unknown)
+        return check_builtins() or self.tcx.insert(Primitive.Unknown)
