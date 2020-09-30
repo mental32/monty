@@ -1,0 +1,6 @@
+[book]
+authors = ["mental"]
+language = "en"
+multilingual = false
+src = "src"
+title = "The Monty Development Guide"
