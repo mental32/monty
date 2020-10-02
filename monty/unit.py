@@ -53,16 +53,6 @@ class CompilationUnit:
     data: DataContext = field(default_factory=DataContext)
 
     def __post_init__(self, path_to_stdlib: Path):
-        assert not self.tcx.mapping
-
-        unknown = self.tcx.insert(Primitive.Unknown)
-        assert unknown == 0, f"Failed to slot Primitive.Unknown at type_id 0!"
-
-        self.tcx.insert(Primitive.I64)
-        self.tcx.insert(Primitive.I32)
-        self.tcx.insert(Primitive.Bool)
-        self.tcx.insert(Primitive.None_)
-
         self._stdlib_path = path_to_stdlib
         self._monty_module = monty_module = MontyModule(name="__monty", path=None, unit=self)
         self.modules["__monty"] = monty_module

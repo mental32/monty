@@ -8,6 +8,19 @@ __all__ = ("TypeContext",)
 
 
 class TypeContext(SSAMap[TypeInfo]):
+    def __init__(self):
+        super().__init__()
+
+        assert not self.mapping
+
+        unknown = self.insert(Primitive.Unknown)
+        assert unknown == 0, f"Failed to slot Primitive.Unknown at type_id 0!"
+
+        self.insert(Primitive.I64)
+        self.insert(Primitive.I32)
+        self.insert(Primitive.Bool)
+        self.insert(Primitive.None_)
+
     def __repr__(self) -> str:
         return f"<TypeContext: {self.mapping=!r}>"
 
