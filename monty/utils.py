@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Dict, Generic, Any, TypeVar, Optional
+from typing import Dict, Generic, Any, TypeVar, Optional, Union
 from types import MappingProxyType
 
 V = TypeVar("V")
@@ -16,6 +16,8 @@ def swapattr(obj: Any, name: str, default: Any, target: Any):
 
 @dataclass
 class SSAMap(Generic[V]):
+    """A helper to store unique instances of type `V` mapped to unique `int` keys."""
+
     __internal: Dict[int, V] = field(repr=False, init=False, default_factory=dict)
     __counter: int = field(repr=False, init=False, default=-1)
 
@@ -29,9 +31,13 @@ class SSAMap(Generic[V]):
                 if value_ == value:
                     return value_id
 
-        self.__counter += 1
-        self.__internal[self.__counter] = value
-        return self.__counter
+        self.__counter = idx = self.__counter + 1
+        self.__internal[idx] = value
+
+        if __debug__:
+            print(f"Inserting... {value=!r} as {idx=!r}")
+
+        return idx
 
     def set_unchecked(self, key: int, value: V):
         self.__internal[key] = value
@@ -39,8 +45,14 @@ class SSAMap(Generic[V]):
     def get(self, key: int) -> Optional[V]:
         return self.__internal.get(key, None)
 
-    def get_unchecked(self, key: int) -> V:
-        return self.__internal[key]
+    def get_unchecked(self, key: Union[int, V]) -> Union[V, int]:
+        if type(key) is int:  # Strict typecheck here since `TypeInfo` is an `IntEnum`
+            return self.__internal[key]
+
+        def _raise():
+            raise KeyError(f"No entry {key=!r} found in {self.__mapping=!r}")
+
+        return self.get_by_value(key) or _raise()
 
     def get_by_value(self, this: V) -> Optional[int]:
         for key, that in self.__internal.items():
@@ -49,10 +61,11 @@ class SSAMap(Generic[V]):
         else:
             return None
 
-    def __getitem__(self, key: int) -> V:
+    def __getitem__(self, key: Union[int, V]) -> Union[V, int]:
         return self.get_unchecked(key)
 
     def __setitem__(self, key: int, value: V):
+        assert type(key) is int
         self.set_unchecked(key, value)
 
     def __iter__(self):

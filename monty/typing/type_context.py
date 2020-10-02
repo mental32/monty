@@ -30,11 +30,11 @@ class TypeContext(SSAMap[TypeInfo]):
 
     def primitives(self) -> Dict[str, TypeId]:
         return {
-            "int": self.mapping[Primitive.I64],
-            "i64": self.mapping[Primitive.I64],
-            "i32": self.mapping[Primitive.I32],
-            "none": self.mapping[Primitive.None_],
-            "bool": self.mapping[Primitive.Bool],
+            "int": self[Primitive.Int],
+            "i64": self[Primitive.I64],
+            "i32": self[Primitive.I32],
+            "none": self[Primitive.None_],
+            "bool": self[Primitive.Bool],
         }
 
     def reconstruct(self, kind: TypeId) -> str:
