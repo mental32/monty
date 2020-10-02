@@ -14,7 +14,7 @@ from monty.unit import CompilationUnit
 
 __all__ = ("compile",)
 
-_STDLIB_PATH = (Path(".").parent / "stdlib").resolve().absolute()
+_STDLIB_PATH = (Path(__file__).parent.parent / "stdlib").resolve().absolute()
 
 
 def compile(
@@ -23,7 +23,7 @@ def compile(
     unit: Optional[CompilationUnit] = None,
     arch: Optional[str] = None,
     path_to_stdlib: Optional[Path] = None,
-):
+) -> CompilationUnit:
     """Attempt to compile some `source` code into a compiled module.
 
     The steps should be taken as following:
