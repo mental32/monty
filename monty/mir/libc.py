@@ -3,10 +3,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Tuple as _Tuple, Set, List
 
-from monty.language import Item
+from monty.language import Item, PhantomModule
 from monty.typing import Primitive, Callable, TypeInfo, Tuple
 
-__all__ = ("ExternalFunction", "CDLL", "LIBC_FUNCTIONS")
+__all__ = ("ExternalFunction", "CDLL", "LIBC_FUNCTIONS", "LIBC_MODULE")
 
 
 @dataclass
@@ -62,3 +62,5 @@ fwrite = ExternalFunction(
 fflush = ExternalFunction(name="fflush", signature=([Primitive.I32], Primitive.I32))
 
 LIBC_FUNCTIONS = {fopen, fwrite, fflush}
+
+LIBC_MODULE = PhantomModule(name="libc", namespace={extern.name: extern for extern in LIBC_FUNCTIONS})

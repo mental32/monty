@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, InitVar
 from enum import IntEnum, auto
 from typing import List, Iterator, Union, Optional, Any
 
-from . import Module
+from . import AbstractModule
 from monty.typing import TypeId, Primitive
 from monty.diagnostic import Diagnostic, Error
 
@@ -77,7 +77,7 @@ class Item:
 
     def getattr(self, attr: str) -> Any:
         if self.ty is Primitive.Module:
-            assert isinstance(self.node, Module)
+            assert isinstance(self.node, AbstractModule)
             return self.node.getattr(attr)
         else:
             raise NotImplementedError(attr)

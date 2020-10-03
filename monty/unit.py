@@ -5,9 +5,9 @@ from dataclasses import dataclass, field, InitVar
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
-from monty.language import Scope, Function, ImportDecl, Module, MontyModule, Item
+from monty.language import Scope, Function, ImportDecl, Module, PhantomModule, Item
 from monty.typing import Primitive, TypeContext, TypeId, Callable, Pointer
-from monty.mir import ExternalFunction
+from monty.mir import ExternalFunction, LIBC_MODULE
 
 
 @dataclass
@@ -54,7 +54,13 @@ class CompilationUnit:
 
     def __post_init__(self, path_to_stdlib: Path):
         self._stdlib_path = path_to_stdlib
-        self._monty_module = monty_module = MontyModule(name="__monty", path=None, unit=self)
+        self._monty_module = monty_module = PhantomModule(
+            name="__monty",
+            namespace={
+                "libc": LIBC_MODULE,
+                "unit": Item(ty=Primitive.Unknown, node=self)
+            },
+        )
         self.modules["__monty"] = monty_module
 
     def import_module(self, decl: ImportDecl) -> Optional[Module]:
@@ -140,6 +146,8 @@ class CompilationUnit:
                 st += f"{INDENT}s{n} = {value!r}\n"
             else:
                 st += "\n"
+        else:
+            st += "data: <empty>\n"
 
         for name, module in self.modules.items():
             if module.builder is None:
