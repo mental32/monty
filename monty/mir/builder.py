@@ -173,14 +173,16 @@ class MirBuilder(ast.NodeVisitor):
 
         ty = self.unit.reveal_type(binop, self.item.scope)
 
-        assert (
-            self.unit.type_ctx[ty] == Primitive.I64
-        ), f"{self.unit.type_ctx.reconstruct(ty)!r}"
+        NUMBER_TYPES = (Primitive.I64, Primitive.I32, Primitive.Int)
 
-        kind = self.unit.type_ctx[ty]
+        assert (
+            self.unit.tcx[ty] in NUMBER_TYPES
+        ), f"{self.unit.tcx.reconstruct(ty)!r}"
+
+        kind = self.unit.tcx[ty]
         op = type(binop.op)
 
-        if kind in (Primitive.I64, Primitive.I32, Primitive.Int):
+        if kind in NUMBER_TYPES:
             fn = {ast.Add: self._ebb.int_add, ast.Sub: self._ebb.int_sub,}[op]
 
             value = fn(lhs, rhs)
