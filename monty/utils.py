@@ -1,3 +1,4 @@
+import ast
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Dict, Generic, Any, TypeVar, Optional, Union
@@ -81,3 +82,14 @@ class SSAMap(Generic[V]):
 
     def __iter__(self):
         return iter(self.__internal.items())
+
+
+class StrictASTVisitor(ast.NodeVisitor):
+    def __getattribute__(self, attr: str) -> Any:
+        try:
+            return object.__getattribute__(self, attr)
+        except AttributeError as exc:
+            if attr.startswith("visit_"):
+                raise RuntimeError(f"Failed to find visitor {attr=!r}") from exc
+
+            raise

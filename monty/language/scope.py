@@ -3,8 +3,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum, auto
 from typing import List, Iterator, Union, Optional, Dict, Callable as _Callable
 
-from monty.typing import Callable, Primitive, TypeInfo
-
+from monty.utils import StrictASTVisitor
 from .item import Item, ScopeableNodes
 from . import ImportDecl
 
@@ -19,8 +18,8 @@ class Scope:
     unit: "CompilationUnit" = field()
     items: List[Item] = field(default_factory=list)
     parent: Optional["Scope"] = None
-    ribs: List[Dict[str, TypeInfo]] = field(default_factory=list)
-    module: Optional[Item] = None
+    ribs: List[Dict[str, "TypeInfo"]] = field(default_factory=list)
+    module: Optional["Item"] = None
 
     def __hash__(self):
         return hash(self.node)
@@ -124,7 +123,7 @@ class Scope:
 
 
 @dataclass
-class ScopeWalker(ast.NodeVisitor):
+class ScopeWalker(StrictASTVisitor):
     scope: Scope
 
     def __post_init__(self):
