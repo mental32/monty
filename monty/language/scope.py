@@ -39,6 +39,8 @@ class Scope:
 
     @property
     def scopes(self) -> List["Scope"]:
+        from ..typing import Scope
+
         inner = []
 
         for item in self.items:
@@ -63,6 +65,8 @@ class Scope:
 
     def lookup(self, target_name: str) -> Optional[List[Item]]:
         """Perform a scope lookup of a particular name."""
+        from ..typing import Callable, primitives, TypeInfo
+
         results = []
 
         if isinstance(self.node, ast.FunctionDef):
@@ -72,11 +76,13 @@ class Scope:
 
             for arg in item.function.arguments:
                 if arg.name == target_name:
-                    arg_type = self.unit.resolve_annotation(ann_node=arg.node.annotation, scope=self)
+                    arg_type = self.unit.resolve_annotation(
+                        ann_node=arg.node.annotation, scope=self
+                    )
                     return [Item(ty=arg_type, node=arg)]
 
         for item in self.items:
-            if item.ty is Primitive.LValue:
+            if isinstance(item.node, (ast.Assign, ast.AnnAssign)):
                 assert isinstance(item.node, ast.AnnAssign)
                 assert isinstance(item.node.target, ast.Name)
 
@@ -89,7 +95,7 @@ class Scope:
             ):
                 results.append(item)
 
-            elif item.ty is Primitive.Import:
+            elif isinstance(item.ty, primitives.ImportType):
                 if isinstance(item.node, ast.ImportFrom):
                     for alias in item.node.names:
                         if (
@@ -115,11 +121,10 @@ class Scope:
             elif False:
                 raise NotImplementedError(item)
 
-        else:
-            if (parent := self.parent) is not None:
-                results += parent.lookup(target_name) or []
+        if (parent := self.parent) is not None:
+            results += parent.lookup(target_name)
 
-        return results or None
+        return results
 
 
 @dataclass
@@ -129,7 +134,9 @@ class ScopeWalker(StrictASTVisitor):
     def __post_init__(self):
         assert self.scope is not None
 
-    def add_item(self, item):
+    def add_item(self, **kwargs):
+        item = Item(**kwargs, unit=self.scope.unit)
+
         if item.scope is not None:
             item.scope.parent = self.scope
             item.scope.module = self.scope.module
@@ -138,9 +145,13 @@ class ScopeWalker(StrictASTVisitor):
 
     # Visitors
 
+    visit_arguments = lambda _, __: None
+
     def visit_Module(self, module):
+        from ..typing import primitives
+
         if self.scope.node is not module:
-            self.add_item(Item(ty=Primitive.Module, node=module, unit=self.scope.unit))
+            self.add_item(ty=primitives.ModuleType(), node=module)
 
         self.generic_visit(module)
 
@@ -148,13 +159,17 @@ class ScopeWalker(StrictASTVisitor):
         if func is self.scope.node:
             self.generic_visit(func)
         else:
-            self.add_item(Item(node=func, unit=self.scope.unit))
+            self.add_item(node=func)
 
     def visit_Import(self, imp):
-        self.add_item(Item(node=imp, ty=Primitive.Import, unit=self.scope.unit))
+        from ..typing import primitives
+
+        self.add_item(node=imp, ty=primitives.ImportType())
 
     def visit_ImportFrom(self, imp):
-        self.add_item(Item(node=imp, ty=Primitive.Import, unit=self.scope.unit))
+        from ..typing import primitives
+
+        self.add_item(node=imp, ty=primitives.ImportType())
 
     def visit_ClassDef(self, klass):
         raise NotImplementedError("Classes are not supported!")
@@ -163,10 +178,27 @@ class ScopeWalker(StrictASTVisitor):
         raise NotImplementedError("Regular assignment is not supported!")
 
     def visit_AnnAssign(self, assign):
-        self.add_item(Item(ty=Primitive.LValue, node=assign, unit=self.scope.unit))
+        from ..typing import primitives
+
+        self.add_item(ty=primitives.Unknown(), node=assign)
 
     def visit_AugAssign(self, assign):
         raise NotImplementedError("AugAssign is not supported!")
 
     def visit_Return(self, ret):
-        self.add_item(Item(ty=Primitive.Return, node=ret, unit=self.scope.unit))
+        from ..typing import primitives
+
+        self.add_item(ty=primitives.Unknown(), node=ret)
+
+    def visit_Assert(self, assert_):
+        from ..typing import primitives
+
+        self.add_item(ty=primitives.Unknown(), node=assert_)        
+
+    def visit_Expr(self, expr):
+        from ..typing import primitives
+
+        self.add_item(ty=primitives.Unknown(), node=expr)
+
+    def visit_Name(self, name):
+        pass # Noop

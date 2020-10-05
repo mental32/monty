@@ -6,7 +6,7 @@ from functools import lru_cache
 __all__ = ("ImportDecl",)
 
 # import x.y as z
-# 
+#
 # qualname = ("x", "y")
 # access_path = "z"
 #

@@ -4,7 +4,6 @@ from enum import IntEnum, auto
 from typing import List, Iterator, Union, Optional, Any
 
 from . import AbstractModule
-from monty.typing import TypeId, Primitive
 from monty.diagnostic import Diagnostic, Error
 
 ScopeableNodes = Union[ast.FunctionDef, ast.Lambda, ast.Module, ast.ClassDef]
@@ -14,7 +13,7 @@ ScopeableNodes = Union[ast.FunctionDef, ast.Lambda, ast.Module, ast.ClassDef]
 class Item:
     node: ast.AST = field(repr=False)
     unit: InitVar["CompilationUnit"] = field(default=None)
-    ty: Union[TypeId, Primitive] = field(default=Primitive.Unknown)
+    ty: Union["TypeId", "Primitive"] = field(default=0)
 
     scope: Optional["Scope"] = None
     function: Optional["Function"] = None
@@ -26,9 +25,13 @@ class Item:
         from monty.language import Scope, Function
         from monty.unit import CompilationUnit
 
+        from ..typing import primitives, TypeId
+
         assert unit is None or isinstance(unit, CompilationUnit), repr(unit)
 
-        if not isinstance(self.ty, (TypeId, Primitive)):
+        if not (
+            isinstance(self.ty, (TypeId, primitives.Primitive))
+        ):
             raise TypeError(
                 f"Item type must be a TypeId or a Primitive! got {self.ty=!r}"
             )
@@ -38,7 +41,7 @@ class Item:
             self.scope = Scope.from_node(self.node, module=module, unit=unit)
 
         if self.function is None and isinstance(self.node, ast.FunctionDef):
-            self.function = Function(self.node)
+            self.function = Function(self.node, item=self)
 
     @property
     def is_scopable(self) -> bool:
@@ -76,7 +79,9 @@ class Item:
                 scoped_item.recursively_validate(diagnostics=diagnostics)
 
     def getattr(self, attr: str) -> Any:
-        if self.ty is Primitive.Module:
+        from ..typing import primitives
+
+        if isinstance(self.ty, primitives.ModuleType):
             assert isinstance(self.node, AbstractModule)
             return self.node.getattr(attr)
         else:

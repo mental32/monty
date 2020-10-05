@@ -5,7 +5,6 @@ from typing import Optional, Set, Dict, Any, TYPE_CHECKING
 from functools import lru_cache
 
 from . import ImportDecl
-from monty.typing import Primitive
 
 if TYPE_CHECKING:
     from monty.language import Item
@@ -32,20 +31,22 @@ class AbstractModule(ABC):
 
     @property
     def imports(self) -> Set[ImportDecl]:
-        from ..typing import Primitive
+        from ..typing import primitives
 
         def produce_import_decls():
             return {
                 ImportDecl(node=node, parent=item.node)
                 for item in self.builder.root.scope.items
                 for node in item.node.names
-                if item.ty is Primitive.Import
+                if isinstance(item.ty, primitives.ImportType)
             }
 
         return produce_import_decls() if self.builder is not None else set()
 
     @abstractmethod
-    def getattr(self, attribute: str, *, unit: Optional["CompilationUnit"] = None) -> Any:
+    def getattr(
+        self, attribute: str, *, unit: Optional["CompilationUnit"] = None
+    ) -> Any:
         """Imitate an `object.__getattr__`"""
 
     @abstractmethod
@@ -56,7 +57,9 @@ class AbstractModule(ABC):
 class Module(AbstractModule):
     """Represents a compiled module."""
 
-    def getattr(self, attribute: str, *, unit: Optional["CompilationUnit"] = None) -> Any:
+    def getattr(
+        self, attribute: str, *, unit: Optional["CompilationUnit"] = None
+    ) -> Any:
         if (obj := self.namespace.get(attribute, None)) is not None:
             return obj
 
@@ -86,14 +89,19 @@ class Module(AbstractModule):
     def as_item(self) -> "Item":
         return self.builder.root
 
+
 class PhantomModule(AbstractModule):
     """Phantom modules are used to describe legitimate modules without compiling anything."""
 
-    def getattr(self, attribute: str, *, unit: Optional["CompilationUnit"] = None) -> Any:
-        return self.namespace.get(attribute, None) or (unit is not None and getattr(unit, attribute))
+    def getattr(
+        self, attribute: str, *, unit: Optional["CompilationUnit"] = None
+    ) -> Any:
+        return self.namespace.get(attribute, None) or (
+            unit is not None and getattr(unit, attribute)
+        )
 
     def as_item(self) -> "Item":
         from . import Item
-        from ..typing import Primitive
+        from ..typing import primitives
 
-        return Item(ty=Primitive.Module, node=self)
+        return Item(ty=primitives.ModuleType(), node=self)

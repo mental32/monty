@@ -5,7 +5,7 @@ from typing import Dict, Any, Iterator
 
 from monty import typing
 from monty.language import Item
-from monty.typing import TypeId, TypeInfo, Primitive, Pointer
+from monty.typing import TypeId, TypeInfo, primitives, Pointer
 from monty.utils import swapattr
 from monty.unit import CompilationUnit
 
@@ -47,12 +47,14 @@ class MirBuilder(ast.NodeVisitor):
         self._ebb.returns = callable_t.output
 
         for arg in function.arguments:
-            value_ty = self.unit.resolve_annotation(scope=self.item.scope, ann_node=arg.node.annotation)
-            ty_size = self.unit.size_of(value_ty) if isinstance(value_ty, Primitive) else self.unit.tcx[value_ty].size()
+            value_ty = self.unit.resolve_annotation(
+                scope=self.item.scope, ann_node=arg.node.annotation
+            )
+            ty_size = self.unit.tcx[value_ty].size()
             self._name_to_stack_slot[arg.name] = slot = self._ebb.create_stack_slot(
                 ty_size, value_ty
             )
- 
+
         with self._ebb.with_block():
             self.visit(function.node)
 
@@ -70,9 +72,7 @@ class MirBuilder(ast.NodeVisitor):
             if target in self._name_to_stack_slot:
                 slot = self._name_to_stack_slot[target]
                 value = self._ebb.stack_load(slot)
-                value_type = self.unit.reveal_type(
-                    name, self.item.scope
-                )
+                value_type = self.unit.reveal_type(name, self.item.scope)
 
             else:
                 item, *_ = self.item.scope.lookup(target)
@@ -82,7 +82,6 @@ class MirBuilder(ast.NodeVisitor):
 
             self._ast_node_to_ssa[name] = value
             self._ebb.ssa_value_types[value] = value_type
-
 
         with swapattr(self, "_visit_name", None, visit_name):
             yield
@@ -98,19 +97,15 @@ class MirBuilder(ast.NodeVisitor):
         assign_value = self._ast_node_to_ssa[value_node]
         target_id = assign.target.id
 
-        # variable_id = self.unit.get_variable_id(target_id, self.item)
-
-        # self._ebb.assign(ident=target_id, value=assign_value, ty=value_ty)
         if target_id not in self._name_to_stack_slot:
-            ty_size = self.unit.size_of(value_ty) if isinstance(value_ty, Primitive) else self.unit.tcx[value_ty].size()
+            ty_size = self.unit.tcx[value_ty].size()
             self._name_to_stack_slot[target_id] = slot = self._ebb.create_stack_slot(
                 ty_size, value_ty
             )
-        else:
-            slot = self._name_to_stack_slot[target_id]
+
+        slot = self._name_to_stack_slot[target_id]
 
         self._ebb.stack_store(slot, assign_value)
-        # print(f"{self._name_to_stack_slot=!r}")
 
     def visit_Pass(self, _):
         self._ebb.nop()
@@ -147,16 +142,16 @@ class MirBuilder(ast.NodeVisitor):
         if ty is str:
             value = self.unit.data.insert(value, origin=const)
             fn = self._ebb.str_const
-            inner_ty = self.unit.tcx.insert(Primitive.StrSlice)
+            inner_ty = self.unit.tcx.insert(primitives.StrSlice())
             value_ty = self.unit.tcx.insert(Pointer(ty=inner_ty))
 
         elif ty is bool:
             fn = self._ebb.bool_const
-            value_ty = self.unit.tcx.insert(Primitive.Bool)
+            value_ty = self.unit.tcx.insert(primitives.Boolean())
 
         elif ty is int:
             fn = self._ebb.int_const
-            value_ty = self.unit.tcx.insert(Primitive.I64)
+            value_ty = self.unit.tcx.insert(primitives.Int64())
 
         else:
             assert False, f"Unknown fn handler for {ty=!r}!"
@@ -173,22 +168,21 @@ class MirBuilder(ast.NodeVisitor):
 
         ty = self.unit.reveal_type(binop, self.item.scope)
 
-        NUMBER_TYPES = (Primitive.I64, Primitive.I32, Primitive.Int)
+        NUMBER_TYPES = (primitives.Int64, primitives.Int32, primitives.Integer)
 
-        assert (
-            self.unit.tcx[ty] in NUMBER_TYPES
-        ), f"{self.unit.tcx.reconstruct(ty)!r}"
+        assert self.unit.tcx[ty] in NUMBER_TYPES, f"{self.unit.tcx.reconstruct(ty)!r}"
 
         kind = self.unit.tcx[ty]
         op = type(binop.op)
 
-        if kind in NUMBER_TYPES:
-            fn = {ast.Add: self._ebb.int_add, ast.Sub: self._ebb.int_sub,}[op]
+        if isinstance(kind, NUMBER_TYPES):
+            fn = {
+                ast.Add: self._ebb.int_add,
+                ast.Sub: self._ebb.int_sub,
+            }[op]
 
             value = fn(lhs, rhs)
-            self._ebb.ssa_value_types[value] = self.unit.tcx.insert(
-                Primitive.I64
-            )
+            self._ebb.ssa_value_types[value] = self.unit.tcx.insert(primitives.Int64())
         else:
             raise Exception(f"Attempted BinOp on unknown kinds {ast.dump(binop)}")
 
@@ -226,9 +220,12 @@ class MirBuilder(ast.NodeVisitor):
         result_ty = self.unit.reveal_type(left, self.item.scope)
         result = self._ast_node_to_ssa[left]
 
-        i64 = self.unit.tcx.insert(Primitive.I64)
+        i64 = self.unit.tcx.insert(primitives.Int64())
 
-        for (op, rvalue,) in zip(compare.ops, compare.comparators):
+        for (
+            op,
+            rvalue,
+        ) in zip(compare.ops, compare.comparators):
             rvalue_type = self.unit.reveal_type(rvalue, self.item.scope)
 
             self.visit(rvalue)
@@ -236,11 +233,11 @@ class MirBuilder(ast.NodeVisitor):
             rvalue_ssa = self._ast_node_to_ssa[rvalue]
             rvalue_type = self.unit.tcx[rvalue_type]
 
-            if rvalue_type == Primitive.Bool:
+            if isinstance(rvalue_type, primitives.Boolean):
                 rvalue_ssa = self._ebb.cast_bool_to_int(i64, rvalue_ssa)
-                rvalue_type = Primitive.I64
+                rvalue_type = primitives.Int64()
 
-            if rvalue_type in (Primitive.I64, Primitive.I32, Primitive.Int):
+            if isinstance(rvalue_type, (primitives.Int64, primitives.Int32, primitives.Integer)):
                 ops = {ast.Eq: "eq", ast.NotEq: "neq", ast.Gt: "gt"}
 
                 if (op := type(op)) not in ops:
@@ -255,13 +252,11 @@ class MirBuilder(ast.NodeVisitor):
 
         result_ty = self.unit.tcx[result_ty]
 
-        if result_ty in (Primitive.I64, Primitive.I32, Primitive.Int,):
+        if isinstance(result_ty, (primitives.Int64, primitives.Int32, primitives.Integer)):
             result = self._ebb.bool_const(result, is_ssa_value=True)
 
         self._ast_node_to_ssa[compare] = result
-        self._ebb.ssa_value_types[result] = self.unit.tcx.insert(
-            Primitive.Bool
-        )
+        self._ebb.ssa_value_types[result] = self.unit.tcx.insert(primitives.Boolean())
 
     def visit_If(self, if_):
         with self._visiting_names():
@@ -270,7 +265,7 @@ class MirBuilder(ast.NodeVisitor):
         expr_value = self._ast_node_to_ssa[if_.test]
 
         if self._ebb.ssa_value_types[expr_value] != (
-            i64 := self.unit.tcx.insert(Primitive.I64)
+            i64 := self.unit.tcx.insert(primitives.Int64())
         ):
             expr_value = self._ebb.cast_bool_to_int(i64, expr_value)
 
@@ -292,7 +287,7 @@ class MirBuilder(ast.NodeVisitor):
             self._ebb.jump(tail)
 
     def visit_While(self, while_):
-        i64 = self.unit.tcx.insert(Primitive.I64)
+        i64 = self.unit.tcx.insert(primitives.Int64())
 
         # print(f"{ast.dump(while_)=!r}")
 
@@ -305,7 +300,7 @@ class MirBuilder(ast.NodeVisitor):
                 self.visit(test := while_.test)
                 test_value = self._ast_node_to_ssa[test]
                 assert (a := self._ebb.ssa_value_types[test_value]) == (
-                    e := self.unit.tcx.insert(Primitive.Bool)
+                    e := self.unit.tcx.insert(primitives.Boolean())
                 ), f"{a=!r} {e=!r}"
                 const_one = self._ebb.int_const(1)
                 test_value = self._ebb.cast_bool_to_int(i64, test_value)

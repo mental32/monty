@@ -2,14 +2,16 @@ import typing
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from . import Primitive, TypeId, TypeInfo
+from . import primitives, TypeId, TypeInfo
 
 if TYPE_CHECKING:
     from monty.typing import TypeContext
 
+
 @dataclass
 class Tuple(TypeInfo):
     """A tuple, which is essentially a struct with anonymous fields."""
+
     inner: typing.Optional[typing.List[TypeId]] = field(default=None)
 
     def as_str(self, tcx: "TypeContext") -> str:
@@ -31,8 +33,8 @@ class List(TypeInfo):
 class Callable(TypeInfo):
     """Functions, lambda's, classes, etc...Anything implementing `__call__`."""
 
-    parameters: TypeId = field(default=Primitive.Unknown)
-    output: TypeId = field(default=Primitive.Unknown)
+    parameters: TypeId = field(default=primitives.Unknown())
+    output: TypeId = field(default=primitives.Unknown())
 
     def as_str(self, tcx: "TypeContext") -> str:
         return f"Callable[{tcx.reconstruct(self.parameters)}, {tcx.reconstruct(self.output)}]"
@@ -47,14 +49,18 @@ class PhantomRef(TypeInfo):
     def as_str(self, tcx: "TypeContext"):
         return tcx[self.target].as_str(tcx)
 
+
 @dataclass
 class Pointer(TypeInfo):
     """A generic pointer type."""
 
     ty: TypeId
 
+    def __eq__(self, other):
+        return type(other) == type(self) and self.ty == other.ty
+
     def as_str(self, tcx: "TypeContext"):
-        return f"Pointer({tcx[self.ty].as_str(tcx)})"
+        return f"Pointer({tcx.reconstruct(self.ty)})"
 
     def size(self, *, bits: int = 64) -> int:
         assert bits in {32, 64}, f"{bits=!r}"

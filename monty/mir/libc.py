@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Tuple as _Tuple, Set, List
 
 from monty.language import Item, PhantomModule
-from monty.typing import Primitive, Callable, TypeInfo, Tuple
+from monty.typing import primitives, Callable, TypeInfo, Tuple
 
 __all__ = ("ExternalFunction", "CDLL", "LIBC_FUNCTIONS", "LIBC_MODULE")
 
@@ -20,8 +20,8 @@ class ExternalFunction:
         return hash(self.name)
 
     def __repr__(self) -> str:
-        args = ", ".join(map((lambda arg: arg.name), self.signature[0]))
-        signature = f"{self.name}({args}) -> {self.signature[1].name}"
+        args = ", ".join(map(repr, self.signature[0]))
+        signature = f"{self.name}({args}) -> {self.signature[1]!r}"
         return f"<ExternalFunction: {signature=!r}>"
 
     def into_item(self, unit: "CompilationUnit") -> Item:
@@ -48,19 +48,21 @@ class CDLL:
 
 
 fopen = ExternalFunction(
-    name="fopen", signature=([Primitive.I32, Primitive.StrSlice], Primitive.Int)
+    name="fopen", signature=([primitives.Int32(), primitives.StrSlice()], primitives.Integer())
 )
 
 fwrite = ExternalFunction(
     name="fwrite",
     signature=(
-        [Primitive.I32, Primitive.I32, Primitive.I32, Primitive.I32],
-        Primitive.Int,
+        [primitives.Int32(), primitives.Int32(), primitives.Int32(), primitives.Int32()],
+        primitives.Integer(),
     ),
 )
 
-fflush = ExternalFunction(name="fflush", signature=([Primitive.I32], Primitive.I32))
+fflush = ExternalFunction(name="fflush", signature=([primitives.Int32()], primitives.Int32()))
 
 LIBC_FUNCTIONS = {fopen, fwrite, fflush}
 
-LIBC_MODULE = PhantomModule(name="libc", namespace={extern.name: extern for extern in LIBC_FUNCTIONS})
+LIBC_MODULE = PhantomModule(
+    name="libc", namespace={extern.name: extern for extern in LIBC_FUNCTIONS}
+)

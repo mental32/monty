@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 
 from monty.language import Scope, Function, ImportDecl, Module, PhantomModule, Item
-from monty.typing import Primitive, TypeContext, TypeId, Callable, Pointer
+from monty.typing import primitives, TypeContext, TypeId, Callable, Pointer
 from monty.mir import ExternalFunction, LIBC_MODULE
 
 
@@ -53,16 +53,16 @@ class CompilationUnit:
     data: DataContext = field(default_factory=DataContext)
 
     def __post_init__(self, path_to_stdlib: Path):
-        self._stdlib_path = path_to_stdlib
-        self._monty_module = monty_module = PhantomModule(
+        monty_module = PhantomModule(
             name="__monty",
             namespace={
                 "libc": LIBC_MODULE,
-                "unit": Item(ty=Primitive.Unknown, node=self)
+                "unit": Item(ty=primitives.Unknown(), node=self),
             },
         )
-        self.modules["__monty"] = monty_module
 
+        self.modules["__monty"] = self._monty_module = monty_module
+        self._stdlib_path = path_to_stdlib
     def import_module(self, decl: ImportDecl) -> Optional[Module]:
         """Attempt to import a module from an import declaration into the current unit."""
         if (idx := self.data.fetch_by_origin(origin=decl)) is not None:
@@ -77,7 +77,7 @@ class CompilationUnit:
         else:
             qualname = decl.qualname
 
-        assert qualname
+        assert qualname, f"{decl=!r}"
         if qualname[0] == "__monty":
             return self._monty_module
 
@@ -133,7 +133,11 @@ class CompilationUnit:
                 else:
                     final_qualname.append(part)
 
-        return insert_module(final_path, qualname=qualname) if final_path is not None else None
+        return (
+            insert_module(final_path, qualname=qualname)
+            if final_path is not None
+            else None
+        )
 
     def disassemble(self) -> str:
         st = ""
@@ -143,7 +147,7 @@ class CompilationUnit:
         if self.data._mapping:
             st += "data:\n"
             for n, value in self.data._mapping.items():
-                st += f"{INDENT}s{n} = {value!r}\n"
+                st += f"{INDENT}d{n} = {value!r}\n"
             else:
                 st += "\n"
         else:
@@ -161,7 +165,9 @@ class CompilationUnit:
                 ebb,
             ) in module.builder.output.items():
                 ret = self.tcx[ebb.return_value].as_str(self.tcx)
-                parameters = ", ".join([self.tcx.reconstruct(type_id) for type_id in ebb.parameters])
+                parameters = ", ".join(
+                    [self.tcx.reconstruct(type_id) for type_id in ebb.parameters]
+                )
                 st += f"func {name!s}({parameters}) -> {ret}\n"
                 del parameters
 
@@ -188,14 +194,19 @@ class CompilationUnit:
 
         return st.strip()
 
-    def resolve_into_function(self, obj: ast.Call, scope: Scope) -> Optional[Union[Function, ExternalFunction]]:
+    def resolve_into_function(
+        self, obj: ast.Call, scope: Scope
+    ) -> Optional[Union[Function, ExternalFunction]]:
         assert isinstance(obj, ast.Call), f"{obj=!r}"
 
         if isinstance(obj.func, ast.Name):
             results = scope.lookup(obj.func.id)
-            return results[0] if results is not None else None
+            item = results[0] if results is not None else None
+            assert item.function is not None
+            return item.function
 
         elif isinstance(obj.func, ast.Attribute):
+
             def search(needle: ast.Attribute, haystack: Scope) -> Optional[Item]:
                 assert isinstance(needle, ast.Attribute), ast.dump(needle)
 
@@ -215,12 +226,21 @@ class CompilationUnit:
 
             item = search(obj.func, scope)
 
+            assert (
+                isinstance(item, ExternalFunction)
+                or isinstance(item, Item)
+                and item.function is not None
+            )
+
             if isinstance(item, ExternalFunction):
                 return item
             else:
                 assert isinstance(item, Item)
                 assert item.function is not None
                 return item.function
+
+        else:
+            assert False, f"{ast.dump(obj)}"
 
     def reveal_type(self, node: ast.AST, scope: Scope) -> Optional[TypeId]:
         """Attempt to reveal the [product] type of a AST node."""
@@ -245,18 +265,21 @@ class CompilationUnit:
         elif isinstance(node, ast.Call):
             func_type_id = self.reveal_type(node.func, scope)
             func_type = self.tcx[func_type_id]
-            assert isinstance(func_type, Callable), f"{self.tcx.reconstruct(func_type_id)=!r} {func_type}"
+            assert isinstance(
+                func_type, Callable
+            ), f"{self.tcx.reconstruct(func_type_id)=!r} {func_type}"
             return func_type.output
 
         elif isinstance(
             node, ast.Compare
         ):  # All comparisions produce a boolean value anyway.
-            return self.tcx.insert(Primitive.Bool)
+            return self.tcx.insert(primitives.Boolean())
 
         elif isinstance(node, ast.Constant):
             return self.resolve_annotation(scope=Scope(node, unit=self), ann_node=node)
 
         elif isinstance(node, ast.Attribute):
+
             def inspect(node: ast.Attribute) -> Item:
                 assert isinstance(node, ast.Attribute)
 
@@ -281,7 +304,7 @@ class CompilationUnit:
 
             assert isinstance(item, Item)
 
-            if isinstance(item.ty, Primitive):
+            if isinstance(item.ty, primitives.Primitive):
                 return self.tcx.insert(item.ty)
             else:
                 return item.ty
@@ -312,11 +335,12 @@ class CompilationUnit:
 
     def resolve_annotation(
         self,
+        *,
         scope: Scope,
         ann_node: Union[ast.Str, ast.Subscript, ast.Name, ast.Attribute],
     ) -> TypeId:
-        if isinstance(ann_node, ast.Str):
-            tree = ast.parse(ann_node, mode="eval")
+        if isinstance(ann_node, str):
+            tree = ast.parse(ann_node, mode="eval").body
         else:
             tree = ann_node
 
@@ -330,10 +354,13 @@ class CompilationUnit:
                 assert value is None or isinstance(value, (str, int))
 
                 if (ty := type(value)) is str:
-                    value_ty = self.tcx.insert(Primitive.StrSlice)
+                    value_ty = self.tcx.insert(primitives.StrSlice())
                     wrapper_ty = self.tcx.insert(Pointer(ty=value_ty))
                 else:
-                    kind = Primitive.from_builtin_type(ty) or Primitive.Unknown
+                    kind = (
+                        primitives.Primitive.from_builtin_type(ty)
+                        or primitives.Unknown()
+                    )
                     wrapper_ty = self.tcx.insert(kind)
 
                 return wrapper_ty
@@ -344,10 +371,12 @@ class CompilationUnit:
                 assert isinstance(tree.ctx, ast.Load)
 
                 if builtin_type is str:
-                    value_ty = self.tcx.insert(Primitive.StrSlice)
+                    value_ty = self.tcx.insert(primitives.StrSlice())
                     ty = Pointer(ty=value_ty)
 
-                elif (ty := Primitive.from_builtin_type(builtin_type)) is None:
+                elif (
+                    ty := primitives.Primitive.from_builtin_type(builtin_type)
+                ) is None:
                     raise Exception("Unsupported builtin type!")
 
                 return self.tcx.insert(ty)
@@ -355,4 +384,4 @@ class CompilationUnit:
             else:
                 return None
 
-        return check_builtins() or self.tcx.insert(Primitive.Unknown)
+        return check_builtins() or self.tcx.insert(primitives.Unknown())

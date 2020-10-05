@@ -10,11 +10,10 @@ __all__ = ("TypeInfo",)
 class TypeInfo:
     """Base class for all comprehensible types."""
 
+    @abstractmethod
     def as_str(self, tcx: "TypeContext") -> str:
         """Produce a locally constructed representation of the type."""
-        raise NotImplementedError("Failed to implement reconstruct.")
 
     @abstractmethod
     def size(self) -> int:
         """Get the size of this type in bytes."""
-        raise NotImplementedError()

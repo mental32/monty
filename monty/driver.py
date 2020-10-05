@@ -9,7 +9,7 @@ from monty.language import Item, Module
 from monty.errors import CompilationException
 
 from monty.mir import Ebb, Module as ModuleBuilder
-from monty.typing import Primitive
+from monty.typing import primitives
 from monty.unit import CompilationUnit
 
 __all__ = ("compile",)
@@ -81,13 +81,14 @@ def compile(
     if unit is None:
         unit = CompilationUnit(path_to_stdlib=path_to_stdlib)
 
-    root_item = Item(node=root_node, ty=Primitive.Module, unit=unit)
+    root_item = Item(node=root_node, ty=primitives.ModuleType(), unit=unit)
 
     if issues := root_item.recursively_validate():
         raise CompilationException(issues)
 
-    if issues := monty.typing.typecheck(item=root_item, unit=unit):
+    if issues := unit.tcx.typecheck(item=root_item, unit=unit):
         raise CompilationException(issues)
+
 
     if module_name not in unit.modules:
         unit.modules[module_name] = module = Module(name=module_name, path=None)

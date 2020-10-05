@@ -47,7 +47,7 @@ class Function:
     node: ast.FunctionDef
     arguments: Set[Argument] = field(init=False)
     return_type: str = field(init=False)
-
+    item: Optional["Item"] = field(default=False)
     return_nodes: Set[ast.Return] = field(init=False, default_factory=set)
 
     def __post_init__(self):
