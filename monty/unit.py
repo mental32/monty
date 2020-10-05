@@ -258,10 +258,11 @@ class CompilationUnit:
             lty = self.tcx[lhs]
             rty = self.tcx[rhs]
 
-            if lty == Primitive.I64 and rty == Primitive.I64:
-                return self.tcx.get_id_or_insert(Primitive.I64)
-            else:
-                raise RuntimeError(f"{lty}, {rty}")
+            if lty == rty:
+                return self.tcx.insert(lty)
+
+            exc = f"{self.tcx.reconstruct(lty)} != {self.tcx.reconstruct(rty)}, {ast.dump(node)=!r}"
+            raise RuntimeError(exc)
 
         elif isinstance(node, ast.AnnAssign):
             return self.resolve_annotation(scope, node.annotation)
