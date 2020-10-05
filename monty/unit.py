@@ -63,6 +63,10 @@ class CompilationUnit:
 
         self.modules["__monty"] = self._monty_module = monty_module
         self._stdlib_path = path_to_stdlib
+
+    def is_node_docstring(self, node: ast.AST) -> bool:
+        return any(node in {*ast.walk(func.node.body[0])} for func in self.functions.values())
+
     def import_module(self, decl: ImportDecl) -> Optional[Module]:
         """Attempt to import a module from an import declaration into the current unit."""
         if (idx := self.data.fetch_by_origin(origin=decl)) is not None:

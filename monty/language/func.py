@@ -90,5 +90,9 @@ class Function:
     def name(self):
         return self.node.name
 
+    @property
+    def docstring(self) -> str:
+        return ast.get_docstring(self.node)
+
     def disassemble(self) -> str:
         return repr(self)

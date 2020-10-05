@@ -67,12 +67,18 @@ def compile(
     if arch is not None:
         raise NotImplementedError("Support for custom targets is not implemented yet.")
     else:
-        arch = subprocess.check_output("gcc -dumpmachine", shell=True).decode("utf-8").strip()
+        arch = (
+            subprocess.check_output("gcc -dumpmachine", shell=True)
+            .decode("utf-8")
+            .strip()
+        )
 
     path_to_stdlib = path_to_stdlib or _STDLIB_PATH
 
     assert isinstance(path_to_stdlib, Path), type(path_to_stdlib)
-    assert path_to_stdlib.exists(), f"provided path to stdlib does not exist! {path_to_stdlib=!r}"
+    assert (
+        path_to_stdlib.exists()
+    ), f"provided path to stdlib does not exist! {path_to_stdlib=!r}"
 
     root_node = ast.parse(source_input)
 
