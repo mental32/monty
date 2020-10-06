@@ -298,3 +298,52 @@ class TypeContext(SSAMap[TypeInfo]):
                 )
 
         return type_errors
+
+    # Inference
+
+    def infer(self, root: Item) -> Dict[ast.AST, Optional[TypeId]]:
+        assert root.scope is not None
+        assert isinstance(root.node, ast.FunctionDef)
+
+        scope = root.scope
+        skip = set()
+
+        node_type_map: Dict[ast.AST, TypeInfo] = {}
+
+        def infer_type_for_node(node: ast.AST) -> TypeInfo:
+            if node in skip:
+                return primitives.Unknown()
+
+            if isinstance(node, ast.Constant):
+                assert node.kind is None
+                return primitives.Primitive.from_builtin_type(type(node.value))
+
+            if node is root.node:
+                if root.function is not None:
+                    skip.add(node.args)
+
+                return root.ty
+
+            if isinstance(node, ast.Expr):
+                return infer_type_for_node(node.value)
+
+            if isinstance(node, ast.AnnAssign):
+                skip.add(node.annotation)
+                ann_id = scope.unit.resolve_annotation(
+                    ann_node=node.annotation, scope=scope
+                )
+                return scope.unit.tcx[ann_id]
+
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                print("-" * 200)
+                tmp = scope.lookup(node.id)
+                print(f"{tmp=!r}")
+                last, *_ = tmp
+                return infer_type_for_node(last.node)
+
+            assert False, f"Failed type inference for {ast.dump(node)}"
+
+        for node in ast.walk(root):
+            node_type_map[node] = infer_type_for_node(node)
+
+        return {node: self.insert(ty) for node, ty in node_type_map.items()}
