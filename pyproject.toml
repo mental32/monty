@@ -6,7 +6,7 @@ authors = ["mental <mentalfoss@yahoo.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.3"
