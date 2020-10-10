@@ -1,9 +1,20 @@
 import ast
+from ast import walk
 import builtins
 from dataclasses import dataclass, field
-from os import name
+from os import name, pardir
 from pprint import pformat
-from typing import Dict, Generator, Iterator, List, NamedTuple, Optional, Set, Tuple, Type
+from typing import (
+    Dict,
+    Generator,
+    Iterator,
+    List,
+    NamedTuple,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+)
 from functools import cached_property
 
 
@@ -43,6 +54,8 @@ NoneType = PrimitiveBase(name="NoneType")
 UnknownType = PrimitiveBase(name="UnknownType")
 ModuleType = PrimitiveBase(name="ModuleType")
 IntegerType = PrimitiveBase(name="IntegerType")
+FloatType = PrimitiveBase(name="FloatType")
+
 
 @dataclass
 class Pointer(TypeInfo):
@@ -52,7 +65,7 @@ class Pointer(TypeInfo):
 PRIMITIVE_TYPES = {
     str: Function(name="str", args=[], ret=Pointer(IntegerType)),
     int: Function(name="int", args=[], ret=IntegerType),
-    float: KlassType(name="float"),
+    float: Function(name="float", args=[], ret=FloatType),
     type(None): NoneType,
 }
 
@@ -115,6 +128,9 @@ class NodeEntry(NamedTuple):
 class MontyDriver:
     modules: Dict[str, Dict[ASTNode, NodeEntry]] = field(default_factory=dict)
 
+    def typecheck(self, entry: NodeEntry):
+        pass
+
     def infer(self, entry: NodeEntry) -> Optional[TypeInfo]:
         """Attempt to infer the type of some item."""
         item = entry.item
@@ -125,46 +141,59 @@ class MontyDriver:
 
         item_node_type = type(item.node)
 
-        UNTYPED_NODE_TYPES = frozenset(
-            {
-                ast.Store,
-                ast.Load,
-                ast.arguments,
-            }
-        )
+        # fmt: off
+        LEGAL_NODE_TYPES = frozenset({
+            ast.Module,
+            ast.FunctionDef,
+            ast.AnnAssign,
+            ast.Name,
+            ast.Load,
+            ast.Store,
+            ast.Constant,
+            ast.arguments,
+        })
+        # fmt: on
+
+        if item_node_type not in LEGAL_NODE_TYPES:
+            raise NotImplementedError(
+                f"{item_node_type!r} is not supported at the moment."
+            )
+
+        UNTYPED_NODE_TYPES = frozenset({ast.Store, ast.Load, ast.arguments})
 
         if item_node_type in UNTYPED_NODE_TYPES:
             return UnknownType
 
         elif item_node_type is ast.FunctionDef:
             return_annotation = item.node.returns
+            ret = NoneType
 
-            if return_annotation is None:
-                ret = NoneType
-            else:
-                ret = self.infer(self.modules[entry.span.file_name][return_annotation])
-
-            if isinstance(ret, Function):
-                ret = ret.ret
+            if return_annotation is not None:
+                node = self.infer(self.modules[entry.span.file_name][return_annotation])
+                ret = node.ret if isinstance(node, Function) else node
 
             return Function(name=item.node.name, args=[], ret=ret)
 
         elif item_node_type is ast.Name:
-            if isinstance(item.parent, ast.AnnAssign) and item.parent.annotation is not item.node:
-                # Type of the name depends on the annotation.
-                dependent_entry = self.modules[entry.span.file_name][item.parent.annotation]
-                return TypeRef(other=dependent_entry.item)
+            if (
+                (is_regular_assignment := isinstance(item.parent, ast.Assign))
+                or isinstance(item.parent, ast.AnnAssign)
+                and item.parent.annotation is not item.node
+            ):
+                # Type of the name depends on the type of the expression or the annotation.
+                dependent_entry = self.modules[entry.span.file_name][
+                    item.parent.value
+                    if is_regular_assignment
+                    else item.parent.annotation
+                ]
 
-            elif isinstance(item.parent, ast.Assign):
-                # Type of the name depends on the type of the expression.
-                dependent_entry = self.modules[entry.span.file_name][item.parent.value]
                 return TypeRef(other=dependent_entry.item)
 
             else:
                 return PRIMITIVE_TYPES[getattr(builtins, item.node.id)].ret
 
         elif item_node_type is ast.Constant:
-            return PRIMITIVE_TYPES[type(item.node.value)]
+            return PRIMITIVE_TYPES[type(item.node.value)].ret
 
         elif item_node_type in (ast.AnnAssign, ast.Assign):
             return NoneType
@@ -178,6 +207,11 @@ class MontyDriver:
         root_tree = ast.parse(st)
         assert isinstance(root_tree, ast.Module), f"{ast.dump(root_tree)=!r}"
 
+        # TODO:
+        #   const/comptime/macro logic should occur here so we can rewrite
+        #   the tree, dropping any disqualifed roots from further compilation
+        #   in a "as if they never existed." style.
+
         self.modules[module_name] = nodes = {}
 
         def postorder_walk(
@@ -188,13 +222,32 @@ class MontyDriver:
             else:
                 yield (parent, node)
 
-        current_scope: Optional[Scope] = None
-        leftover: Set[Item] = set()
+        def find_first_scope(
+            root_tree: ASTNode,
+        ) -> Tuple[Scope, Iterator[Tuple[ASTNode, ASTNode]]]:
+            walker = postorder_walk(None, root_tree)
+            leftover: Set[Item] = set()
 
-        for (
-            parent,
-            node,
-        ) in postorder_walk(None, root_tree):
+            for (parent, node) in walker:
+                nodes[node] = entry = NodeEntry.from_node(
+                    node=node, module_name=module_name
+                )
+
+                entry.item.parent = parent
+
+                if (scope := entry.item.scope) is not None:
+                    for item in leftover:
+                        item.scope = scope
+
+                    scope.elements.extend(leftover)
+                    return (scope, walker)
+                else:
+                    leftover.add(entry.item)
+            else:
+                raise RuntimeError("Failed to reach at least one scope.")
+
+        (current_scope, walker) = find_first_scope(root_tree)
+        for (parent, node) in walker:
             nodes[node] = entry = NodeEntry.from_node(
                 node=node, module_name=module_name
             )
@@ -211,47 +264,30 @@ class MontyDriver:
             #  * The scope of the item/ast node.
             #
             if (scope := entry.item.scope) is not None:
-                if current_scope is not None:
-                    # Common case, multiple scopes.
-                    scope.elements.append(current_scope.item)
-                else:
-                    # Rare case (should happen once per module.)
-                    #
-                    # Case of the first scope appearing, re-process the
-                    # leftover items and bind the correct scope.
-                    for item in leftover:
-                        item.scope = scope
-
-                    scope.elements.extend(leftover)
-                    leftover = set()
-
+                scope.elements.append(current_scope.item)
                 current_scope = scope
-
-            elif current_scope is not None:
+            else:
                 # Common case, the item itself does not introduce a new scope.
                 # just bind it to whatever the current scope is.
                 entry.item.scope = current_scope
 
-            else:
-                # Unfortunately for the first scope all items are marked as
-                # leftover until we hit a ceiling, at which point we re-process
-                # them and assign the correct scope.
-                leftover.add(entry.item)
-
-        for node, entry, in nodes.items():
+        for (node, entry) in nodes.items():
             if (inferred := self.infer(entry)) is not None:
                 entry.item.kind = inferred
             else:
                 assert False, f"Failed to infer type for {entry=!r}"
 
-            print(f"{entry.item}\n{pformat(entry.item.scope.elements)!s}\n\n")
+            if isinstance(entry.item.node, (ast.Import, ast.ImportFrom)):
+                raise NotImplementedError("Import logic is missing.")
+
+            # print(f"{entry.item}\n{pformat(entry.item.scope.elements)!s}\n\n")
 
         self.typecheck(entry=nodes[root_tree])
 
 
 test_input = """
 def f():
-    a: int = "foo"
+    a: int = 0.0
 """
 
 driver = MontyDriver()
