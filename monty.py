@@ -115,7 +115,9 @@ def ofwhichinstance(this: Any, *those: type) -> Optional[type]:
     else:
         return None
 
+
 WalkStream = Iterator[Tuple[int, Optional[ASTNode], ASTNode]]
+
 
 def postorder_walk(
     parent: Optional[ASTNode],
@@ -256,58 +258,102 @@ class NodeEntry(NamedTuple):
         return self.item.node
 
     @classmethod
-    def from_module(cls, root: ast.Module, *, module_name: str) -> Tuple["NodeEntry", Dict[ASTNode, "NodeEntry"]]:
+    def from_module(
+        cls, root: ast.Module, *, module_name: str
+    ) -> Tuple["NodeEntry", Dict[ASTNode, "NodeEntry"]]:
         """Produce a realized entry for a module root."""
         assert isinstance(root, ast.Module)
 
         def check_depth(pred, succ) -> bool:
-            """A depth change has occured if the parent or child node will own a scope."""
+            """A depth change has occured if the parent abd child node own a scope."""
             return isinstance(pred, CAN_HAVE_SCOPE) and isinstance(succ, CAN_HAVE_SCOPE)
 
         # Generate a post-order "walk" (this will attempt to yield AST nodes from the leaves up.)
         traversal = postorder_walk(parent=None, node=root, pred=check_depth)
 
+        # The following code will fold all non-owning scope nodes into their scope-owning parents.
+        # from the leaves up into the module root.
+
         stream = deque(traversal)
         depth, _, node = stream.popleft()
+        local_entry = cls.from_node(node=node, module_name=module_name)
 
-        nodes: Dict[ASTNode, NodeEntry] = {}
-        entry = cls.from_node(node=root, module_name=module_name)
-
-        bucket: Dict[int, List[Item]] = {depth: [entry.item]}
+        local_nodes: Dict[ASTNode, NodeEntry] = {}
+        dangling: Dict[ASTNode, List[Item]] = {}
+        bucket: Dict[int, List[Item]] = {depth: [local_entry.item]}
 
         while stream:
-            n, _, node = stream.popleft()
+            n, p, node = stream.popleft()
 
-            nodes[node] = entry = NodeEntry.from_node(
+            local_nodes[node] = local_entry = NodeEntry.from_node(
                 node=node, module_name=module_name
             )
 
-            if n == depth:
-                bucket[n].append(entry.item)
+            # print(f"\n[{n}] {p}\t{node}")
+
+            peek_depth = stream[0][0] if stream else 0
+
+            if (
+                not isinstance(node, CAN_HAVE_SCOPE)
+                and isinstance(p, CAN_HAVE_SCOPE)
+                and (max(peek_depth, n) - min(peek_depth, n) > 1)
+            ):
+                # print(f"[{depth} -> {stream[0][0]}] Bailout! {local_entry.item.node!r} will be added to {p}")
+
+                if p in dangling:
+                    dangling[p] += bucket[depth]
+                else:
+                    dangling[p] = bucket[depth][:]
+
+                dangling[p].append(local_entry.item)
+
+                bucket[depth] = []
+                depth = n
 
             elif n == (depth - 1):
-                assert entry.item.scope is not None
-                entry.item.scope.elements.extend(bucket[depth])
+                # print(f"[{n}] Flushing depth bucket! {local_entry.item!r}")
+
+                assert local_entry.item.scope is not None
+                local_entry.item.scope.elements.extend(
+                    bucket[depth] + dangling.get(node, [])
+                )
+
+                for item in dangling.pop(node, []):
+                    if not isinstance(item.node, CAN_HAVE_SCOPE):
+                        item.scope = local_entry.item.scope
+
+                    item.parent = local_entry.item.node
 
                 for item in bucket[depth]:
                     if not isinstance(item.node, CAN_HAVE_SCOPE):
-                        item.scope = entry.item.scope
+                        item.scope = local_entry.item.scope
 
-                    item.parent = entry.item.node
+                    item.parent = local_entry.item.node
 
                 if n in bucket:
-                    bucket[n].append(entry.item)
+                    bucket[n].append(local_entry.item)
                 else:
-                    bucket[n] = [entry.item]
+                    bucket[n] = [local_entry.item]
 
                 depth = n
+
+                # print(f"[{n}] {local_entry.item!r} now contains {len(local_entry.item.scope.elements)} element(s)")
+                # for elem in local_entry.item.scope:
+                #     print(f"\t{elem}")
+
+            elif n == depth:
+                # print(f"[{n}] Adding node to depth {local_entry.item!r}")
+                bucket[n].append(local_entry.item)
 
             else:
-                assert n == (depth + 1), (n, depth)
-                bucket[n] = [entry.item]
+                bucket[n] = [local_entry.item]
                 depth = n
+        else:
+            assert not dangling, repr(dangling)
 
-        return (entry, nodes)
+        root_entry = local_nodes[root]
+
+        return (root_entry, local_nodes)
 
     @classmethod
     def from_node(cls, node: ASTNode, *, module_name: str) -> "NodeEntry":
@@ -613,7 +659,40 @@ class MontyDriver:
 
             else:
                 assert isinstance(item.node.ctx, ast.Store)
-                return UnknownType
+                assert item.parent is not None
+
+                parent_scope = self._ast_nodes[item.parent].item.scope
+
+                assert parent_scope is not None
+
+                def o(i: "Item") -> bool:
+                    node = i.node
+
+                    print(i)
+
+                    if (
+                        isinstance(asn := node, ast.Assign)
+                        and len(asn.targets) == 1
+                        and asn.targets[0] is item.node
+                    ):
+                        return True
+
+                    if (
+                        isinstance(ann := node, ast.AnnAssign)
+                        and ann.target is item.node
+                    ):
+                        return True
+
+                    return False
+
+                for parent in filter(o, parent_scope.elements):
+                    pn = parent.node
+                    assert isinstance(pn, (ast.Assign, ast.AnnAssign))
+                    assert pn.value is not None
+                    value = self._ast_nodes[pn.value]
+                    return TypeRef(other=value.item)
+                else:
+                    return None
 
         elif item_node_type is ast.Constant:
             assert isinstance(item.node, ast.Constant)
@@ -665,12 +744,13 @@ class MontyDriver:
             if isinstance(n, ast.Constant):
                 return bool(n.value)
 
-            if isinstance(n, ast.Name):
-                if seq is None:
-                    assert (
-                        False
-                    ), f"No history sequence provided in order to search the name: {ast.dump(n)!r}"
-
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
+                # comptime-name-lookup requires a sequence of AST nodes that
+                # that came "before" this one. This sequence forms the raw
+                # body of what will be used to resolve the name.
+                assert (
+                    seq is not None
+                ), f"No history sequence provided in order to search the name: {ast.dump(n)!r}"
                 assert isinstance(seq, list), repr(seq)
                 assert ast.If not in set(
                     map(type, seq)
@@ -729,13 +809,15 @@ class MontyDriver:
                         if alt and isinstance(top := alt[0], ast.If):
                             head = top
                             continue
-                        else:
-                            assert alt is not None
+
+                        assert alt is not None
+
+                        # breakpoint()
 
                         left = body[:idx]
                         right = body[idx + 1 :] if idx + 1 in range(len(body)) else []
 
-                        body = m.body = left + head.body + right
+                        body = m.body = left + alt + right
                         break
 
                     else:
@@ -751,7 +833,9 @@ class MontyDriver:
                 assert isinstance(asrt, ast.Assert)
 
                 if not comptime_bool(asrt.test, seq=m.body[:idx]):
-                    assert False, NodeEntry.from_node(node=asrt, module_name="...").span.fmt("Failed static assert.", origin=self._source_map[m])
+                    assert False, NodeEntry.from_node(
+                        node=asrt, module_name="..."
+                    ).span.fmt("Failed static assert.", origin=self._source_map[m])
 
                 del m.body[idx]
 
@@ -800,13 +884,20 @@ class MontyDriver:
 
         self.modules[module_name] = root_tree
 
-        root_entry, local_nodes, = NodeEntry.from_module(root=root_tree, module_name=module_name)
+        (
+            root_entry,
+            local_nodes,
+        ) = NodeEntry.from_module(root=root_tree, module_name=module_name)
 
         self._ast_nodes[root_tree] = root_entry
         self._ast_nodes.update(local_nodes)
 
+        print(root_entry.item.scope)
+        # input()
+
         for (node, entry) in local_nodes.items():
             if (inferred := self.infer(entry)) is not None:
+                print(entry.item.node, inferred)
                 entry.item.kind = inferred
             else:
                 assert False, f"Failed to infer type for {ast.dump(entry.item.node)=!r}"
@@ -832,20 +923,15 @@ assert f
 """
 
 test_input = """
-def pi() -> float:
-    return 3.14
-
-def f(x: int) -> float:
+if False:
+    def x() -> float:
+        return 3.14
+else:
     x = 0
 
-    while x > 10:
-        x += 1
-
-    return pi()
-
-def x():
-    x: int = 0
+def _() -> int:
+    return x
 """.strip()
 
 driver = MontyDriver()
-driver.compile(test_comptime)
+driver.compile(test_input)
