@@ -310,30 +310,26 @@ class NodeEntry(NamedTuple):
                 bucket[depth] = []
                 depth = n
 
-            elif n == (depth - 1):
+            elif n == (depth - 1) or p is None:
                 # print(f"[{n}] Flushing depth bucket! {local_entry.item!r}")
 
                 assert local_entry.item.scope is not None
-                local_entry.item.scope.elements.extend(
-                    bucket[depth] + dangling.get(node, [])
-                )
 
-                for item in dangling.pop(node, []):
+                for item in dangling.pop(node, []) + bucket[depth]:
+                    local_entry.item.scope.elements.append(item)
+
                     if not isinstance(item.node, CAN_HAVE_SCOPE):
                         item.scope = local_entry.item.scope
 
                     item.parent = local_entry.item.node
 
-                for item in bucket[depth]:
-                    if not isinstance(item.node, CAN_HAVE_SCOPE):
-                        item.scope = local_entry.item.scope
-
-                    item.parent = local_entry.item.node
-
-                if n in bucket:
-                    bucket[n].append(local_entry.item)
+                if p is not None:
+                    if n in bucket:
+                        bucket[n].append(local_entry.item)
+                    else:
+                        bucket[n] = [local_entry.item]
                 else:
-                    bucket[n] = [local_entry.item]
+                    bucket = {}
 
                 depth = n
 
@@ -350,6 +346,7 @@ class NodeEntry(NamedTuple):
                 depth = n
         else:
             assert not dangling, repr(dangling)
+            assert not bucket, repr(bucket)
 
         root_entry = local_nodes[root]
 
@@ -409,6 +406,42 @@ class MontyDriver:
             ty = typing.cast("TypeInfo", self._ast_nodes[ty.other.node].item.kind)
 
         return ty
+
+    def _get_direct_parent_node(self, item: Item) -> Optional[ASTNode]:
+        assert item.parent is not None, item
+
+        parent_scope = self._ast_nodes[item.parent].item.scope
+
+        assert parent_scope is not None
+
+        if isinstance(item.node, ast.Name) and isinstance(item.node.ctx, ast.Store):
+
+            def predicate(cur: Item) -> bool:
+                return (
+                    isinstance(asn := cur.node, ast.Assign)
+                    and len(asn.targets) == 1
+                    and asn.targets[0] is item.node
+                ) or (
+                    isinstance(ann := cur.node, ast.AnnAssign)
+                    and ann.target is item.node
+                )
+
+        elif isinstance(item.node, (ast.Add, ast.Sub, ast.Mult)):
+
+            def predicate(cur: Item) -> bool:
+                return (
+                    isinstance(binop := cur.node, ast.BinOp) and binop.op is item.node
+                )
+
+        else:
+            raise NotImplementedError(
+                f"I dont know how to get the direct parent node of this type of node {item}"
+            )
+
+        for parent in filter(predicate, parent_scope.elements):
+            return parent.node
+        else:
+            return None
 
     def typecheck(self, entry: NodeEntry):
         """Recursively typecheck some node entry."""
@@ -546,17 +579,46 @@ class MontyDriver:
                         f"[{span.lineno}:{span.col_offset}]: Comparisson is too complex to solve."
                     )
 
+                raise NotImplementedError()
                 breakpoint()
+                # Compare(left=Name(id='x', ctx=Load()), ops=[Gt()], comparators=[Constant(value=10)])
+                return UnknownType
 
             else:
+                parent = self._get_direct_parent_node(item=item)
+                assert parent is not None
+                assert isinstance(parent, ast.BinOp)
+
+                (lhs, rhs) = map(
+                    self.infer, map(self.node_entry, [parent.left, parent.right])
+                )
+
+                assert lhs is not None
+                assert rhs is not None
+
+                lhs = self._resolve_type(ty=lhs)
+                rhs = self._resolve_type(ty=rhs)
+
+                name: Dict[type, str]
+                name = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}[
+                    item_node_type  # type: ignore
+                ]
+
+                ltr = Function(
+                    name=f"{lhs.name}.__{name}__", args=[lhs, rhs], ret=UnknownType
+                )
+                rtl = Function(
+                    name=f"{rhs.name}.__r{name}__", args=[rhs, lhs], ret=UnknownType
+                )
+
+                breakpoint()
                 raise NotImplementedError()
 
-            # * transform item into appropriate function call
-            # * find matching function signature
-            # * the type is then the output type of that signature.
+                # chachasmoothnow = self.find_a_function_that_kinda_looks_like(
+                #     this=ltr
+                # ) or self.find_a_function_that_kinda_looks_like(this=rtl)
 
-            # Compare(left=Name(id='x', ctx=Load()), ops=[Gt()], comparators=[Constant(value=10)])
-            return UnknownType
+                # return chachasmoothnow.ret
 
         elif item_node_type is ast.Call:
             assert isinstance(item.node, ast.Call)
@@ -659,40 +721,12 @@ class MontyDriver:
 
             else:
                 assert isinstance(item.node.ctx, ast.Store)
-                assert item.parent is not None
-
-                parent_scope = self._ast_nodes[item.parent].item.scope
-
-                assert parent_scope is not None
-
-                def o(i: "Item") -> bool:
-                    node = i.node
-
-                    print(i)
-
-                    if (
-                        isinstance(asn := node, ast.Assign)
-                        and len(asn.targets) == 1
-                        and asn.targets[0] is item.node
-                    ):
-                        return True
-
-                    if (
-                        isinstance(ann := node, ast.AnnAssign)
-                        and ann.target is item.node
-                    ):
-                        return True
-
-                    return False
-
-                for parent in filter(o, parent_scope.elements):
-                    pn = parent.node
-                    assert isinstance(pn, (ast.Assign, ast.AnnAssign))
-                    assert pn.value is not None
-                    value = self._ast_nodes[pn.value]
-                    return TypeRef(other=value.item)
-                else:
-                    return None
+                parent_node = self._get_direct_parent_node(item)
+                assert parent_node is not None
+                assert isinstance(parent_node, (ast.Assign, ast.AnnAssign))
+                assert parent_node.value is not None
+                value = self._ast_nodes[parent_node.value]
+                return TypeRef(other=value.item)
 
         elif item_node_type is ast.Constant:
             assert isinstance(item.node, ast.Constant)
@@ -860,17 +894,7 @@ class MontyDriver:
             return module
 
         apply_exhaustively(module, fold_branches)
-
-        def all_passes(module: ast.Module):
-            comptime_passes = (
-                fold_branches,
-                eval_assert,
-            )
-
-            for func in comptime_passes:
-                func(module)
-
-        apply_exhaustively(module, all_passes)
+        apply_exhaustively(module, eval_assert)
 
         return module
 
@@ -884,16 +908,12 @@ class MontyDriver:
 
         self.modules[module_name] = root_tree
 
-        (
-            root_entry,
-            local_nodes,
-        ) = NodeEntry.from_module(root=root_tree, module_name=module_name)
+        (root_entry, local_nodes) = NodeEntry.from_module(
+            root=root_tree, module_name=module_name
+        )
 
         self._ast_nodes[root_tree] = root_entry
         self._ast_nodes.update(local_nodes)
-
-        print(root_entry.item.scope)
-        # input()
 
         for (node, entry) in local_nodes.items():
             if (inferred := self.infer(entry)) is not None:
@@ -923,14 +943,7 @@ assert f
 """
 
 test_input = """
-if False:
-    def x() -> float:
-        return 3.14
-else:
-    x = 0
-
-def _() -> int:
-    return x
+x = 1 + 1
 """.strip()
 
 driver = MontyDriver()
