@@ -1,12 +1,13 @@
 import ast
 import builtins
+from pathlib import Path
 import sys
 from sys import modules
 import typing
 from ast import dump, walk
 from collections import deque
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from typing import (
     Any,
     Callable,
@@ -20,6 +21,7 @@ from typing import (
     Tuple,
     Type,
     TypeVar,
+    Union,
 )
 
 CAN_HAVE_SCOPE = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
@@ -103,10 +105,10 @@ class Pointer(TypeInfo):
 
 # PRIMITIVE_TYPES: Dict[Any, Union[Function, PrimitiveBase]]
 PRIMITIVE_TYPES = {
-    str: Function(name="str", args=[], ret=Pointer(IntegerType)),
-    int: Function(name="int", args=[], ret=IntegerType),
-    float: Function(name="float", args=[], ret=FloatType),
-    bool: Function(name="bool", args=[], ret=BoolType),
+    str: Function(name="builtins.str", args=[], ret=Pointer(IntegerType)),
+    int: Function(name="builtins.int", args=[], ret=IntegerType),
+    float: Function(name="builtins.float", args=[], ret=FloatType),
+    bool: Function(name="builtins.bool", args=[], ret=BoolType),
     # type(None): NoneType,
 }
 
@@ -141,6 +143,35 @@ def postorder_walk(
         yield from postorder_walk(node, child, _stack_depth=depth, pred=pred)
     else:
         yield (_stack_depth, parent, node)
+
+
+# import x.y as z
+#
+# qualname = ("x", "y")
+# access_path = "z"
+#
+# scope.lookup("z") == ImportDecl(qualname = ("x", "y"))
+@dataclass
+class ImportDecl:
+    node: ast.alias = field(repr=False)
+    parent: Union[ast.Import, ast.ImportFrom] = field(repr=False)
+
+    def __repr__(self) -> str:
+        return f"ImportDec({ast.dump(self.node)=!r})"
+
+    @cached_property
+    def qualname(self) -> List[str]:
+        return self.node.name.split(".")
+
+    @cached_property
+    def realname(self) -> str:
+        return self.node.asname or self.node.name
+
+    def __hash__(self) -> int:
+        return hash(self.node)
+
+    def __str__(self) -> str:
+        return self.realname
 
 
 @dataclass
@@ -377,6 +408,9 @@ class Module:
     name: str
     root: Item
 
+    # Path on disk
+    path: Optional[Path] = field(default=None)
+
     @lru_cache
     def functions(self, *, driver) -> Set[Item]:
         return {
@@ -585,6 +619,9 @@ class MontyDriver:
                 ast.arg,
                 ast.BinOp,
                 ast.Expr,
+                ast.alias,
+                ast.Import,
+                ast.ImportFrom
             }:
                 continue
 
@@ -635,6 +672,9 @@ class MontyDriver:
             ast.BinOp,
             ast.If,
             ast.Expr,
+            ast.Import,
+            ast.alias,
+            ast.ImportFrom,
         })
         # fmt: on
 
@@ -668,7 +708,6 @@ class MontyDriver:
                 )
 
             raise NotImplementedError()
-            breakpoint()
             # Compare(left=Name(id='x', ctx=Load()), ops=[Gt()], comparators=[Constant(value=10)])
             return UnknownType
 
@@ -761,8 +800,7 @@ class MontyDriver:
                 )
 
             args: List[TypeInfo] = [
-                self.infer(self._ast_nodes[arg_]) or panic()
-                for arg_ in item.node.args
+                self.infer(self._ast_nodes[arg_]) or panic() for arg_ in item.node.args
             ]
 
             assert all(arg is not None for arg in args)
@@ -846,12 +884,12 @@ class MontyDriver:
                     if (fn_type := check_builtins(item.node.id)) is not None:
                         result_type = fn_type.ret
                     else:
-                        result_type = UnknownType
+                        return None
                 else:
                     assert result.kind is not None
                     result_type = result.kind if result is not None else UnknownType
 
-                return result_type or UnknownType
+                return result_type
 
             else:
                 assert isinstance(item.node.ctx, ast.Store)
@@ -866,10 +904,10 @@ class MontyDriver:
             assert isinstance(item.node, ast.Constant)
             return PRIMITIVE_TYPES[type(item.node.value)].ret
 
-        elif item_node_type in (ast.AnnAssign, ast.Assign, ast.AugAssign, ast.While):
+        elif item_node_type in (ast.AnnAssign, ast.Assign, ast.AugAssign, ast.While, ast.ImportFrom, ast.Import):
             return NoneType
 
-        elif item_node_type is ast.Module:
+        elif item_node_type in {ast.Module, ast.alias}:
             return ModuleType
 
         breakpoint()
@@ -1035,7 +1073,96 @@ class MontyDriver:
 
         return module
 
-    def compile(self, st: str, *, module_name: str = "__main__"):
+    def import_module(self, decl: ImportDecl) -> Optional[Module]:
+        # if (idx := self.data.fetch_by_origin(origin=decl)) is not None:
+        #     return self.data[idx]
+
+        paths_to_inspect = [Path(".")]
+
+        assert decl.qualname
+
+        if isinstance(decl.parent, ast.ImportFrom):
+            if decl.parent.module is not None:
+                prefix = [decl.parent.module]
+            else:
+                prefix = []
+
+            qualname = prefix + decl.qualname
+        else:
+            qualname = decl.qualname
+
+        assert qualname, f"{decl=!r}"
+        # if qualname[0] == "__monty":
+        #     return self._monty_module
+
+        def search(curdir: Path, expected: str) -> Optional[Path]:
+            for path in curdir.iterdir():
+                is_py_file = path.is_file() and path.name.endswith(".py")
+
+                # We cant have "." in module names.
+                if not is_py_file and "." in path.name:
+                    continue
+
+                name = path.name
+
+                if is_py_file:
+                    name = path.name[:-3]
+
+                if name == part:
+                    return path
+            else:
+                return None
+
+        module: Optional[Module] = None
+
+        def insert_module(final_path: Path, qualname: List[str]):
+            with open(final_path) as inf:
+                return self.compile(
+                    st=inf.read(), module_name=".".join(qualname), path=final_path
+                )
+
+        final_path: Optional[Path] = None
+        final_qualname: List[str]
+
+        for target in paths_to_inspect:
+            qualname_iter = iter(qualname)
+            final_qualname = []
+            final_path = None
+
+            # "x.y" <- ("x", "y")
+            # "./x/y.py"
+            while (part := next(qualname_iter, None)) is not None:
+                final_path = search(target, part)
+
+                if final_path is None:
+                    break
+
+                assert final_path is not None
+                target = final_path
+
+                if final_path.is_dir() and (final_path / "__init__.py").exists():
+                    # special case?
+                    # "./x/y/__init__.py"
+                    #
+                    # from x.y import z
+                    #
+                    # or
+                    #
+                    # from x import y
+                    return insert_module(final_path, qualname=final_qualname + [part])
+
+                else:
+                    final_qualname.append(part)
+
+        return (
+            insert_module(final_path, qualname=qualname)
+            if final_path is not None
+            else None
+        )
+
+    def compile(
+        self, st: str, *, module_name: str = "__main__", path: Optional[Path] = None
+    ) -> Module:
         root_tree = ast.parse(st)
         self._source_map[root_tree] = st
         root_tree = self._comptime_map(root_tree)
@@ -1062,9 +1189,12 @@ class MontyDriver:
                 self.functions.add(inferred)
 
             elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                raise NotImplementedError("Import logic is missing.")
+                for alias in node.names:
+                    _ = self.import_module(ImportDecl(node=alias, parent=node))
 
         self.typecheck(entry=root_entry)
+
+        return Module(name=module_name, root=root_entry.item, path=path)
 
 
 test_comptime = """
@@ -1082,9 +1212,8 @@ assert f
 """
 
 test_input = """
-def main():
-    print()
+import foo
 """.strip()
 
 driver = MontyDriver()
-driver.compile(test_input)
+_ = driver.compile(test_input)
