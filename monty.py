@@ -50,6 +50,11 @@ class Function(TypeInfo):
             and f.ret == self.ret
         )
 
+    def __str__(self) -> str:
+        args = ", ".join(map(str, self.args))
+        return f"<function {self.name!s}({args}) -> {self.ret!s}>"
+        return f"Callable[[{', '.join(map(str, self.args))}], {self.ret!s}]"
+
 
 @dataclass
 class TypeRef(TypeInfo):
@@ -102,10 +107,20 @@ class Pointer(TypeInfo):
     def __hash__(self) -> int:
         return hash(self.inner)
 
+    def __str__(self) -> str:
+        return f"Pointer[{self.inner!s}]"
+
+
+class _StringType(Pointer):
+    def __str__(self) -> str:
+        return "str"
+
+
+StringType = _StringType(inner=IntegerType)
 
 # PRIMITIVE_TYPES: Dict[Any, Union[Function, PrimitiveBase]]
 PRIMITIVE_TYPES = {
-    str: Function(name="builtins.str", args=[], ret=Pointer(IntegerType)),
+    str: Function(name="builtins.str", args=[], ret=StringType),
     int: Function(name="builtins.int", args=[], ret=IntegerType),
     float: Function(name="builtins.float", args=[], ret=FloatType),
     bool: Function(name="builtins.bool", args=[], ret=BoolType),
@@ -185,6 +200,16 @@ class Item:
         return hash(self.node)
 
 
+def collapse_attribute(n: ASTNode) -> str:
+    if isinstance(n, ast.Attribute):
+        return f"{collapse_attribute(n.value)!s}.{n.attr}"
+
+    if isinstance(n, ast.Name):
+        return n.id
+
+    assert False
+
+
 @dataclass
 class Scope:
     item: Item
@@ -199,16 +224,26 @@ class Scope:
 
             assert isinstance(node, ASTNode)
 
-            if any(
-                [
+            if isinstance(node, ast.alias):
+                print(ast.dump(node))
+
+            if (
+                (
                     isinstance(node, (ast.AnnAssign, ast.AugAssign))
-                    and node.target == target,
+                    and node.target == target
+                )
+                or (
                     isinstance(node, ast.Name)
                     and isinstance(node.ctx, ast.Store)
-                    and node.id == target,
-                    isinstance(node, ast.arg) and node.arg == target,
-                    isinstance(node, ast.FunctionDef) and node.name == target,
-                ]
+                    and node.id == target
+                )
+                or (isinstance(node, ast.arg) and node.arg == target)
+                or (isinstance(node, ast.FunctionDef) and node.name == target)
+                or (isinstance(node, ast.alias) and node.name == target)
+                or (
+                    isinstance(node, ast.Attribute)
+                    and collapse_attribute(node).startswith(target)
+                )
             ):
                 return item
 
@@ -232,10 +267,14 @@ class Scope:
                 ast.BinOp,
                 ast.If,
                 ast.Expr,
+                ast.alias,
+                ast.Import,
+                ast.ImportFrom,
+                ast.Attribute,
             }:
                 continue
 
-            raise NotImplementedError(item)
+            raise NotImplementedError((item, ast.dump(item.node)))
 
         if (parent := self.item.parent) is not None:
             scope = driver._ast_nodes[parent].item.scope
@@ -264,7 +303,7 @@ class SpanInfo(NamedTuple):
             assert isinstance(origin, str)
             prefix = "| "
             display = "\n".join(
-                f"\n| {part}" for part in self.display(origin=origin).split("\n")
+                f"\n| {part!r}" for part in self.display(origin=origin).split("\n")
             )
         else:
             display = prefix = ""
@@ -301,10 +340,13 @@ class NodeEntry(NamedTuple):
         # from the leaves up into the module root.
 
         stream = deque(traversal)
-        depth, _, node = stream.popleft()
+        depth, parent, node = stream.popleft()
         local_entry = cls.from_node(node=node, module_name=module_name)
 
-        local_nodes: Dict[ASTNode, NodeEntry] = {}
+        if parent is None:
+            return (local_entry, {})
+
+        local_nodes: Dict[ASTNode, NodeEntry] = {node: local_entry}
         dangling: Dict[ASTNode, List[Item]] = {}
         bucket: Dict[int, List[Item]] = {depth: [local_entry.item]}
 
@@ -315,7 +357,9 @@ class NodeEntry(NamedTuple):
                 node=node, module_name=module_name
             )
 
-            # print(f"\n[{n}] {p}\t{node}")
+            # print(depth, node)
+            # print(type(node))
+            # print(type(node) in set(map(type, local_nodes)), list(local_nodes.keys()))
 
             peek_depth = stream[0][0] if stream else 0
 
@@ -324,10 +368,7 @@ class NodeEntry(NamedTuple):
                 and isinstance(p, CAN_HAVE_SCOPE)
                 and (max(peek_depth, n) - min(peek_depth, n) > 1)
             ):
-                # print(
-                # f"[{depth} -> {stream[0][0]}] Bailout! {local_entry.item.node!r} will be added to {p}"
-                # )
-
+                # print(f"[{depth=!r} {n=!r}] Bail out! {node}")
                 if p in dangling:
                     dangling[p] += bucket[depth]
                 else:
@@ -339,11 +380,11 @@ class NodeEntry(NamedTuple):
                 depth = n
 
             elif n == (depth - 1) or p is None:
-                # print(f"[{n}] Flushing depth bucket! {local_entry.item!r}")
-
+                # print(f"[{depth=!r} {n=!r}] Flush! {node}")
                 assert local_entry.item.scope is not None
 
                 for item in dangling.pop(node, []) + bucket[depth]:
+                    # print(f"\t{item}")
                     local_entry.item.scope.elements.append(item)
 
                     if not isinstance(item.node, CAN_HAVE_SCOPE):
@@ -361,17 +402,12 @@ class NodeEntry(NamedTuple):
 
                 depth = n
 
-                # print(
-                # f"[{n}] {local_entry.item!r} now contains {len(local_entry.item.scope.elements)} element(s)"
-                # )
-                # for elem in local_entry.item.scope:
-                # print(f"\t{elem}")
-
             elif n == depth:
-                # print(f"[{n}] Adding node to depth {local_entry.item!r}")
+                # print(f"[{depth=!r} {n=!r}] Same depth {node}")
                 bucket[n].append(local_entry.item)
 
             else:
+                # print(f"[{depth=!r} {n=!r}] LARGE depth diff {node}")
                 bucket[n] = [local_entry.item]
                 depth = n
         else:
@@ -442,11 +478,6 @@ class MontyDriver:
                     args=[IntegerType, IntegerType],
                     ret=IntegerType,
                 ),
-                Function(
-                    name="builtins.print",
-                    args=[Pointer(inner=IntegerType)],
-                    ret=NoneType,
-                ),
             }
         )
 
@@ -488,6 +519,14 @@ class MontyDriver:
                     isinstance(binop := cur.node, ast.BinOp) and binop.op is item.node
                 )
 
+        elif isinstance(item.node, ast.alias):
+
+            def predicate(cur: Item) -> bool:
+                return (
+                    isinstance(imp := cur.node, (ast.ImportFrom, ast.Import))
+                    and item.node in imp.names
+                )
+
         else:
             raise NotImplementedError(
                 f"I dont know how to get the direct parent node of this type of node {item}"
@@ -504,6 +543,22 @@ class MontyDriver:
         def type_eq(lhs: TypeInfo, rhs: TypeInfo) -> bool:
             return self._resolve_type(lhs) == self._resolve_type(rhs)
 
+        def is_visible(n: ASTNode) -> bool:
+            return not isinstance(
+                n, (ast.Load, ast.Store, ast.Add, ast.Sub, ast.Module)
+            )
+
+        def fmt(n: ASTNode) -> str:
+            entry = self._ast_nodes[n]
+            module = self.modules[entry.span.file_name]
+            assert isinstance(module, ast.Module)
+            source_span = self._source_map[module]
+            assert entry.item.kind is not None
+            return (
+                f"{entry.span.display(origin=source_span)!r}"
+                f" has type {self._resolve_type(entry.item.kind).__str__()!r}"
+            )
+
         assert entry.item.scope is not None
 
         for item in entry.item.scope:
@@ -516,7 +571,31 @@ class MontyDriver:
                 self.typecheck(entry=self._ast_nodes[item.node])
                 continue
 
-            if isinstance(item_node, ast.If):
+            item_entry = self._ast_nodes[item.node]
+            item_span = item_entry.span
+
+            item_module = self.modules[item_span.file_name]
+            assert isinstance(item_module, ast.Module)
+
+            item_module_source = self._source_map[item_module]
+            assert isinstance(item_module_source, str)
+
+            if isinstance(item_node, ast.Attribute):
+                assert item.kind is not None
+                if type_eq(item.kind, UnknownType):
+                    kinds = "\n".join(
+                        f"|\t{fmt(node)!s}"
+                        for node in ast.walk(item.node)
+                        if is_visible(node) and node is not item.node
+                    )
+
+                    raise TypeError(
+                        f"\n| [{item_span.lineno}:{item_span.col_offset}]: Unable to infer type for attribute access..."
+                        f"\n|\t{item_span.display(origin=item_module_source)!r}"
+                        f"\n| where:\n{kinds!s}"
+                    )
+
+            elif isinstance(item_node, ast.If):
                 t = self._ast_nodes[item_node.test]
                 t_k = t.item.kind
                 assert t_k is not None
@@ -534,34 +613,15 @@ class MontyDriver:
                 if not type_eq(expected, actual):
                     span_info = self._ast_nodes[item.node].span
 
-                    def is_visible(n: ASTNode) -> bool:
-                        return not isinstance(
-                            n, (ast.Load, ast.Store, ast.Add, ast.Sub, ast.Module)
-                        )
-
-                    def fmt(n: ASTNode) -> str:
-                        entry = self._ast_nodes[n]
-                        module = self.modules[entry.span.file_name]
-                        assert isinstance(module, ast.Module)
-                        source_span = self._source_map[module]
-                        assert entry.item.kind is not None
-                        return (
-                            f"{entry.span.display(origin=source_span)!r}"
-                            f" has type {self._resolve_type(entry.item.kind).__str__()!r}"
-                        )
-
                     kinds = "\n".join(
                         f"|\t{fmt(node)!s}"
                         for node in ast.walk(item.node)
                         if is_visible(node) and node is not item.node
                     )
 
-                    m = self.modules[span_info.file_name]
-                    assert isinstance(m, ast.Module)
-
                     raise TypeError(
                         f"\n| [{span_info.lineno}:{span_info.col_offset}]: Attempted to return with type {actual}, expected type {expected}"
-                        f"\n|\t{span_info.display(origin=self._source_map[m])!r}"
+                        f"\n|\t{span_info.display(origin=item_module_source)!r}"
                         f"\n| where:\n{kinds!s}"
                     )
 
@@ -585,7 +645,7 @@ class MontyDriver:
                 if not type_eq(expected, actual):
                     span_info = self._ast_nodes[item.node].span
                     raise TypeError(
-                        f"[{span_info.lineno}:{span_info.col_offset}]: Expected type {expected} instead got {actual}"
+                        f"[{span_info.lineno}:{span_info.col_offset}]: Expected type {expected.__str__()!r} instead got {actual.__str__()!r}"
                     )
 
             elif isinstance(item_node, (ast.Compare, ast.Gt, ast.Add, ast.Sub)):
@@ -593,24 +653,69 @@ class MontyDriver:
                     parent = self._get_direct_parent_node(item=item)
                     assert parent is not None
                     parent_entry = self._ast_nodes[parent]
+                    item_span = parent_entry.span
 
                     m = self.modules[parent_entry.span.file_name]
                     assert isinstance(m, ast.Module)
                     origin = self._source_map[m]
 
+                    kinds = "\n".join(
+                        f"|\t{fmt(node)!s}"
+                        for node in ast.iter_child_nodes(parent)
+                        if is_visible(node) and node is not item.node
+                    )
+
                     raise TypeError(
-                        parent_entry.span.fmt(
-                            st="Unable to infer the type of this expression.",
-                            origin=origin,
-                        )
+                        f"\n| [{item_span.lineno}:{item_span.col_offset}]: Unable to infer the type of this expression..."
+                        f"\n|\t{item_span.display(origin=origin)!r}"
+                        f"\n| where:\n{kinds!s}"
                     )
 
             elif isinstance(item_node, ast.Assign):
                 assert len(item_node.targets) == 1
 
+            elif isinstance(item_node, ast.Call):
+                assert isinstance(item.node, ast.Call)
+                f_entry = self._ast_nodes[item.node.func]
+                span_info = self._ast_nodes[item.node].span
+
+                if not isinstance(func_kind := f_entry.item.kind, Function):
+                    assert func_kind is not None
+                    actual = func_kind
+
+                    raise TypeError(
+                        f"[{span_info.lineno}:{span_info.col_offset}]: Type {actual} is not callable."
+                    )
+
+                args: List[TypeInfo] = [
+                    self.infer(self._ast_nodes[arg_]) or panic()
+                    for arg_ in item.node.args
+                ]
+
+                assert all(arg not in {UnknownType, None} for arg in args)
+
+                callsite_signature = Function(
+                    name=func_kind.name, args=args, ret=func_kind.ret
+                )
+
+                if callsite_signature != func_kind:
+                    if callsite_signature.args != func_kind.args:
+                        n_expected_args = len(func_kind.args)
+                        n_actual_args = len(callsite_signature.args)
+                        assert n_expected_args != n_actual_args
+                        plural = lambda n: "s" if n > 1 else ""
+                        reason = (
+                            f"this function takes {n_expected_args}"
+                            f" argument{plural(n_expected_args)} but"
+                            f" {n_actual_args} arguments were supplied."
+                        )
+                    else:
+                        assert False
+
+                    raise TypeError(span_info.fmt(reason, origin=item_module_source))
+
             elif type(item_node) in {
                 ast.While,
-                ast.Call,
                 ast.Store,
                 ast.Load,
                 ast.Name,
@@ -621,7 +726,8 @@ class MontyDriver:
                 ast.Expr,
                 ast.alias,
                 ast.Import,
-                ast.ImportFrom
+                ast.ImportFrom,
+                ast.Attribute,
             }:
                 continue
 
@@ -664,7 +770,6 @@ class MontyDriver:
             ast.Return,
             ast.arg,
             ast.Call,
-            ast.Gt,
             ast.Compare,
             ast.Add,
             ast.AugAssign,
@@ -675,6 +780,8 @@ class MontyDriver:
             ast.Import,
             ast.alias,
             ast.ImportFrom,
+            ast.Attribute,
+            ast.Pass,
         })
         # fmt: on
 
@@ -691,8 +798,81 @@ class MontyDriver:
                 f"{item_node_type!r} is not supported at the moment."
             )
 
-        if item_node_type in {ast.Store, ast.Load, ast.arguments, ast.Gt, ast.If}:
+        if item_node_type in {ast.arguments}:
             return UnknownType
+
+        elif item_node_type in (
+            ast.Store,
+            ast.Load,
+            ast.AnnAssign,
+            ast.Assign,
+            ast.AugAssign,
+            ast.While,
+            ast.ImportFrom,
+            ast.Import,
+            ast.If,
+            ast.Pass,
+        ):
+            return NoneType
+
+        elif item_node_type is ast.Module:
+            return ModuleType
+
+        elif item_node_type is ast.Attribute:
+            assert isinstance(item.node, ast.Attribute)
+            assert item.scope is not None
+
+            result = item.scope.lookup(st := collapse_attribute(item.node), driver=self)
+
+            assert result is not None
+
+            if result.node is item.node:
+                for (name, module) in self.modules.items():
+                    assert isinstance(module, ast.Module)
+
+                    if name == st:
+                        return ModuleType
+
+                    if st.startswith(name):
+                        assert st[len(name)] == "."
+                        me = self._ast_nodes[module]
+                        assert me.item.scope is not None
+                        result = me.item.scope.lookup(
+                            target=st[len(name) + 1 :], driver=self
+                        )
+                        assert result is not None
+                        return result.kind
+                else:
+                    return UnknownType
+            else:
+                return result.kind
+
+        elif item_node_type is ast.alias:
+            assert isinstance(item.node, ast.alias)
+
+            import_node = self._get_direct_parent_node(item)
+            assert import_node is not None
+
+            if not isinstance(import_node, ast.ImportFrom):
+                return ModuleType
+
+            module_name = import_node.module
+            assert isinstance(module_name, str)
+
+            module_ = self._ast_nodes[self.modules[module_name]]
+            assert module_.item.scope is not None
+
+            result = module_.item.scope.lookup(target=item.node.name, driver=self)
+            assert result is not None
+            return result.kind
+
+        elif item_node_type in {ast.Import, ast.ImportFrom}:
+            assert isinstance(item.node, (ast.ImportFrom, ast.Import))
+
+            for al in item.node.names:
+                self._ast_nodes[al].item.kind = self.infer(self._ast_nodes[al])
+
+            return NoneType
 
         elif item_node_type is ast.Expr:
             assert isinstance(item.node, ast.Expr)
@@ -733,8 +913,8 @@ class MontyDriver:
             lhs = self._resolve_type(ty=lhs)
             rhs = self._resolve_type(ty=rhs)
 
-            name: Dict[type, str]
-            name = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}[
+            _ast_binop_name: Dict[type, str]
+            _ast_binop_name = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}[
                 op_type  # type: ignore
             ]
 
@@ -742,10 +922,14 @@ class MontyDriver:
             assert isinstance(rhs, PrimitiveBase)
 
             ltr = Function(
-                name=f"{lhs.name}.__{name}__", args=[lhs, rhs], ret=UnknownType
+                name=f"{lhs.name}.__{_ast_binop_name}__",
+                args=[lhs, rhs],
+                ret=UnknownType,
             )
             rtl = Function(
-                name=f"{rhs.name}.__r{name}__", args=[rhs, lhs], ret=UnknownType
+                name=f"{rhs.name}.__r{_ast_binop_name}__",
+                args=[rhs, lhs],
+                ret=UnknownType,
             )
 
             def unify(f: Function) -> Optional[Function]:
@@ -780,36 +964,40 @@ class MontyDriver:
 
         elif item_node_type is ast.Call:
             assert isinstance(item.node, ast.Call)
-            assert isinstance(item.node.func, ast.Name)
-            assert item.scope is not None
 
-            if (
-                f := item.scope.lookup(target=item.node.func.id, driver=self)
-            ) is not None:
-                assert isinstance(f, Item)
-                func_kind = f.kind
+            func_kind: Optional[TypeInfo]
+
+            if isinstance(item.node.func, ast.Attribute):
+                attr_ty = self.infer(self._ast_nodes[item.node.func])
+                assert attr_ty is not None
+                func_kind = attr_ty
             else:
-                func_kind = check_builtins(item.node.func.id)
+                assert isinstance(item.node.func, ast.Name)
+                assert item.scope is not None
+
+                if (
+                    f := item.scope.lookup(target=item.node.func.id, driver=self)
+                ) is not None:
+                    assert isinstance(f, Item)
+                    func_kind = f.kind
+                else:
+                    func_kind = check_builtins(item.node.func.id)
 
             if not isinstance(func_kind, Function):
-                span_info = self._ast_nodes[item.node].span
-                actual = func_kind
+                return UnknownType
+            else:
+                return func_kind.ret
 
-                raise TypeError(
-                    f"[{span_info.lineno}:{span_info.col_offset}]: Type {actual} is not callable."
-                )
+            # args: List[TypeInfo] = [
+            #     self.infer(self._ast_nodes[arg_]) or UnknownType for arg_ in item.node.args
+            # ]
 
-            args: List[TypeInfo] = [
-                self.infer(self._ast_nodes[arg_]) or panic() for arg_ in item.node.args
-            ]
+            # virtual = Function(name=func_kind.name, args=args, ret=func_kind.ret)
 
-            assert all(arg is not None for arg in args)
-
-            _f = Function(name=func_kind.name, args=args, ret=func_kind.ret)
-
-            assert func_kind == _f, (func_kind, _f)
-
-            return func_kind.ret
+            # if func_kind == virtual:
+            #     return func_kind.ret
+            # else:
+            #     return UnknownType
 
         elif item_node_type is ast.arg:
             assert item.scope is not None
@@ -820,16 +1008,25 @@ class MontyDriver:
             assert arg.annotation is not None
             assert isinstance(arg.annotation, ast.Name)
 
-            thing = item.scope.lookup(target=arg.annotation.id, driver=self)
+            result = item.scope.lookup(target=arg.annotation.id, driver=self)
 
-            return thing.kind if thing is not None else None
+            if result is None:
+                return (
+                    f_.ret
+                    if (f_ := check_builtins(arg.annotation.id)) is not None
+                    else None
+                )
+            else:
+                return result.kind
 
         elif item_node_type is ast.Return:
             assert isinstance(item.node, ast.Return)
-            assert item.node.value is not None
 
-            value = self._ast_nodes[item.node.value]
-            return self.infer(entry=value)
+            if item.node.value is not None:
+                value = self._ast_nodes[item.node.value]
+                return TypeRef(other=value.item)
+            else:
+                return NoneType
 
         elif item_node_type is ast.FunctionDef:
             assert isinstance(item.node, ast.FunctionDef)
@@ -885,6 +1082,10 @@ class MontyDriver:
                         result_type = fn_type.ret
                     else:
                         return None
+
+                elif result.kind is None:
+                    return TypeRef(other=result)
+
                 else:
                     assert result.kind is not None
                     result_type = result.kind if result is not None else UnknownType
@@ -903,12 +1104,6 @@ class MontyDriver:
         elif item_node_type is ast.Constant:
             assert isinstance(item.node, ast.Constant)
             return PRIMITIVE_TYPES[type(item.node.value)].ret
-
-        elif item_node_type in (ast.AnnAssign, ast.Assign, ast.AugAssign, ast.While, ast.ImportFrom, ast.Import):
-            return NoneType
-
-        elif item_node_type in {ast.Module, ast.alias}:
-            return ModuleType
 
         breakpoint()
 
@@ -937,10 +1132,7 @@ class MontyDriver:
         T = TypeVar("T")
 
         def search(l: List[T], p: Callable[[T], bool]) -> Optional[int]:
-            for (
-                idx,
-                obj,
-            ) in enumerate(l):
+            for (idx, obj) in enumerate(l):
                 if p(obj):
                     return idx
             else:
@@ -1083,7 +1275,7 @@ class MontyDriver:
 
         if isinstance(decl.parent, ast.ImportFrom):
             if decl.parent.module is not None:
-                prefix = [decl.parent.module]
+                prefix = decl.parent.module.split(".")
             else:
                 prefix = []
 
@@ -1108,7 +1300,7 @@ class MontyDriver:
                 if is_py_file:
                     name = path.name[:-3]
 
-                if name == part:
+                if name == expected:
                     return path
             else:
                 return None
@@ -1125,22 +1317,31 @@ class MontyDriver:
         final_qualname: List[str]
 
         for target in paths_to_inspect:
-            qualname_iter = iter(qualname)
+            qualname_iter = enumerate(iter(qualname))
             final_qualname = []
             final_path = None
 
             # "x.y" <- ("x", "y")
             # "./x/y.py"
-            while (part := next(qualname_iter, None)) is not None:
-                final_path = search(target, part)
+            while (_ := next(qualname_iter, None)) is not None:
+                if final_path is not None and not final_path.is_dir():
+                    assert final_path.is_file
+                    assert final_qualname
+                    return insert_module(final_path, qualname=final_qualname)
+                else:
+                    (idx, part) = _
+                    is_last = idx == (len(qualname) - 1)
 
-                if final_path is None:
+                if (final_path := search(target, part)) is None:
                     break
 
+                final_qualname.append(part)
+
                 assert final_path is not None
+
                 target = final_path
 
-                if final_path.is_dir() and (final_path / "__init__.py").exists():
+                if final_path.is_dir():
                     # special case?
                     # "./x/y/__init__.py"
                     #
@@ -1149,10 +1350,27 @@ class MontyDriver:
                     # or
                     #
                     # from x import y
-                    return insert_module(final_path, qualname=final_qualname + [part])
 
-                else:
-                    final_qualname.append(part)
+                    contains_init = (final_path / "__init__.py").exists()
+
+                    if contains_init:
+                        if is_last:
+                            assert is_last
+                            return insert_module(
+                                final_path / "__init__.py",
+                                qualname=final_qualname + [part],
+                            )
+
+                        if not final_path.is_dir():
+                            return insert_module(final_path, qualname=final_qualname)
+
+                        peek = qualname[idx + 1]
+
+                        if search(final_path, peek) is not None:
+                            continue
+
+                    if is_last and not contains_init:
+                        assert False, f"Missing __init__ file {final_path!r}"
 
         return (
             insert_module(final_path, qualname=qualname)
@@ -1168,7 +1386,7 @@ class MontyDriver:
         root_tree = self._comptime_map(root_tree)
 
         dump_kwargs = {"indent": 4} if sys.version_info >= (3, 9) else {}
-        print(ast.dump(root_tree, **dump_kwargs))  # type: ignore
+        # print(ast.dump(root_tree, **dump_kwargs))  # type: ignore
 
         self.modules[module_name] = root_tree
 
@@ -1177,42 +1395,52 @@ class MontyDriver:
         )
 
         self._ast_nodes[root_tree] = root_entry
+
+        assert (
+            ast.alias in kinds
+            if (kinds := set(map(type, local_nodes))) & {ast.Import, ast.ImportFrom}
+            else True
+        )
+
         self._ast_nodes.update(local_nodes)
 
         for (node, entry) in local_nodes.items():
-            if (inferred := self.infer(entry)) is not None:
-                entry.item.kind = inferred
-            else:
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+
+            for alias in node.names:
+                decl = ImportDecl(node=alias, parent=node)
+
+                if self.import_module(decl) is None:
+                    module = self.modules[entry.span.file_name]
+                    assert isinstance(module, ast.Module)
+
+                    origin = self._source_map[module]
+                    span = entry.span.fmt(
+                        f"Failed to import {decl.realname!r}",
+                        origin=origin,
+                    )
+
+                    raise ImportError(span)
+
+        for (node, entry) in local_nodes.items():
+            if (inferred := self.infer(entry)) is None:
                 assert False, f"Failed to infer type for {ast.dump(entry.item.node)=!r}"
 
             if isinstance(inferred, Function):
                 self.functions.add(inferred)
 
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                for alias in node.names:
-                    _ = self.import_module(ImportDecl(node=alias, parent=node))
+            entry.item.kind = inferred
+            continue
 
         self.typecheck(entry=root_entry)
 
         return Module(name=module_name, root=root_entry.item, path=path)
 
 
-test_comptime = """
-if False:
-    x = 1
-elif False:
-    x = 2
-elif True:
-    def f(x: int) -> int:
-        return x
-else:
-    x = 3
-
-assert f
-"""
-
 test_input = """
-import foo
+class Foo:
+    pass
 """.strip()
 
 driver = MontyDriver()
