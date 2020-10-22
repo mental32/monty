@@ -465,7 +465,21 @@ def check_builtins(target: str, functions: Set[Function]) -> Optional[Function]:
         return None
 
 
-class TypeSystem:
+def is_visible(n: ASTNode) -> bool:
+    return not isinstance(
+        n, (ast.Load, ast.Store, ast.Add, ast.Sub, ast.Module)
+    )
+
+
+def fmt(n: ASTNode, driver: "MontyDriver") -> str:
+    entry = driver._ast_nodes[n]
+    assert entry.kind is not None
+    return (
+        f"{entry.span.display()!r}"
+        f" has type {driver._resolve_type(entry.kind).__str__()!r}"
+    )
+
+class TypeContext:
     # Helpers
 
     @staticmethod
@@ -478,9 +492,208 @@ class TypeSystem:
 
         return argument
 
+    # Typechecking
+
+    def typecheck(self, entry: Item, driver: "MontyDriver"):
+        """Recursively typecheck some node entry."""
+
+        assert entry.scope is not None
+
+        for item in entry.scope:
+            item_node: ASTNode = item.node
+
+            if item_node is entry.node:
+                continue
+
+            self._typecheck_node(item.node, item=item, driver=driver)
+            continue
+
+    @singledispatchmethod
+    def _typecheck_node(self, node: ASTNode, item: Item, driver: Any):
+        SUPPORTED_NODES = {
+            ast.While,
+            ast.Store,
+            ast.Load,
+            ast.Name,
+            ast.Constant,
+            ast.arguments,
+            ast.arg,
+            ast.BinOp,
+            ast.Expr,
+            ast.alias,
+            ast.Import,
+            ast.ImportFrom,
+            ast.Attribute,
+        }
+
+        if type(node) not in SUPPORTED_NODES:
+            raise NotImplementedError(item)
+
+    @_typecheck_node.register
+    def _typecheck_funcdef(self, node: ast.FunctionDef, item: Item, driver: Any):
+        self.typecheck(entry=driver._ast_nodes[node], driver=driver)
+
+    @_typecheck_node.register
+    def _typecheck_attribute(self, node: ast.Attribute, item: Item, driver: Any):
+        assert item.kind is not None
+
+        if driver.type_eq(item.kind, UnknownType):
+            kinds = "\n".join(
+                f"|\t{fmt(node, driver)!s}"
+                for node in ast.walk(item.node)
+                if is_visible(node) and node is not item.node
+            )
+
+            raise TypeError(
+                f"\n| [{item.span.lineno}:{item.span.col_offset}]: Unable to infer type for attribute access..."
+                f"\n|\t{item.span.display()!r}"
+                f"\n| where:\n{kinds!s}"
+            )
+
+    @_typecheck_node.register
+    def _typecheck_ifstmt(self, node: ast.If, item: Item, driver: Any):
+        t = driver._ast_nodes[node.test]
+        t_k = t.kind
+        assert t_k is not None
+        t_t = driver._resolve_type(t_k)
+        assert t_t is BoolType, ast.dump(t.node)
+
+            # item_entry = self._ast_nodes[item.node]
+            # item_span = item_entry.span
+
+            # item_module = self._modules[item_span.file_name].root.node
+            # assert isinstance(item_module, ast.Module)
+
+            # item_module_source = self._modules[item_span.file_name].root.span.source_ref
+            # assert isinstance(item_module_source, str)
+
+            # if isinstance(item_node, ast.Attribute):
+
+            # elif isinstance(item_node, ast.If):
+
+    @_typecheck_node.register
+    def _typecheck_return(self, node: ast.Return, item: Item, driver: Any):
+        assert item.kind is not None
+        # assert isinstance(entry.node, ast.FunctionDef)
+        # assert isinstance(entry.kind, Function)
+
+        entry = driver._get_direct_parent_node(node=node)
+
+        expected = driver._resolve_type(entry.kind.ret)
+        actual = driver._resolve_type(item.kind)
+
+        if not driver.type_eq(expected, actual):
+            span_info = driver._ast_nodes[item.node].span
+
+            kinds = "\n".join(
+                f"|\t{fmt(node, driver)!s}"
+                for node in ast.walk(item.node)
+                if is_visible(node) and node is not item.node
+            )
+
+            raise TypeError(
+                f"\n| [{span_info.lineno}:{span_info.col_offset}]: Attempted to return with type {actual}, expected type {expected}"
+                f"\n|\t{span_info.display()!r}"
+                f"\n| where:\n{kinds!s}"
+            )
+
+    @_typecheck_node.register
+    def _typecheck_augassign(self, node: ast.AugAssign, item: Item, driver: Any):
+        raise NotImplementedError()
+
+    @_typecheck_node.register
+    def _typecheck_annassign(self, node: ast.AnnAssign, item: Item, driver: Any):
+        annotation, value = node.annotation, node.value
+
+        assert value is not None
+
+        expected_kind = driver._ast_nodes[annotation].kind
+        assert expected_kind is not None
+        expected = driver._resolve_type(expected_kind)
+
+        actual_kind = driver._ast_nodes[value].kind
+        assert actual_kind is not None
+        actual = driver._resolve_type(actual_kind)
+
+        if not driver.type_eq(expected, actual):
+            span_info = driver._ast_nodes[item.node].span
+            raise TypeError(
+                f"[{span_info.lineno}:{span_info.col_offset}]: Expected type {expected.__str__()!r} instead got {actual.__str__()!r}"
+            )
+
+    @_typecheck_node.register(ast.Compare)
+    @_typecheck_node.register(ast.Gt)
+    @_typecheck_node.register(ast.Add)
+    @_typecheck_node.register(ast.Sub)
+    @_typecheck_node.register(ast.Mult)
+    def _typecheck_binop(self, node: ast.Return, item: Item, driver: Any):
+        if item.kind is UnknownType:
+            parent = driver._get_direct_parent_node(item=item)
+            assert parent is not None
+            parent_entry = driver._ast_nodes[parent]
+            item_span = parent_entry.span
+
+            kinds = "\n".join(
+                f"|\t{fmt(node, driver)!s}"
+                for node in ast.iter_child_nodes(parent)
+                if is_visible(node) and node is not item.node
+            )
+
+            raise TypeError(
+                f"\n| [{item_span.lineno}:{item_span.col_offset}]: Unable to infer the result type of this expression..."
+                f"\n|\t{item_span.display()!r}"
+                f"\n| where:\n{kinds!s}"
+            )
+
+    @_typecheck_node.register
+    def _typecheck_assign(self, node: ast.Assign, item: Item, driver: Any):
+            # elif isinstance(item_node, ast.Assign):
+        assert len(node.targets) == 1
+
+    @_typecheck_node.register
+    def _typecheck_call(self, node: ast.Call, item: Item, driver: Any):
+        assert isinstance(item.node, ast.Call)
+        f_entry = driver._ast_nodes[item.node.func]
+        span_info = driver._ast_nodes[item.node].span
+
+        if not isinstance(func_kind := f_entry.kind, Function):
+            assert func_kind is not None
+            actual = func_kind
+
+            raise TypeError(
+                f"[{span_info.lineno}:{span_info.col_offset}]: Type {actual} is not callable."
+            )
+
+        args: List[TypeInfo] = [
+            self.infer(driver._ast_nodes[arg_], driver=driver) or panic()
+            for arg_ in item.node.args
+        ]
+
+        assert all(arg not in {UnknownType, None} for arg in args)
+
+        callsite_signature = Function(
+            name=func_kind.name, args=args, ret=func_kind.ret
+        )
+
+        if callsite_signature != func_kind:
+            if callsite_signature.args != func_kind.args:
+                n_expected_args = len(func_kind.args)
+                n_actual_args = len(callsite_signature.args)
+                assert n_expected_args != n_actual_args
+                plural = lambda n: "s" if n > 1 else ""
+                reason = (
+                    f"this function takes {n_expected_args}"
+                    f" argument{plural(n_expected_args)} but"
+                    f" {n_actual_args} arguments were supplied."
+                )
+            else:
+                assert False
+
+            raise TypeError(span_info.fmt(reason))
+
     # Inference
 
-    def infer(self, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def infer(self, item: Item, driver: "MontyDriver") -> Optional[TypeInfo]:
         """Attempt to infer the type of some item."""
         if item.kind not in {None, UnknownType}:
             # Happy path!
@@ -497,10 +710,10 @@ class TypeSystem:
                 f"{item_node_type!r} is not supported at the moment."
             )
 
-        if item_node_type in {ast.arguments}:
+        if item_node_type is ast.arguments:
             return UnknownType
 
-        elif item_node_type in (
+        if item_node_type in (
             ast.Store,
             ast.Load,
             ast.AnnAssign,
@@ -817,7 +1030,7 @@ class TypeSystem:
 class MontyDriver:
     _modules: Dict[str, Module] = field(default_factory=dict)
 
-    tcx: TypeSystem = field(default_factory=TypeSystem)
+    tcx: TypeContext = field(default_factory=TypeContext)
     functions: Set[Function] = field(default_factory=set)
 
     _ast_nodes: Dict[ASTNode, Item] = field(default_factory=dict)
@@ -852,6 +1065,9 @@ class MontyDriver:
 
     def node_entry(self, node: ASTNode) -> Item:
         return self._ast_nodes[node]
+
+    def type_eq(self, lhs: TypeInfo, rhs: TypeInfo) -> bool:
+        return self._resolve_type(lhs) == self._resolve_type(rhs)
 
     def _resolve_type(self, ty: TypeInfo) -> TypeInfo:
         """Return a fully qualified type i.e. not a type-ref."""
@@ -896,6 +1112,15 @@ class MontyDriver:
                     and item.node in imp.names
                 )
 
+
+        elif isinstance(item.node, ast.Return):
+
+            def predicate(cur: Item) -> bool:
+                return (
+                    isinstance(cur.node, (ast.FunctionDef))
+                    and item.node in cur.scope.elements
+                )
+
         else:
             raise NotImplementedError(
                 f"I dont know how to get the direct parent node of this type of node {item}"
@@ -905,200 +1130,6 @@ class MontyDriver:
             return parent.node
         else:
             return None
-
-    def typecheck(self, entry: Item):
-        """Recursively typecheck some node entry."""
-
-        def type_eq(lhs: TypeInfo, rhs: TypeInfo) -> bool:
-            return self._resolve_type(lhs) == self._resolve_type(rhs)
-
-        def is_visible(n: ASTNode) -> bool:
-            return not isinstance(
-                n, (ast.Load, ast.Store, ast.Add, ast.Sub, ast.Module)
-            )
-
-        def fmt(n: ASTNode) -> str:
-            entry = self._ast_nodes[n]
-            assert entry.kind is not None
-            return (
-                f"{entry.span.display()!r}"
-                f" has type {self._resolve_type(entry.kind).__str__()!r}"
-            )
-
-        assert entry.scope is not None
-
-        for item in entry.scope:
-            item_node: ASTNode = item.node
-
-            if item_node is entry.node:
-                continue
-
-            if isinstance(item_node, ast.FunctionDef):
-                self.typecheck(entry=self._ast_nodes[item.node])
-                continue
-
-            item_entry = self._ast_nodes[item.node]
-            item_span = item_entry.span
-
-            item_module = self._modules[item_span.file_name].root.node
-            assert isinstance(item_module, ast.Module)
-
-            item_module_source = self._modules[item_span.file_name].root.span.source_ref
-            assert isinstance(item_module_source, str)
-
-            if isinstance(item_node, ast.Attribute):
-                assert item.kind is not None
-                if type_eq(item.kind, UnknownType):
-                    kinds = "\n".join(
-                        f"|\t{fmt(node)!s}"
-                        for node in ast.walk(item.node)
-                        if is_visible(node) and node is not item.node
-                    )
-
-                    raise TypeError(
-                        f"\n| [{item_span.lineno}:{item_span.col_offset}]: Unable to infer type for attribute access..."
-                        f"\n|\t{item_span.display()!r}"
-                        f"\n| where:\n{kinds!s}"
-                    )
-
-            elif isinstance(item_node, ast.If):
-                t = self._ast_nodes[item_node.test]
-                t_k = t.kind
-                assert t_k is not None
-                t_t = self._resolve_type(t_k)
-                assert t_t is BoolType, ast.dump(t.node)
-
-            elif isinstance(item_node, ast.Return):
-                assert item.kind is not None
-                assert isinstance(entry.node, ast.FunctionDef)
-                assert isinstance(entry.kind, Function)
-
-                expected = self._resolve_type(entry.kind.ret)
-                actual = self._resolve_type(item.kind)
-
-                if not type_eq(expected, actual):
-                    span_info = self._ast_nodes[item.node].span
-
-                    kinds = "\n".join(
-                        f"|\t{fmt(node)!s}"
-                        for node in ast.walk(item.node)
-                        if is_visible(node) and node is not item.node
-                    )
-
-                    raise TypeError(
-                        f"\n| [{span_info.lineno}:{span_info.col_offset}]: Attempted to return with type {actual}, expected type {expected}"
-                        f"\n|\t{span_info.display()!r}"
-                        f"\n| where:\n{kinds!s}"
-                    )
-
-            elif isinstance(item_node, ast.AugAssign):
-                raise NotImplementedError()
-
-            elif isinstance(item_node, ast.AnnAssign):
-                node = typing.cast("ast.AnnAssign", item_node)
-                annotation, value = node.annotation, node.value
-
-                assert value is not None
-
-                expected_kind = self._ast_nodes[annotation].kind
-                assert expected_kind is not None
-                expected = self._resolve_type(expected_kind)
-
-                actual_kind = self._ast_nodes[value].kind
-                assert actual_kind is not None
-                actual = self._resolve_type(actual_kind)
-
-                if not type_eq(expected, actual):
-                    span_info = self._ast_nodes[item.node].span
-                    raise TypeError(
-                        f"[{span_info.lineno}:{span_info.col_offset}]: Expected type {expected.__str__()!r} instead got {actual.__str__()!r}"
-                    )
-
-            elif isinstance(
-                item_node, (ast.Compare, ast.Gt, ast.Add, ast.Sub, ast.Mult)
-            ):
-                if item.kind is UnknownType:
-                    parent = self._get_direct_parent_node(item=item)
-                    assert parent is not None
-                    parent_entry = self._ast_nodes[parent]
-                    item_span = parent_entry.span
-
-                    kinds = "\n".join(
-                        f"|\t{fmt(node)!s}"
-                        for node in ast.iter_child_nodes(parent)
-                        if is_visible(node) and node is not item.node
-                    )
-
-                    raise TypeError(
-                        f"\n| [{item_span.lineno}:{item_span.col_offset}]: Unable to infer the result type of this expression..."
-                        f"\n|\t{item_span.display()!r}"
-                        f"\n| where:\n{kinds!s}"
-                    )
-
-            elif isinstance(item_node, ast.Assign):
-                assert len(item_node.targets) == 1
-
-            elif isinstance(item_node, ast.Call):
-                assert isinstance(item.node, ast.Call)
-                f_entry = self._ast_nodes[item.node.func]
-                span_info = self._ast_nodes[item.node].span
-
-                if not isinstance(func_kind := f_entry.kind, Function):
-                    assert func_kind is not None
-                    actual = func_kind
-
-                    raise TypeError(
-                        f"[{span_info.lineno}:{span_info.col_offset}]: Type {actual} is not callable."
-                    )
-
-                args: List[TypeInfo] = [
-                    self.tcx.infer(self._ast_nodes[arg_], driver=self) or panic()
-                    for arg_ in item.node.args
-                ]
-
-                assert all(arg not in {UnknownType, None} for arg in args)
-
-                callsite_signature = Function(
-                    name=func_kind.name, args=args, ret=func_kind.ret
-                )
-
-                if callsite_signature != func_kind:
-                    if callsite_signature.args != func_kind.args:
-                        n_expected_args = len(func_kind.args)
-                        n_actual_args = len(callsite_signature.args)
-                        assert n_expected_args != n_actual_args
-                        plural = lambda n: "s" if n > 1 else ""
-                        reason = (
-                            f"this function takes {n_expected_args}"
-                            f" argument{plural(n_expected_args)} but"
-                            f" {n_actual_args} arguments were supplied."
-                        )
-                    else:
-                        assert False
-
-                    raise TypeError(span_info.fmt(reason))
-
-            elif type(item_node) in {
-                ast.While,
-                ast.Store,
-                ast.Load,
-                ast.Name,
-                ast.Constant,
-                ast.arguments,
-                ast.arg,
-                ast.BinOp,
-                ast.Expr,
-                ast.alias,
-                ast.Import,
-                ast.ImportFrom,
-                ast.Attribute,
-            }:
-                continue
-
-            else:
-                raise NotImplementedError(item)
-
-        # raise NotImplementedError()
 
 
     def _comptime_map(self, module: ast.Module, source_ref: str) -> ast.Module:
@@ -1427,7 +1458,7 @@ class MontyDriver:
             entry.kind = inferred
             continue
 
-        self.typecheck(entry=root_entry)
+        self.tcx.typecheck(entry=root_entry, driver=self)
 
         return module_obj
 
