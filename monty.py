@@ -1,12 +1,13 @@
+from abc import ABC, abstractmethod
 import ast
 import builtins
 from pathlib import Path
 import sys
-from sys import modules
+from sys import modules, path
 import typing
 from ast import dump, walk
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from functools import cached_property, lru_cache, partial, singledispatchmethod
 from typing import (
     Any,
@@ -24,8 +25,11 @@ from typing import (
     Union,
 )
 
+ASTNode = ast.AST
+STDLIB_PATH = Path(__file__).parent.joinpath("std").absolute()
 CAN_HAVE_SCOPE = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 LEGAL_NODE_TYPES = {
+    ast.ClassDef,
     ast.Module,
     ast.FunctionDef,
     ast.AnnAssign,
@@ -55,8 +59,32 @@ LEGAL_NODE_TYPES = {
 }
 
 
-class TypeInfo:
+class TypeInfo(ABC):
     """Base class for all types."""
+
+    @abstractmethod
+    def size(self) -> int:
+        """Get the size of this type."""
+
+
+@dataclass
+class Pointer(TypeInfo):
+    inner: TypeInfo
+
+    def size(self) -> int:
+        """Get the size of this type."""
+        return 64  # TODO: This is fixed for 64-bit architectures.
+
+    def __hash__(self) -> int:
+        return hash(self.inner)
+
+    def __str__(self) -> str:
+        return f"Pointer[{self.inner!s}]"
+
+
+class _StringType(Pointer):
+    def __str__(self) -> str:
+        return "str"
 
 
 @dataclass
@@ -64,6 +92,11 @@ class Function(TypeInfo):
     name: str
     args: List[TypeInfo]
     ret: TypeInfo
+    impl: Optional[Callable[[ASTNode], None]] = field(default=None)
+
+    def size(self) -> int:
+        """Get the size of this type."""
+        return Pointer(inner=NoneType).size()
 
     def __hash__(self) -> int:
         return hash((self.name, tuple(map(hash, self.args)), hash(self.ret)))
@@ -81,12 +114,17 @@ class Function(TypeInfo):
     def __str__(self) -> str:
         args = ", ".join(map(str, self.args))
         return f"<function {self.name!s}({args}) -> {self.ret!s}>"
-        return f"Callable[[{', '.join(map(str, self.args))}], {self.ret!s}]"
 
 
 @dataclass
 class TypeRef(TypeInfo):
     other: "Item"
+
+    def size(self) -> int:
+        """Get the size of this type."""
+        raise TypeError(
+            "TypeRef's don't have a size known at compile time, resolve it first!"
+        )
 
     def __hash__(self) -> int:
         return hash(self.other.kind)
@@ -98,7 +136,25 @@ class TypeRef(TypeInfo):
 
 @dataclass
 class PrimitiveBase(TypeInfo):
-    name: str
+    name: str = field(default_factory=str)
+    kind: InitVar[Optional[type]] = field(default=None)
+
+    def size(self) -> int:
+        """Get the size of this type."""
+        return 0  # Unsized
+
+    def __post_init__(self, kind: Optional[type]):
+        if self.name or kind is None:
+            return
+
+        assert not self.name and kind is not None
+        self.name = {
+            type(None): "NoneType",
+            ast.Module: "ModuleType",
+            int: "int",
+            float: "FloatType",
+            bool: "BoolType",
+        }.get(kind, "UnknownType")
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -112,37 +168,37 @@ class PrimitiveBase(TypeInfo):
 
     def __str__(self) -> str:
         return {
-            "NoneType": "None",
+            "NoneType": "{None}",
             "UnknownType": "{unknown}",
             "ModuleType": "{module}",
-            "IntegerType": "{int}",
+            "int": "{int}",
             "FloatType": "{float}",
+            "BoolType": "{bool}",
         }[self.name]
 
 
-NoneType = PrimitiveBase(name="NoneType")
-UnknownType = PrimitiveBase(name="UnknownType")
-ModuleType = PrimitiveBase(name="ModuleType")
-IntegerType = PrimitiveBase(name="IntegerType")
-FloatType = PrimitiveBase(name="FloatType")
-BoolType = PrimitiveBase(name="BoolType")
-
-
 @dataclass
-class Pointer(TypeInfo):
-    inner: TypeInfo
+class KlassType(TypeInfo):
+    """Represents a `class` definition."""
+
+    node: ast.ClassDef
+    name: str
+    # bases: dict
+    # namepsace: dict
 
     def __hash__(self) -> int:
-        return hash(self.inner)
+        return hash(self.name)
 
-    def __str__(self) -> str:
-        return f"Pointer[{self.inner!s}]"
+    def size(self) -> int:
+        raise NotImplementedError()
 
 
-class _StringType(Pointer):
-    def __str__(self) -> str:
-        return "str"
-
+NoneType = PrimitiveBase(kind=type(None))
+UnknownType = PrimitiveBase(kind=object)
+ModuleType = PrimitiveBase(kind=ast.Module)
+IntegerType = PrimitiveBase(kind=int)
+FloatType = PrimitiveBase(kind=float)
+BoolType = PrimitiveBase(kind=bool)
 
 StringType = _StringType(inner=IntegerType)
 
@@ -152,10 +208,8 @@ PRIMITIVE_TYPES = {
     int: Function(name="builtins.int", args=[], ret=IntegerType),
     float: Function(name="builtins.float", args=[], ret=FloatType),
     bool: Function(name="builtins.bool", args=[], ret=BoolType),
-    # type(None): NoneType,
+    type(None): NoneType,
 }
-
-ASTNode = ast.AST
 
 
 def ofwhichinstance(this: Any, *those: type) -> Optional[type]:
@@ -188,6 +242,10 @@ def postorder_walk(
         yield (_stack_depth, parent, node)
 
 
+class Builtin:
+    """Base class used as a market type for all compiler built-in stuff."""
+
+
 # import x.y as z
 #
 # qualname = ("x", "y")
@@ -218,13 +276,13 @@ class ImportDecl:
 
 
 class SpanInfo(NamedTuple):
-    source_ref: str
-    module_name: str
-    file_name: str
-    lineno: int
-    col_offset: int
-    end_lineno: int
-    end_col_offset: int
+    module_name: str = ""
+    file_name: str = ""
+    source_ref: str = field(repr=False, default="")
+    lineno: int = sys.maxsize
+    col_offset: int = sys.maxsize
+    end_lineno: int = sys.maxsize
+    end_col_offset: int = sys.maxsize
 
     def display(self) -> str:
         return self.source_ref.split("\n")[self.lineno - 1][
@@ -246,11 +304,13 @@ class SpanInfo(NamedTuple):
 
 @dataclass
 class Item:
-    node: ASTNode
-    span: SpanInfo
-    scope: "Scope" = field(repr=False)
+    span: SpanInfo = field(repr=False, default_factory=SpanInfo)
+    node: ASTNode = field(default_factory=ast.Pass)
     parent: Optional[ASTNode] = field(default=None, repr=False)
     kind: TypeInfo = field(default=UnknownType)
+    scope: "Scope" = field(
+        repr=False, default_factory=(lambda: Scope(parent_node=None))
+    )
 
     def __hash__(self) -> int:
         return hash(self.node)
@@ -261,15 +321,13 @@ class Item:
             source_ref=source_ref,
             module_name=module_name,
             file_name=module_name,
-            lineno=getattr(node, "lineno", None),
-            end_lineno=getattr(node, "end_lineno", None),
-            col_offset=getattr(node, "col_offset", None),
-            end_col_offset=getattr(node, "end_col_offset", None),
+            lineno=getattr(node, "lineno", sys.maxsize),
+            end_lineno=getattr(node, "end_lineno", sys.maxsize),
+            col_offset=getattr(node, "col_offset", sys.maxsize),
+            end_col_offset=getattr(node, "end_col_offset", sys.maxsize),
         )
 
-        self = cls(node=node, span=span_info, scope=Scope(parent_node=None))
-
-        return self
+        return cls(node=node, span=span_info)
 
     @classmethod
     def from_module(
@@ -306,6 +364,33 @@ class Item:
         dangling: Dict[ASTNode, List[Item]] = {}
         bucket: Dict[int, List[Item]] = {depth: [local_entry]}
 
+        def flush(*, bucket, depth, local_entry, dangling, node, p) -> int:
+            for item in dangling.pop(node, []) + bucket[depth]:
+                local_entry.scope.elements.append(item)
+
+                if not isinstance(item.node, CAN_HAVE_SCOPE):
+                    item.scope = local_entry.scope
+
+                item.parent = local_entry.node
+                item.scope.parent = local_entry.node
+
+                # print(f"\t{item}")
+
+            if isinstance(local_entry.node, ast.FunctionDef):
+                assert ast.BinOp in map(
+                    type, [_.node for _ in local_entry.scope.elements]
+                ), breakpoint()  # type: ignore
+
+            if p is not None:
+                if n in bucket:
+                    bucket[n].append(local_entry)
+                else:
+                    bucket[n] = [local_entry]
+            else:
+                bucket.clear()
+
+            return n
+
         while stream:
             n, p, node = stream.popleft()
 
@@ -315,10 +400,6 @@ class Item:
                 source_ref=source_ref,
             )
 
-            # print(depth, node)
-            # print(type(node))
-            # print(type(node) in set(map(type, local_nodes)), list(local_nodes.keys()))
-
             peek_depth = stream[0][0] if stream else 0
 
             if (
@@ -326,7 +407,6 @@ class Item:
                 and isinstance(p, CAN_HAVE_SCOPE)
                 and (max(peek_depth, n) - min(peek_depth, n) > 1)
             ):
-                # print(f"[{depth=!r} {n=!r}] Bail out! {node}")
                 if p in dangling:
                     dangling[p] += bucket[depth]
                 else:
@@ -340,25 +420,14 @@ class Item:
             elif n == (depth - 1) or p is None:
                 # print(f"[{depth=!r} {n=!r}] Flush! {node}")
                 assert local_entry.scope is not None
-
-                for item in dangling.pop(node, []) + bucket[depth]:
-                    # print(f"\t{item}")
-                    local_entry.scope.elements.append(item)
-
-                    if not isinstance(item.node, CAN_HAVE_SCOPE):
-                        item.scope = local_entry.scope
-
-                    item.parent = local_entry.node
-
-                if p is not None:
-                    if n in bucket:
-                        bucket[n].append(local_entry)
-                    else:
-                        bucket[n] = [local_entry]
-                else:
-                    bucket = {}
-
-                depth = n
+                depth = flush(
+                    bucket=bucket,
+                    depth=depth,
+                    local_entry=local_entry,
+                    dangling=dangling,
+                    node=node,
+                    p=p,
+                )
 
             elif n == depth:
                 # print(f"[{depth=!r} {n=!r}] Same depth {node}")
@@ -366,6 +435,18 @@ class Item:
 
             else:
                 # print(f"[{depth=!r} {n=!r}] LARGE depth diff {node}")
+
+                if remaining := bucket[depth]:
+                    depth = flush(
+                        bucket={depth: remaining},
+                        depth=depth,
+                        local_entry=local_entry,
+                        dangling=dangling,
+                        node=node,
+                        p=p,
+                    )
+                    # # breakpoint()
+
                 bucket[n] = [local_entry]
                 depth = n
         else:
@@ -374,11 +455,14 @@ class Item:
 
         root_entry = local_nodes[root]
 
+        # breakpoint()
+
         return (root_entry, local_nodes)
 
 
-def collapse_attribute(n: ASTNode) -> str:
+def collapse_attribute(n: Union[ast.Attribute, ast.Name]) -> str:
     if isinstance(n, ast.Attribute):
+        assert isinstance(n.value, (ast.Attribute, ast.Name))
         return f"{collapse_attribute(n.value)!s}.{n.attr}"
 
     if isinstance(n, ast.Name):
@@ -389,7 +473,7 @@ def collapse_attribute(n: ASTNode) -> str:
 
 @dataclass
 class Scope:
-    parent_node: Optional[ASTNode]
+    parent_node: Optional[ASTNode] = None
     elements: List[Item] = field(default_factory=list)
 
     def __iter__(self) -> Iterator[Item]:
@@ -416,6 +500,7 @@ class Scope:
                     isinstance(node, ast.Attribute)
                     and collapse_attribute(node).startswith(target)
                 )
+                or (isinstance(node, ast.ClassDef) and node.name == target)
             ):
                 return item
 
@@ -467,17 +552,23 @@ def check_builtins(target: str, functions: Set[Function]) -> Optional[Function]:
 
 def is_visible(n: ASTNode) -> bool:
     return not isinstance(
-        n, (ast.Load, ast.Store, ast.Add, ast.Sub, ast.Module)
+        n, (ast.Load, ast.Store, ast.Add, ast.Sub, ast.Module, ast.arguments)
     )
 
 
-def fmt(n: ASTNode, driver: "MontyDriver") -> str:
-    entry = driver._ast_nodes[n]
+def fmt(node: ASTNode, driver: "MontyDriver") -> str:
+    entry = driver._ast_nodes[node]
     assert entry.kind is not None
-    return (
-        f"{entry.span.display()!r}"
-        f" has type {driver._resolve_type(entry.kind).__str__()!r}"
+
+    kind = driver._resolve_type(entry.kind)
+    st = (
+        kind.__str__()
+        if not isinstance(kind, KlassType)
+        else driver.get_qualname(driver._ast_nodes[kind.node])
     )
+
+    return f"{entry.span.display()!r}" f" has type {st!r}"
+
 
 class TypeContext:
     # Helpers
@@ -488,7 +579,9 @@ class TypeContext:
 
         if getattr(argument, "annotation", None) is None:
             span = item.span
-            assert False, f"[{span.lineno}:{span.col_offset}]: All non-self parameters must be type annotated."
+            assert (
+                False
+            ), f"[{span.lineno}:{span.col_offset}]: All non-self parameters must be type annotated."
 
         return argument
 
@@ -518,7 +611,6 @@ class TypeContext:
             ast.Constant,
             ast.arguments,
             ast.arg,
-            ast.BinOp,
             ast.Expr,
             ast.alias,
             ast.Import,
@@ -530,8 +622,12 @@ class TypeContext:
             raise NotImplementedError(item)
 
     @_typecheck_node.register
+    def _typecheck_classdef(self, node: ast.ClassDef, item: Item, driver: Any):
+        self.typecheck(entry=item, driver=driver)
+
+    @_typecheck_node.register
     def _typecheck_funcdef(self, node: ast.FunctionDef, item: Item, driver: Any):
-        self.typecheck(entry=driver._ast_nodes[node], driver=driver)
+        self.typecheck(entry=item, driver=driver)
 
     @_typecheck_node.register
     def _typecheck_attribute(self, node: ast.Attribute, item: Item, driver: Any):
@@ -558,28 +654,24 @@ class TypeContext:
         t_t = driver._resolve_type(t_k)
         assert t_t is BoolType, ast.dump(t.node)
 
-            # item_entry = self._ast_nodes[item.node]
-            # item_span = item_entry.span
-
-            # item_module = self._modules[item_span.file_name].root.node
-            # assert isinstance(item_module, ast.Module)
-
-            # item_module_source = self._modules[item_span.file_name].root.span.source_ref
-            # assert isinstance(item_module_source, str)
-
-            # if isinstance(item_node, ast.Attribute):
-
-            # elif isinstance(item_node, ast.If):
-
     @_typecheck_node.register
     def _typecheck_return(self, node: ast.Return, item: Item, driver: Any):
         assert item.kind is not None
-        # assert isinstance(entry.node, ast.FunctionDef)
-        # assert isinstance(entry.kind, Function)
 
-        entry = driver._get_direct_parent_node(node=node)
+        parent_node = driver._get_direct_parent_node(item=item)
+        assert parent_node is not None
+        assert isinstance(parent_node, ast.FunctionDef), parent_node
 
-        expected = driver._resolve_type(entry.kind.ret)
+        parent_item = driver._ast_nodes[parent_node]
+        assert isinstance(parent_item.kind, Function)
+
+        parent_item_kind = (
+            parent_item.kind.ret
+            if isinstance(parent_item.kind, Function)
+            else parent_item.kind
+        )
+
+        expected = driver._resolve_type(parent_item_kind)
         actual = driver._resolve_type(item.kind)
 
         if not driver.type_eq(expected, actual):
@@ -587,14 +679,14 @@ class TypeContext:
 
             kinds = "\n".join(
                 f"|\t{fmt(node, driver)!s}"
-                for node in ast.walk(item.node)
-                if is_visible(node) and node is not item.node
+                for node in ast.walk(node)
+                if is_visible(node) and node is not node
             )
 
             raise TypeError(
                 f"\n| [{span_info.lineno}:{span_info.col_offset}]: Attempted to return with type {actual}, expected type {expected}"
                 f"\n|\t{span_info.display()!r}"
-                f"\n| where:\n{kinds!s}"
+                + (f"\n| where:\n{kinds!s}" if kinds else "")
             )
 
     @_typecheck_node.register
@@ -626,7 +718,7 @@ class TypeContext:
     @_typecheck_node.register(ast.Add)
     @_typecheck_node.register(ast.Sub)
     @_typecheck_node.register(ast.Mult)
-    def _typecheck_binop(self, node: ast.Return, item: Item, driver: Any):
+    def _typecheck_binop(self, node, item: Item, driver: Any):
         if item.kind is UnknownType:
             parent = driver._get_direct_parent_node(item=item)
             assert parent is not None
@@ -647,7 +739,7 @@ class TypeContext:
 
     @_typecheck_node.register
     def _typecheck_assign(self, node: ast.Assign, item: Item, driver: Any):
-            # elif isinstance(item_node, ast.Assign):
+        # elif isinstance(item_node, ast.Assign):
         assert len(node.targets) == 1
 
     @_typecheck_node.register
@@ -671,9 +763,7 @@ class TypeContext:
 
         assert all(arg not in {UnknownType, None} for arg in args)
 
-        callsite_signature = Function(
-            name=func_kind.name, args=args, ret=func_kind.ret
-        )
+        callsite_signature = Function(name=func_kind.name, args=args, ret=func_kind.ret)
 
         if callsite_signature != func_kind:
             if callsite_signature.args != func_kind.args:
@@ -733,11 +823,23 @@ class TypeContext:
         return None
 
     @_infer_node.register
-    def _infer_const(self, node: ast.Constant, item: Item, driver: Any) -> Optional[TypeInfo]:
-        return PRIMITIVE_TYPES[type(node.value)].ret
+    def _infer_classdef(
+        self, node: ast.ClassDef, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
+        return KlassType(node=node, name=node.name)
 
     @_infer_node.register
-    def _infer_name(self, node: ast.Name, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_const(
+        self, node: ast.Constant, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
+        kind = PRIMITIVE_TYPES[type(node.value)]
+        assert isinstance(kind, TypeInfo)
+        return getattr(kind, "ret", kind)
+
+    @_infer_node.register
+    def _infer_name(
+        self, node: ast.Name, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         assert isinstance(item.node, ast.Name)
 
         if (
@@ -763,7 +865,9 @@ class TypeContext:
             result = item.scope.lookup(target=item.node.id, driver=driver)
 
             if result is None:
-                if (fn_type := check_builtins(item.node.id, driver.functions)) is not None:
+                if (
+                    fn_type := check_builtins(item.node.id, driver.functions)
+                ) is not None:
                     result_type = fn_type.ret
                 else:
                     return None
@@ -787,7 +891,9 @@ class TypeContext:
             return TypeRef(other=value)
 
     @_infer_node.register
-    def _infer_funcdef(self, node: ast.FunctionDef, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_funcdef(
+        self, node: ast.FunctionDef, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         assert isinstance(item.node, ast.FunctionDef)
         arguments: List[TypeInfo] = []
 
@@ -796,7 +902,10 @@ class TypeContext:
 
             for group in [f_args.posonlyargs, f_args.args, f_args.kwonlyargs]:
                 for argument in group:
-                    argument_entry = driver._ast_nodes[self._validate_argument(argument, item)]
+                    if argument.arg != "self":
+                        self._validate_argument(argument, item)
+
+                    argument_entry = driver._ast_nodes[argument]
                     argument_type = self.infer(argument_entry, driver)
                     assert argument_type is not None
                     arguments.append(argument_type)
@@ -812,7 +921,9 @@ class TypeContext:
         return Function(name=item.node.name, args=arguments, ret=ret)
 
     @_infer_node.register
-    def _infer_attribute(self, node: ast.Attribute, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_attribute(
+        self, node: ast.Attribute, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         assert isinstance(item.node, ast.Attribute)
         assert item.scope is not None
 
@@ -832,9 +943,7 @@ class TypeContext:
                     assert st[len(name)] == "."
                     me = driver._ast_nodes[module_node]
                     assert me.scope is not None
-                    result = me.scope.lookup(
-                        target=st[len(name) + 1 :], driver=driver
-                    )
+                    result = me.scope.lookup(target=st[len(name) + 1 :], driver=driver)
                     assert result is not None
                     return result.kind
             else:
@@ -843,7 +952,9 @@ class TypeContext:
             return result.kind
 
     @_infer_node.register
-    def _infer_alias(self, node: ast.alias, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_alias(
+        self, node: ast.alias, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         assert isinstance(item.node, ast.alias)
 
         import_node = driver._get_direct_parent_node(item)
@@ -862,10 +973,11 @@ class TypeContext:
         assert result is not None
         return result.kind
 
-
     @_infer_node.register(ast.Import)
     @_infer_node.register(ast.ImportFrom)
-    def _infer_import(self, node: Union[ast.Import, ast.ImportFrom], item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_import(
+        self, node: Union[ast.Import, ast.ImportFrom], item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         assert isinstance(item.node, (ast.ImportFrom, ast.Import))
 
         for al in item.node.names:
@@ -876,12 +988,16 @@ class TypeContext:
         return NoneType
 
     @_infer_node.register
-    def _infer_expr(self, node: ast.Expr, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_expr(
+        self, node: ast.Expr, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         assert isinstance(item.node, ast.Expr)
         return TypeRef(other=driver._ast_nodes[item.node.value])
 
     @_infer_node.register
-    def _infer_compare(self, node: ast.Compare, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_compare(
+        self, node: ast.Compare, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         if (len(node.ops), len(node.comparators)) != (1, 1):
             span = driver._ast_nodes[item.node].span
             raise SyntaxError(
@@ -910,9 +1026,7 @@ class TypeContext:
 
         f = partial(self.infer, driver=driver)
 
-        (lhs, rhs) = map(
-            f, map(driver.node_entry, [parent.left, parent.right])
-        )
+        (lhs, rhs) = map(f, map(driver.node_entry, [parent.left, parent.right]))
 
         assert lhs is not None
         assert rhs is not None
@@ -970,7 +1084,9 @@ class TypeContext:
         return kind
 
     @_infer_node.register
-    def _infer_call(self, node: ast.Call, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_call(
+        self, node: ast.Call, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         func_kind: Optional[TypeInfo]
 
         if isinstance(node.func, ast.Attribute):
@@ -981,9 +1097,7 @@ class TypeContext:
             assert isinstance(node.func, ast.Name)
             assert item.scope is not None
 
-            if (
-                f := item.scope.lookup(target=node.func.id, driver=driver)
-            ) is not None:
+            if (f := item.scope.lookup(target=node.func.id, driver=driver)) is not None:
                 assert isinstance(f, Item)
                 func_kind = f.kind
             else:
@@ -999,24 +1113,53 @@ class TypeContext:
         assert item.scope is not None
         assert isinstance(item.node, ast.arg)
 
-        arg = self._validate_argument(item.node, item)
+        arg_parent = driver._get_direct_parent_node(item=item)
+
+        assert isinstance(arg_parent, ast.FunctionDef)
+
+        funcdef_item = driver._ast_nodes[arg_parent]
+        funcdef_parent = driver._get_direct_parent_node(
+            item=funcdef_item
+        )
+        in_classdef = isinstance(funcdef_parent, ast.ClassDef)
+        is_self_arg = node.arg == "self"
+
+        if is_self_arg:
+            assert in_classdef
+
+        if in_classdef and is_self_arg:
+            klass_type = driver._ast_nodes[funcdef_parent]
+            return TypeRef(other=klass_type)
+
+        ()
+
+        arg = self._validate_argument(node, item)
 
         assert arg.annotation is not None
-        assert isinstance(arg.annotation, ast.Name)
 
-        result = item.scope.lookup(target=arg.annotation.id, driver=driver)
+        assert isinstance(arg.annotation, (ast.Name, ast.Constant))
+
+        if isinstance(arg.annotation, ast.Name):
+            annotation_id = arg.annotation.id
+        else:
+            assert isinstance(arg.annotation, ast.Constant)
+            annotation_id = arg.annotation.value
+
+        result = item.scope.lookup(target=annotation_id, driver=driver)
 
         if result is None:
             return (
                 f_.ret
-                if (f_ := check_builtins(arg.annotation.id, driver.functions)) is not None
+                if (f_ := check_builtins(annotation_id, driver.functions)) is not None
                 else None
             )
         else:
             return result.kind
 
     @_infer_node.register
-    def _infer_return(self, node: ast.Return, item: Item, driver: Any) -> Optional[TypeInfo]:
+    def _infer_return(
+        self, node: ast.Return, item: Item, driver: Any
+    ) -> Optional[TypeInfo]:
         assert isinstance(item.node, ast.Return)
 
         if item.node.value is not None:
@@ -1032,42 +1175,90 @@ class MontyDriver:
 
     tcx: TypeContext = field(default_factory=TypeContext)
     functions: Set[Function] = field(default_factory=set)
+    klass_types: Set[KlassType] = field(default_factory=set)
 
     _ast_nodes: Dict[ASTNode, Item] = field(default_factory=dict)
     _source_map: Dict[ast.Module, str] = field(default_factory=dict)
+    _builtin_types: Dict[TypeInfo, Optional[ASTNode]] = field(default_factory=dict)
+
+    @cached_property
+    def __monty(self) -> Union[Builtin, Module]:
+        class _BuiltinModule(Module, Builtin):
+            driver: MontyDriver
+
+            def __init__(self, driver: "MontyDriver"):
+                root = Item()
+                root.span = SpanInfo(module_name = "__monty")
+                super().__init__(name="__monty", root=root)
+                self.driver = driver
+
+        return _BuiltinModule(driver=self)
 
     def __post_init__(self):
+        self._modules["__monty"] = phantom_module = self.__monty
+        self._ast_nodes[phantom_module.root] = phantom_module.root
+
+        def bind_lang_impl(node: Union[ast.ClassDef, ast.FunctionDef]):
+            assert isinstance(node, (ast.ClassDef, ast.FunctionDef))
+            assert node.decorator_list, breakpoint() # type: ignore
+
+            top = node.decorator_list.pop()
+
+            assert isinstance(top, ast.Call)
+            assert isinstance(top.func, ast.Attribute)
+            assert collapse_attribute(top.func) == "__monty.lang"
+
+            breakpoint()
+
+            # self._builtin_types[kind] = impl
+
+        bind_lang = Function(name="__monty.lang", args=[StringType], ret=NoneType, impl=bind_lang_impl)
+
+        self.functions.add(bind_lang)
         self.functions.update(PRIMITIVE_TYPES.values())
-        self.functions.update(
-            {
-                Function(
-                    name="IntegerType.__add__",
-                    args=[IntegerType, IntegerType],
-                    ret=IntegerType,
-                ),
-                Function(
-                    name="IntegerType.__radd__",
-                    args=[IntegerType, IntegerType],
-                    ret=IntegerType,
-                ),
-                Function(
-                    name="IntegerType.__mul__",
-                    args=[IntegerType, IntegerType],
-                    ret=IntegerType,
-                ),
-                Function(
-                    name="IntegerType.__sub__",
-                    args=[IntegerType, IntegerType],
-                    ret=IntegerType,
-                ),
-            }
-        )
 
     def node_entry(self, node: ASTNode) -> Item:
         return self._ast_nodes[node]
 
     def type_eq(self, lhs: TypeInfo, rhs: TypeInfo) -> bool:
         return self._resolve_type(lhs) == self._resolve_type(rhs)
+
+    def get_qualname(self, item: Item) -> str:
+        assert isinstance(item.node, (ast.FunctionDef, ast.Module, ast.ClassDef))
+
+        def name_of(node: ASTNode) -> str:
+            if isinstance(node, ast.ClassDef):
+                stem = node.name
+
+            elif isinstance(node, ast.Module):
+                stem = cursor.span.module_name
+
+            elif isinstance(node, ast.FunctionDef):
+                return self._ast_nodes[node].kind.name  # type: ignore
+
+            else:
+                raise NotImplementedError(parent)
+
+            return stem
+
+        qualname = f"{name_of(item.node)!s}"
+
+        cursor = item
+        is_module = False
+        parent = None
+
+        while cursor is not parent:
+            parent = self._get_direct_parent_node(item=cursor)
+            assert parent is not None
+
+            qualname = f"{name_of(parent)}.{qualname!s}"
+
+            if isinstance(parent, ast.Module):
+                break
+            else:
+                cursor = self._ast_nodes[parent]
+
+        return qualname
 
     def _resolve_type(self, ty: TypeInfo) -> TypeInfo:
         """Return a fully qualified type i.e. not a type-ref."""
@@ -1079,11 +1270,16 @@ class MontyDriver:
         return ty
 
     def _get_direct_parent_node(self, item: Item) -> Optional[ASTNode]:
-        assert item.parent is not None, item
+        if isinstance(item.node, ast.Module):
+            return item.node
 
-        parent_scope = self._ast_nodes[item.parent].scope
+        if item.parent is None:
+            parent = self._modules[item.span.module_name].root
+        else:
+            assert item.parent is not None, item
+            parent = self._ast_nodes[item.parent]
 
-        assert parent_scope is not None
+        assert parent.scope is not None
 
         if isinstance(item.node, ast.Name) and isinstance(item.node.ctx, ast.Store):
 
@@ -1112,25 +1308,27 @@ class MontyDriver:
                     and item.node in imp.names
                 )
 
-
-        elif isinstance(item.node, ast.Return):
+        elif isinstance(item.node, (ast.Return, ast.arg)):
 
             def predicate(cur: Item) -> bool:
-                return (
-                    isinstance(cur.node, (ast.FunctionDef))
-                    and item.node in cur.scope.elements
-                )
+                return isinstance(
+                    cur.node, (ast.FunctionDef)
+                ) and item.node in ast.walk(cur.node)
+
+        elif isinstance(item.node, (ast.FunctionDef, ast.ClassDef)):
+
+            def predicate(cur: Item) -> bool:
+                return isinstance(cur.node, CAN_HAVE_SCOPE) and item in cur.scope
 
         else:
             raise NotImplementedError(
                 f"I dont know how to get the direct parent node of this type of node {item}"
             )
 
-        for parent in filter(predicate, parent_scope.elements):
+        for parent in filter(predicate, [parent, *parent.scope.elements]):
             return parent.node
         else:
             return None
-
 
     def _comptime_map(self, module: ast.Module, source_ref: str) -> ast.Module:
         """Given a module node, perform obvious comptime behaviour.
@@ -1161,6 +1359,52 @@ class MontyDriver:
             else:
                 return None
 
+        def comptime_lookup(
+            node: Union[str, ast.Name], seq: Sequence[ASTNode]
+        ) -> Optional[ASTNode]:
+            if isinstance(node, ast.Name):
+                assert isinstance(node.ctx, ast.Load)
+                target = node.id
+            else:
+                assert isinstance(node, str)
+                target = node
+
+            # comptime-name-lookup requires a sequence of AST nodes that
+            # that came "before" this one. This sequence forms the raw
+            # body of what will be used to resolve the name.
+            if __debug__:
+                _ = f"No history sequence provided in order to search the name: {target!r}"
+                assert seq, _
+                assert isinstance(seq, list), repr(seq)
+                _ = f"Refusing to comptime evaluate a history with branches {seq!r}"
+                assert ast.If not in map(type, seq), _
+
+            ALLOWED_TYPES = (ast.Assign, ast.AnnAssign, ast.FunctionDef, ast.Import)
+            for rev in reversed(seq):
+                if type(rev) not in ALLOWED_TYPES:
+                    continue
+
+                if (
+                    (
+                        isinstance(rev, ast.Import)
+                        and any([alias.name == target for alias in rev.names])
+                    )
+                    or (
+                        isinstance(rev, (ast.FunctionDef, ast.AnnAssign))
+                        and hasattr(rev, "name")
+                        and rev.name == target  # type: ignore
+                    )
+                    or (
+                        isinstance(asn := rev, ast.Assign)
+                        and len(asn.targets) == 1
+                        and isinstance(lhs := asn.targets[0], ast.Name)
+                        and lhs.id == target
+                    )
+                ):
+                    return rev
+            else:
+                raise NotImplementedError(f"{list(map(ast.dump, seq))}")
+
         def comptime_bool(n: ASTNode, seq: Optional[Sequence[ASTNode]] = None) -> bool:
             assert isinstance(n, (ast.Constant, ast.Name)), ast.dump(n)
 
@@ -1168,39 +1412,25 @@ class MontyDriver:
                 return bool(n.value)
 
             if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
-                # comptime-name-lookup requires a sequence of AST nodes that
-                # that came "before" this one. This sequence forms the raw
-                # body of what will be used to resolve the name.
-                assert (
-                    seq is not None
-                ), f"No history sequence provided in order to search the name: {ast.dump(n)!r}"
-                assert isinstance(seq, list), repr(seq)
-                assert ast.If not in set(
-                    map(type, seq)
-                ), f"Refusing to comptime evaluate a history with branches {seq!r}"
+                assert seq is not None
+                result = comptime_lookup(node=n, seq=seq)
 
-                ALLOWED_TYPES = (ast.Assign, ast.AnnAssign, ast.FunctionDef)
-                for node in reversed(seq):
-                    if type(node) not in ALLOWED_TYPES:
-                        continue
-                    else:
-                        ty = ofwhichinstance(node, *ALLOWED_TYPES)
+                assert result is not None
 
-                    if ty is ast.FunctionDef and node.name == n.id:
-                        return True
+                if isinstance(result, ast.FunctionDef):
+                    return True
 
-                    if ty is ast.AnnAssign and node.name == n.id:
-                        return comptime_bool(node.value)
+                if isinstance(result, ast.AnnAssign):
+                    if result.value is not None:
+                        return comptime_bool(result.value, seq=seq)
 
-                    if (
-                        isinstance(asn := node, ast.Assign)
-                        and len(asn.targets) == 1
-                        and isinstance(lhs := asn.targets[0], ast.Name)
-                        and lhs.id == n.id
-                    ):
-                        return comptime_bool(asn.value, seq=seq)
-                else:
-                    raise NotImplementedError(f"{list(map(ast.dump, seq))}")
+                    # value-less annotated assignments exist:
+                    #     x: int
+                    #     x = 1
+                    return comptime_bool(n, seq=seq[: seq.index(result)])
+
+                if isinstance(result, ast.Assign):
+                    return comptime_bool(result.value, seq=seq)
 
             assert False, "unreachable"
 
@@ -1265,6 +1495,28 @@ class MontyDriver:
 
                 del m.body[idx]
 
+        def invoke_decorators(m: ast.Module):
+            nonlocal self, comptime_lookup
+            for node in m.body:
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.decorator_list:
+                    assert len(node.decorator_list) == 1, "only one decorator allowed."
+
+                    [top] = node.decorator_list
+
+                    assert isinstance(top, ast.Call)
+                    assert isinstance(top.func, ast.Attribute)
+
+                    f_name = collapse_attribute(top.func)
+
+                    assert f_name.startswith("__monty.")
+
+                    for kind in {_ for _ in self.functions if _.name == f_name}:
+                        assert kind.impl is not None
+                        kind.impl(node)
+                        break
+                    else:
+                        assert False, f"No implementation for function {f_name=!r} found!"
+
         # TODO:
         #   Need to think of a safer way to confirm that no modifications to
         #   the tree has happened in a single comptime pass loop, currently we
@@ -1287,6 +1539,7 @@ class MontyDriver:
 
         apply_exhaustively(module, fold_branches)
         apply_exhaustively(module, eval_assert)
+        apply_exhaustively(module, invoke_decorators)
 
         return module
 
@@ -1294,7 +1547,7 @@ class MontyDriver:
         # if (idx := self.data.fetch_by_origin(origin=decl)) is not None:
         #     return self.data[idx]
 
-        paths_to_inspect = [Path(".")]
+        paths_to_inspect = [Path("."), STDLIB_PATH]
 
         assert decl.qualname
 
@@ -1309,8 +1562,9 @@ class MontyDriver:
             qualname = decl.qualname
 
         assert qualname, f"{decl=!r}"
-        # if qualname[0] == "__monty":
-        #     return self._monty_module
+
+        if qualname[0] == "__monty":
+            return self._modules["__monty"]
 
         def search(curdir: Path, expected: str) -> Optional[Path]:
             for path in curdir.iterdir():
@@ -1330,9 +1584,7 @@ class MontyDriver:
             else:
                 return None
 
-        module: Optional[Module] = None
-
-        def insert_module(final_path: Path, qualname: List[str]):
+        def compile_module(final_path: Path, qualname: List[str]):
             with open(final_path) as inf:
                 return self.compile(
                     st=inf.read(), module_name=".".join(qualname), path=final_path
@@ -1352,7 +1604,7 @@ class MontyDriver:
                 if final_path is not None and not final_path.is_dir():
                     assert final_path.is_file
                     assert final_qualname
-                    return insert_module(final_path, qualname=final_qualname)
+                    return compile_module(final_path, qualname=final_qualname)
                 else:
                     (idx, part) = _
                     is_last = idx == (len(qualname) - 1)
@@ -1381,13 +1633,13 @@ class MontyDriver:
                     if contains_init:
                         if is_last:
                             assert is_last
-                            return insert_module(
+                            return compile_module(
                                 final_path / "__init__.py",
                                 qualname=final_qualname + [part],
                             )
 
                         if not final_path.is_dir():
-                            return insert_module(final_path, qualname=final_qualname)
+                            return compile_module(final_path, qualname=final_qualname)
 
                         peek = qualname[idx + 1]
 
@@ -1398,7 +1650,7 @@ class MontyDriver:
                         assert False, f"Missing __init__ file {final_path!r}"
 
         return (
-            insert_module(final_path, qualname=qualname)
+            compile_module(final_path, qualname=qualname)
             if final_path is not None
             else None
         )
@@ -1412,9 +1664,6 @@ class MontyDriver:
     ) -> Module:
         root_tree = self._comptime_map(ast.parse(st), source_ref=st)
 
-        # dump_kwargs = {"indent": 4} if sys.version_info >= (3, 9) else {}
-        # print(ast.dump(root_tree, **dump_kwargs))  # type: ignore
-
         (root_entry, local_nodes) = Item.from_module(
             root=root_tree,
             module_name=module_name,
@@ -1422,6 +1671,7 @@ class MontyDriver:
         )
 
         module_obj = Module(name=module_name, root=root_entry, path=path)
+        module_obj.local_nodes = local_nodes
         self._modules[module_name] = module_obj
 
         self._ast_nodes[root_tree] = root_entry
@@ -1448,24 +1698,42 @@ class MontyDriver:
 
                     raise ImportError(span)
 
-        for (node, entry) in local_nodes.items():
-            if (inferred := self.tcx.infer(entry, self)) is None:
-                assert False, f"Failed to infer type for {ast.dump(entry.node)=!r}"
+        for (node, item) in local_nodes.items():
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                assert not node.decorator_list, f"decorators are not supported"
+
+            if (inferred := self.tcx.infer(item, self)) is None:
+                assert False, f"Failed to infer type for {ast.dump(item.node)=!r}"
 
             if isinstance(inferred, Function):
-                self.functions.add(inferred)
+                item.kind = inferred
 
-            entry.kind = inferred
+                if isinstance(self._get_direct_parent_node(item=item), ast.ClassDef):
+                    func = Function(
+                        name=self.get_qualname(item),
+                        args=inferred.args[:],
+                        ret=inferred.ret,
+                    )
+                else:
+                    func = inferred
+
+                self.functions.add(func)
+
+            elif isinstance(inferred, KlassType):
+                # assert set(map(type, node.body)) == {ast.Pass}, ast.dump(node)
+                self.klass_types.add(inferred)
+
+            item.kind = inferred
             continue
 
         self.tcx.typecheck(entry=root_entry, driver=self)
+        # breakpoint()
 
         return module_obj
 
 
 test_input = """
-def _(x: int) -> int:
-    return x * 3 + (5 - 2.1)
+from std.builtins import int
 """.strip()
 
 
