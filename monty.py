@@ -627,7 +627,14 @@ class Context:
 
     ast_nodes: Dict[ASTNode, Item] = field(default_factory=dict)
     source_map: Dict[ast.Module, str] = field(default_factory=dict)
-    builtin_types: Dict[TypeInfo, Optional[ASTNode]] = field(default_factory=dict)
+    builtin_types: Dict[TypeInfo, ASTNode] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.autoimpls = {
+            IntegerType: [
+                Function(name="__add__", args=[IntegerType, IntegerType], ret=IntegerType)
+            ]
+        }
 
     def node_entry(self, node: ASTNode) -> Item:
         return self.ast_nodes[node]
@@ -660,7 +667,6 @@ class Context:
 
         while cursor is not parent:
             parent = cursor.get_direct_parent_node(ctx=self)
-            # parent = self._get_direct_parent_node(item=cursor)
             assert parent is not None
 
             qualname = f"{name_of(parent)}.{qualname!s}"
@@ -748,6 +754,7 @@ class Typing:
             ast.ImportFrom,
             ast.Attribute,
             ast.Pass,
+            ast.BinOp,
         }
 
         if type(node) not in SUPPORTED_NODES:
@@ -1158,25 +1165,40 @@ class Typing:
     @_infer_node.register(ast.BinOp)
     def _infer_binop(self, node, item: Item, ctx: Context) -> Optional[TypeInfo]:
         if not isinstance(item.node, ast.BinOp):
+            assert (_ := node) and isinstance(_, (ast.Add, ast.Sub, ast.Mult))
             parent = item.get_direct_parent_node(ctx=ctx)
             op_type = type(node)
         else:
-            parent = item.node
-            assert isinstance(parent, ast.BinOp)
+            assert isinstance(node, ast.BinOp)
+            parent = node
             op_type = type(parent.op)
 
         assert parent is not None
         assert isinstance(parent, ast.BinOp)
 
-        f = partial(self.infer, ctx=ctx)
+        parent_item = ctx.ast_nodes[parent]
 
+        f = partial(self.infer, ctx=ctx)
         (lhs, rhs) = map(f, map(ctx.node_entry, [parent.left, parent.right]))
 
         assert lhs is not None
         assert rhs is not None
 
-        lhs = ctx.resolve_type(ty=lhs)
-        rhs = ctx.resolve_type(ty=rhs)
+        def into_resolved_parts(ty: TypeInfo):
+            ty = ctx.resolve_type(ty=ty)
+
+            if isinstance(ty, PrimitiveBase):
+                impl = ctx.builtin_types[ty]
+                imit = ctx.ast_nodes[impl]
+                name = ctx.get_qualname(imit)
+                return name, ty
+
+            raise NotImplementedError(ty)
+
+        (lhs_name, lhs) = into_resolved_parts(ty=lhs)
+        (rhs_name, rhs) = into_resolved_parts(ty=rhs)
+
+        # breakpoint()
 
         _ast_binop_name: Dict[type, str]
         _ast_binop_name = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}[
@@ -1187,15 +1209,18 @@ class Typing:
         assert isinstance(rhs, PrimitiveBase)
 
         ltr = Function(
-            name=f"{lhs.name}.__{_ast_binop_name}__",
+            name=f"{lhs_name}.__{_ast_binop_name}__",
             args=[lhs, rhs],
             ret=UnknownType,
         )
+
         rtl = Function(
-            name=f"{rhs.name}.__r{_ast_binop_name}__",
+            name=f"{rhs_name}.__r{_ast_binop_name}__",
             args=[rhs, lhs],
             ret=UnknownType,
         )
+
+        # breakpoint()
 
         def unify(f: Function) -> Optional[Function]:
             for other in ctx.functions:
@@ -1219,12 +1244,13 @@ class Typing:
             else:
                 return None
 
-        if (func := (unify(ltr) or unify(rtl))) is not None:
-            kind = func.ret
-        else:
-            kind = UnknownType
+        # breakpoint()
 
-        ctx.ast_nodes[parent].kind = kind
+        func = unify(ltr) or unify(rtl)
+
+        # print(node, func)
+
+        parent_item.kind = kind = (func and func.ret) or UnknownType
         return kind
 
     @_infer_node.register
@@ -1716,6 +1742,19 @@ class MontyDriver:
 
         self.ctx.ast_nodes.update(local_nodes)
 
+        if (newly_defined := set(self.ctx.autoimpls) & set(self.ctx.builtin_types)):
+            for primitive in newly_defined:
+                prototype = self.ctx.autoimpls.pop(primitive)
+
+                impl_node = self.ctx.builtin_types[primitive]
+                impl_item = self.ctx.ast_nodes[impl_node]
+                impl_qualname = self.ctx.get_qualname(impl_item)
+
+                for func in prototype:
+                    self.ctx.functions.add(Function(name=f"{impl_qualname}.{func.name}", args=func.args[:], ret=func.ret))
+            else:
+                del newly_defined
+
         for (node, entry) in local_nodes.items():
             if not isinstance(node, (ast.Import, ast.ImportFrom)):
                 continue
@@ -1766,7 +1805,7 @@ test_input = """
 from std.builtins import int
 
 def _() -> int:
-    pass
+    return 1 + 1
 
 """.strip()
 
