@@ -9,7 +9,13 @@ from contextlib import suppress
 from ast import dump, walk
 from collections import deque
 from dataclasses import InitVar, dataclass, field
-from functools import cached_property, lru_cache, partial, singledispatch, singledispatchmethod
+from functools import (
+    cached_property,
+    lru_cache,
+    partial,
+    singledispatch,
+    singledispatchmethod,
+)
 from typing import (
     Any,
     Callable,
@@ -27,6 +33,18 @@ from typing import (
 )
 
 ASTNode = ast.AST
+ASTInfix = Union[
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Gt,
+    ast.GtE,
+]
 STDLIB_PATH = Path(__file__).parent.joinpath("std").absolute()
 CAN_HAVE_SCOPE = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 LEGAL_NODE_TYPES = {
@@ -57,6 +75,7 @@ LEGAL_NODE_TYPES = {
     ast.ImportFrom,
     ast.Attribute,
     ast.Pass,
+    ast.LtE,
 }
 
 
@@ -190,6 +209,9 @@ class KlassType(TypeInfo):
     def __hash__(self) -> int:
         return hash(self.name)
 
+    def __repr__(self) -> str:
+        return f"<class: {self.name!s}>"
+
     def size(self) -> int:
         raise NotImplementedError()
 
@@ -290,11 +312,9 @@ class SpanInfo(NamedTuple):
         splat = self.source_ref.split("\n")
 
         if not sameline:
-            return "\n".join(splat[self.lineno - 1:self.end_lineno][:lines])
+            return "\n".join(splat[self.lineno - 1 : self.end_lineno][:lines])
         else:
-            return splat[self.lineno - 1][
-            self.col_offset : self.end_col_offset
-        ]
+            return splat[self.lineno - 1][self.col_offset : self.end_col_offset]
 
     def fmt(self, st: str) -> str:
         if self.source_ref:
@@ -309,6 +329,8 @@ class SpanInfo(NamedTuple):
         )
 
 
+NULL_SCOPE = object()
+
 @dataclass
 class Item:
     span: SpanInfo = field(repr=False, default_factory=SpanInfo)
@@ -316,7 +338,7 @@ class Item:
     parent: Optional[ASTNode] = field(default=None, repr=False)
     kind: TypeInfo = field(default=UnknownType)
     scope: "Scope" = field(
-        repr=False, default_factory=(lambda: Scope(parent_node=None))
+        init=False, repr=False, default=typing.cast("Scope", NULL_SCOPE)
     )
 
     def __hash__(self) -> int:
@@ -334,7 +356,11 @@ class Item:
             end_col_offset=getattr(node, "end_col_offset", sys.maxsize),
         )
 
-        return cls(node=node, span=span_info)
+        scope = Scope(parent_node=None)
+        item = cls(node=node, span=span_info)
+        scope.item = item
+        item.scope = scope
+        return item
 
     @classmethod
     def from_module(
@@ -364,6 +390,8 @@ class Item:
             node=node, module_name=module_name, source_ref=source_ref
         )
 
+        local_entry.scope.item = local_entry
+
         if parent is None:
             return (local_entry, {})
 
@@ -373,20 +401,17 @@ class Item:
 
         def flush(*, bucket, depth, local_entry, dangling, node, p) -> int:
             for item in dangling.pop(node, []) + bucket[depth]:
+                assert isinstance(item, Item)
+
                 local_entry.scope.elements.append(item)
 
                 if not isinstance(item.node, CAN_HAVE_SCOPE):
+                    old_scope = item.scope
                     item.scope = local_entry.scope
+                    del old_scope
 
                 item.parent = local_entry.node
-                item.scope.parent = local_entry.node
-
-                # print(f"\t{item}")
-
-            # if isinstance(local_entry.node, ast.FunctionDef):
-            #     assert ast.BinOp in map(
-            #         type, [_.node for _ in local_entry.scope.elements]
-            #     ), breakpoint()  # type: ignore
+                item.scope.parent_node = local_entry.node
 
             if p is not None:
                 if n in bucket:
@@ -425,7 +450,6 @@ class Item:
                 depth = n
 
             elif n == (depth - 1) or p is None:
-                # print(f"[{depth=!r} {n=!r}] Flush! {node}")
                 assert local_entry.scope is not None
                 depth = flush(
                     bucket=bucket,
@@ -437,12 +461,9 @@ class Item:
                 )
 
             elif n == depth:
-                # print(f"[{depth=!r} {n=!r}] Same depth {node}")
                 bucket[n].append(local_entry)
 
             else:
-                # print(f"[{depth=!r} {n=!r}] LARGE depth diff {node}")
-
                 if remaining := bucket[depth]:
                     depth = flush(
                         bucket={depth: remaining},
@@ -452,7 +473,6 @@ class Item:
                         node=node,
                         p=p,
                     )
-                    # # breakpoint()
 
                 bucket[n] = [local_entry]
                 depth = n
@@ -461,8 +481,6 @@ class Item:
             assert not bucket, repr(bucket)
 
         root_entry = local_nodes[root]
-
-        # breakpoint()
 
         return (root_entry, local_nodes)
 
@@ -473,34 +491,55 @@ class Item:
         if isinstance(self.node, ast.Module):
             return self.node
 
-        parent = ctx.modules[self.span.module_name].root if self.parent is None else ctx.ast_nodes[self.parent]
+        parent = (
+            ctx.modules[self.span.module_name].root
+            if self.parent is None
+            else ctx.ast_nodes[self.parent]
+        )
 
         assert parent.scope is not None
 
         @singledispatch
         def predicate(node: ASTNode, cur: Item) -> bool:
             raise NotImplementedError(
-                f"I dont know how to get the direct parent node of this type of node {ASTNode}"
+                f"I dont know how to get the direct parent node of this type of node {node}"
+            )
+
+        @predicate.register
+        def _pred_arg(node: ast.arg, cur: Item) -> bool:
+            return isinstance(cur.node, ast.FunctionDef) and node in ast.walk(
+                cur.node.args
             )
 
         @predicate.register
         def _pred_assign(node: ast.Name, cur: Item) -> bool:
-            return isinstance(node.ctx, ast.Store) and (
-                isinstance(asn := cur.node, ast.Assign)
-                and len(asn.targets) == 1
-                and asn.targets[0] is self.node
-            ) or (
-                isinstance(ann := cur.node, ast.AnnAssign)
-                and ann.target is self.node
+            return (
+                isinstance(node.ctx, ast.Store)
+                and (
+                    isinstance(asn := cur.node, ast.Assign)
+                    and len(asn.targets) == 1
+                    and asn.targets[0] is self.node
+                )
+                or (
+                    isinstance(ann := cur.node, ast.AnnAssign)
+                    and ann.target is self.node
+                )
             )
+
+        @predicate.register(ast.Gt)
+        @predicate.register(ast.Lt)
+        @predicate.register(ast.NotEq)
+        @predicate.register(ast.Eq)
+        @predicate.register(ast.LtE)
+        @predicate.register(ast.GtE)
+        def _pred_logic(node, cur: Item) -> bool:
+            return isinstance(comp := cur.node, ast.Compare) and node in ast.walk(comp)
 
         @predicate.register(ast.Add)
         @predicate.register(ast.Sub)
         @predicate.register(ast.Mult)
         def _pred_binop(node, cur: Item) -> bool:
-            return (
-                    isinstance(binop := cur.node, ast.BinOp) and binop.op is self.node
-                )
+            return isinstance(binop := cur.node, ast.BinOp) and binop.op is self.node
 
         @predicate.register
         def _pred_import(node: ast.alias, cur: Item) -> bool:
@@ -511,9 +550,9 @@ class Item:
 
         @predicate.register
         def _pred_funcdef(node: ast.Return, cur: Item) -> bool:
-            return isinstance(
-                    cur.node, (ast.FunctionDef)
-                ) and self.node in ast.walk(cur.node)
+            return isinstance(cur.node, (ast.FunctionDef)) and self.node in ast.walk(
+                cur.node
+            )
 
         @predicate.register(ast.FunctionDef)
         @predicate.register(ast.ClassDef)
@@ -522,13 +561,12 @@ class Item:
 
         pred = partial(predicate.dispatch(self.node.__class__), self.node)
 
-        # breakpoint()
-
         for parent in filter(pred, [parent, *parent.scope.elements]):
             setattr(self, "_direct_parent_node", parent.node)
             return parent.node
         else:
             return None
+
 
 def collapse_attribute(n: Union[ast.Attribute, ast.Name]) -> str:
     if isinstance(n, ast.Attribute):
@@ -543,7 +581,8 @@ def collapse_attribute(n: Union[ast.Attribute, ast.Name]) -> str:
 
 @dataclass
 class Scope:
-    parent_node: Optional[ASTNode] = None
+    item: Optional[Item] = field(default=None)
+    parent_node: Optional[ASTNode] = field(default=None)
     elements: List[Item] = field(default_factory=list)
 
     def __iter__(self) -> Iterator[Item]:
@@ -579,12 +618,13 @@ class Scope:
 
             raise NotImplementedError((item, ast.dump(item.node)))
 
-        if (parent := self.parent_node) is not None:
+        result = None
+
+        if (parent := self.parent_node) is not None or self.item is not None and (parent := self.item.node):
             scope = ctx.ast_nodes[parent].scope
-            assert scope is not None
-            result = scope.lookup(target, ctx=ctx)
-        else:
-            result = None
+            if scope is not self:
+                assert scope is not None
+                result = scope.lookup(target, ctx=ctx)
 
         return result
 
@@ -621,6 +661,7 @@ def is_visible(n: ASTNode) -> bool:
 @dataclass
 class Context:
     """Big blob of compilation state."""
+
     modules: Dict[str, Module] = field(default_factory=dict)
     functions: Set[Function] = field(default_factory=set)
     klass_types: Set[KlassType] = field(default_factory=set)
@@ -632,8 +673,22 @@ class Context:
     def __post_init__(self):
         self.autoimpls = {
             IntegerType: [
-                Function(name="__add__", args=[IntegerType, IntegerType], ret=IntegerType)
-            ]
+                Function(
+                    name="__add__", args=[IntegerType, IntegerType], ret=IntegerType
+                ),
+                Function(
+                    name="__mul__", args=[IntegerType, IntegerType], ret=IntegerType
+                ),
+                Function(
+                    name="__sub__", args=[IntegerType, IntegerType], ret=IntegerType
+                ),
+                Function(name="__eq__", args=[IntegerType, IntegerType], ret=BoolType),
+                Function(name="__ne__", args=[IntegerType, IntegerType], ret=BoolType),
+                Function(name="__gt__", args=[IntegerType, IntegerType], ret=BoolType),
+                Function(name="__lt__", args=[IntegerType, IntegerType], ret=BoolType),
+                Function(name="__ge__", args=[IntegerType, IntegerType], ret=BoolType),
+                Function(name="__le__", args=[IntegerType, IntegerType], ret=BoolType),
+            ],
         }
 
     def node_entry(self, node: ASTNode) -> Item:
@@ -685,6 +740,12 @@ class Context:
         while isinstance(ty, TypeRef):
             ty = self.ast_nodes[ty.other.node].kind
 
+        if isinstance(ty, KlassType):
+            inverted_bultin_map = {node: prim for prim, node in self.builtin_types.items()}
+
+            if ty.node in inverted_bultin_map:
+                ty = inverted_bultin_map[ty.node]
+
         return ty
 
     def check_builtins(self, target: str) -> Optional[Function]:
@@ -706,6 +767,7 @@ class Context:
         )
 
         return f"{entry.span.display()!r}" f" has type {st!r}"
+
 
 class Typing:
     # Helpers
@@ -755,6 +817,10 @@ class Typing:
             ast.Attribute,
             ast.Pass,
             ast.BinOp,
+            ast.LtE,
+            ast.Add,
+            ast.Sub,
+            ast.Mult,
         }
 
         if type(node) not in SUPPORTED_NODES:
@@ -770,13 +836,16 @@ class Typing:
 
         self.typecheck(entry=item, ctx=ctx)
 
-        if not any(isinstance(it.node, ast.Return) for it in item.scope) and item.kind.ret is not NoneType:
+        if (
+            not any(isinstance(it.node, ast.Return) for it in item.scope)
+            and item.kind.ret is not NoneType
+        ):
             span_info = item.span
 
             raise TypeError(
                 f"\n| [{span_info.lineno}:{span_info.col_offset}]: expected type {item.kind.ret}, found {NoneType}."
                 f"\n|\t{span_info.display(lines=1)!r}"
-                 "\n|"
+                "\n|"
                 f"\n| implicitly returns None as its body has no `return` statement."
             )
 
@@ -865,10 +934,7 @@ class Typing:
             )
 
     @_typecheck_node.register(ast.Compare)
-    @_typecheck_node.register(ast.Gt)
-    @_typecheck_node.register(ast.Add)
-    @_typecheck_node.register(ast.Sub)
-    @_typecheck_node.register(ast.Mult)
+    @_typecheck_node.register(ast.BinOp)
     def _typecheck_binop(self, node, item: Item, ctx: Context):
         if item.kind is UnknownType:
             parent = item.get_direct_parent_node(ctx=ctx)
@@ -890,16 +956,20 @@ class Typing:
 
     @_typecheck_node.register
     def _typecheck_assign(self, node: ast.Assign, item: Item, ctx: Context):
-        # elif isinstance(item_node, ast.Assign):
         assert len(node.targets) == 1
 
     @_typecheck_node.register
     def _typecheck_call(self, node: ast.Call, item: Item, ctx: Context):
         assert isinstance(item.node, ast.Call)
         f_entry = ctx.ast_nodes[item.node.func]
-        span_info = ctx.ast_nodes[item.node].span
 
-        if not isinstance(func_kind := f_entry.kind, Function):
+        if isinstance(f_entry.kind, TypeRef):
+            f_entry.kind = ctx.resolve_type(f_entry.kind)
+
+        span_info = ctx.ast_nodes[item.node].span
+        func_kind = f_entry.kind
+
+        if not isinstance(func_kind, Function):
             assert func_kind is not None
             actual = func_kind
 
@@ -907,8 +977,16 @@ class Typing:
                 f"[{span_info.lineno}:{span_info.col_offset}]: Type {actual} is not callable."
             )
 
+        assert isinstance(func_kind, Function)
+
+        if isinstance(func_kind.ret, TypeRef):
+            func_kind.ret = ctx.resolve_type(func_kind.ret)
+
+        for i, arg in enumerate(func_kind.args):
+            func_kind.args[i] = ctx.resolve_type(arg)
+
         args: List[TypeInfo] = [
-            self.infer(ctx.ast_nodes[arg_], ctx=ctx) or panic()
+            ctx.resolve_type(self.infer(ctx.ast_nodes[arg_], ctx=ctx) or panic())
             for arg_ in item.node.args
         ]
 
@@ -920,7 +998,7 @@ class Typing:
             if callsite_signature.args != func_kind.args:
                 n_expected_args = len(func_kind.args)
                 n_actual_args = len(callsite_signature.args)
-                assert n_expected_args != n_actual_args
+                assert n_expected_args != n_actual_args, f"{callsite_signature.args} != {func_kind.args}"
                 plural = lambda n: "s" if n > 1 else ""
                 reason = (
                     f"this function takes {n_expected_args}"
@@ -943,7 +1021,9 @@ class Typing:
         return self._infer_node(item.node, item=item, ctx=ctx)
 
     @singledispatchmethod
-    def _infer_node(self, node: ASTNode, item: Item, ctx: Context) -> Optional[TypeInfo]:
+    def _infer_node(
+        self, node: ASTNode, item: Item, ctx: Context
+    ) -> Optional[TypeInfo]:
         item_node_type = type(item.node)
 
         if item_node_type not in LEGAL_NODE_TYPES:
@@ -965,6 +1045,7 @@ class Typing:
             ast.Import,
             ast.If,
             ast.Pass,
+            ast.LtE,
         ):
             return NoneType
 
@@ -1015,22 +1096,7 @@ class Typing:
             assert item.scope is not None
             result = item.scope.lookup(target=item.node.id, ctx=ctx)
 
-            if result is None:
-                if (
-                    fn_type := ctx.check_builtins(item.node.id)
-                ) is not None:
-                    result_type = fn_type.ret
-                else:
-                    return None
-
-            elif result.kind is None:
-                return TypeRef(other=result)
-
-            else:
-                assert result.kind is not None
-                result_type = result.kind if result is not None else UnknownType
-
-            return result_type
+            return TypeRef(other=result) if result is not None else None
 
         else:
             assert isinstance(item.node.ctx, ast.Store)
@@ -1145,45 +1211,10 @@ class Typing:
         assert isinstance(item.node, ast.Expr)
         return TypeRef(other=ctx.ast_nodes[item.node.value])
 
-    @_infer_node.register
-    def _infer_compare(
-        self, node: ast.Compare, item: Item, ctx: Context
-    ) -> Optional[TypeInfo]:
-        if (len(node.ops), len(node.comparators)) != (1, 1):
-            span = ctx.ast_nodes[item.node].span
-            raise SyntaxError(
-                f"[{span.lineno}:{span.col_offset}]: Comparisson is too complex to solve."
-            )
-
-        raise NotImplementedError()
-        # Compare(left=Name(id='x', ctx=Load()), ops=[Gt()], comparators=[Constant(value=10)])
-        return UnknownType
-
-    @_infer_node.register(ast.Add)
-    @_infer_node.register(ast.Sub)
-    @_infer_node.register(ast.Mult)
-    @_infer_node.register(ast.BinOp)
-    def _infer_binop(self, node, item: Item, ctx: Context) -> Optional[TypeInfo]:
-        if not isinstance(item.node, ast.BinOp):
-            assert (_ := node) and isinstance(_, (ast.Add, ast.Sub, ast.Mult))
-            parent = item.get_direct_parent_node(ctx=ctx)
-            op_type = type(node)
-        else:
-            assert isinstance(node, ast.BinOp)
-            parent = node
-            op_type = type(parent.op)
-
-        assert parent is not None
-        assert isinstance(parent, ast.BinOp)
-
-        parent_item = ctx.ast_nodes[parent]
-
-        f = partial(self.infer, ctx=ctx)
-        (lhs, rhs) = map(f, map(ctx.node_entry, [parent.left, parent.right]))
-
-        assert lhs is not None
-        assert rhs is not None
-
+    @staticmethod
+    def _infer_infix_func(
+        op: "ASTInfix", left: TypeInfo, right: TypeInfo, ctx: Context
+    ) -> Optional[Function]:
         def into_resolved_parts(ty: TypeInfo):
             ty = ctx.resolve_type(ty=ty)
 
@@ -1193,19 +1224,34 @@ class Typing:
                 name = ctx.get_qualname(imit)
                 return name, ty
 
+            elif isinstance(ty, KlassType):
+                inverted_builtin_map = {node: ty for ty, node in ctx.builtin_types.items()}
+
+                if ty.node in inverted_builtin_map:
+                    ty = inverted_builtin_map[ty.node]
+                    return into_resolved_parts(ty)
+
             raise NotImplementedError(ty)
 
-        (lhs_name, lhs) = into_resolved_parts(ty=lhs)
-        (rhs_name, rhs) = into_resolved_parts(ty=rhs)
+        _ast_binop_name_map = {
+            ast.Add: "add",
+            ast.Sub: "sub",
+            ast.Mult: "mul",
+            ast.Gt: "gt",
+            ast.Lt: "lt",
+            ast.Eq: "eq",
+            ast.NotEq: "ne",
+            ast.LtE: "le",
+        }
+
+        _ast_binop_name = _ast_binop_name_map[type(op)]
 
         # breakpoint()
 
-        _ast_binop_name: Dict[type, str]
-        _ast_binop_name = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}[
-            op_type  # type: ignore
-        ]
-
+        (lhs_name, lhs) = into_resolved_parts(ty=left)
         assert isinstance(lhs, PrimitiveBase)
+
+        (rhs_name, rhs) = into_resolved_parts(ty=right)
         assert isinstance(rhs, PrimitiveBase)
 
         ltr = Function(
@@ -1219,8 +1265,6 @@ class Typing:
             args=[rhs, lhs],
             ret=UnknownType,
         )
-
-        # breakpoint()
 
         def unify(f: Function) -> Optional[Function]:
             for other in ctx.functions:
@@ -1244,14 +1288,64 @@ class Typing:
             else:
                 return None
 
-        # breakpoint()
+        return unify(ltr) or unify(rtl)
 
-        func = unify(ltr) or unify(rtl)
+    @_infer_node.register(ast.BinOp)
+    def _infer_binop(
+        self, node: ast.BinOp, item: Item, ctx: Context
+    ) -> Optional[TypeInfo]:
+        f = partial(self.infer, ctx=ctx)
+        (lhs, rhs) = map(f, map(ctx.node_entry, [node.left, node.right]))
 
-        # print(node, func)
+        assert lhs is not None
+        assert lhs is not UnknownType, breakpoint()
 
-        parent_item.kind = kind = (func and func.ret) or UnknownType
-        return kind
+        assert rhs is not None
+        assert rhs is not UnknownType, node.right
+        assert isinstance(node.op, ASTInfix.__args__)  # type: ignore
+
+        return (
+            self._infer_infix_func(op=node.op, left=lhs, right=rhs, ctx=ctx).ret
+            or UnknownType
+        )
+
+    @_infer_node.register(ast.Compare)
+    def _infer_compare(self, node, item: Item, ctx: Context) -> Optional[TypeInfo]:
+        assert isinstance(node, ast.Compare)
+
+        # The compare node is formed weirdly, we have to perform a shift-reduce
+        # style operation.
+
+        acc_node = node.left
+        acc_item = ctx.ast_nodes[acc_node]
+
+        acc = self.infer(item=acc_item, ctx=ctx)
+        assert acc is not None
+
+        acc = ctx.resolve_type(acc)
+
+        for (op, rhs) in zip(node.ops, node.comparators):
+            right = self.infer(item=ctx.ast_nodes[rhs], ctx=ctx)
+
+            assert right is not None, (right, ast.dump(rhs))
+            assert isinstance(right, TypeInfo)
+            assert isinstance(op, ASTInfix.__args__)  # type: ignore
+
+            f = self._infer_infix_func(op=op, left=acc, right=right, ctx=ctx)
+            assert f is not None, (op, acc, right)
+
+            acc = f.ret
+
+        return acc
+
+    @_infer_node.register(ast.Add)
+    @_infer_node.register(ast.Sub)
+    @_infer_node.register(ast.Mult)
+    def _infer_infix_op(self, node, item: Item, ctx: Context) -> Optional[TypeInfo]:
+        return NoneType
+        parent = item.get_direct_parent_node(ctx=ctx)
+        assert isinstance(parent, ast.BinOp), parent
+        return self._infer_binop(node=parent, item=ctx.ast_nodes[parent], ctx=ctx)
 
     @_infer_node.register
     def _infer_call(
@@ -1262,6 +1356,7 @@ class Typing:
         if isinstance(node.func, ast.Attribute):
             attr_ty = self.infer(ctx.ast_nodes[node.func], ctx)
             assert attr_ty is not None
+            assert attr_ty is not UnknownType
             func_kind = attr_ty
         else:
             assert isinstance(node.func, ast.Name)
@@ -1269,7 +1364,14 @@ class Typing:
 
             if (f := item.scope.lookup(target=node.func.id, ctx=ctx)) is not None:
                 assert isinstance(f, Item)
+
+                if f.kind is UnknownType:
+                    k = self.infer(item=f, ctx=ctx)
+                    assert k is not None
+                    f.kind = k
+
                 func_kind = f.kind
+                assert func_kind is not UnknownType, f
             else:
                 func_kind = ctx.check_builtins(node.func.id)
 
@@ -1348,7 +1450,7 @@ class MontyDriver:
 
             def __init__(self, driver: "MontyDriver"):
                 root = Item()
-                root.span = SpanInfo(module_name = "__monty")
+                root.span = SpanInfo(module_name="__monty")
                 super().__init__(name="__monty", root=root)
                 self.driver = driver
 
@@ -1360,7 +1462,7 @@ class MontyDriver:
 
         def bind_lang_impl(node: Union[ast.ClassDef, ast.FunctionDef]):
             assert isinstance(node, (ast.ClassDef, ast.FunctionDef))
-            assert node.decorator_list, breakpoint() # type: ignore
+            assert node.decorator_list, breakpoint()  # type: ignore
 
             top = node.decorator_list.pop()
 
@@ -1378,11 +1480,11 @@ class MontyDriver:
                 "int": IntegerType,
             }[name]
 
-            # breakpoint()
-
             self.ctx.builtin_types[kind] = node
 
-        bind_lang = Function(name="__monty.lang", args=[StringType], ret=NoneType, impl=bind_lang_impl)
+        bind_lang = Function(
+            name="__monty.lang", args=[StringType], ret=NoneType, impl=bind_lang_impl
+        )
 
         self.ctx.functions.add(bind_lang)
         self.ctx.functions.update(PRIMITIVE_TYPES.values())
@@ -1555,7 +1657,10 @@ class MontyDriver:
         def invoke_decorators(m: ast.Module):
             nonlocal self, comptime_lookup
             for node in m.body:
-                if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.decorator_list:
+                if (
+                    isinstance(node, (ast.ClassDef, ast.FunctionDef))
+                    and node.decorator_list
+                ):
                     assert len(node.decorator_list) == 1, "only one decorator allowed."
 
                     [top] = node.decorator_list
@@ -1572,7 +1677,9 @@ class MontyDriver:
                         kind.impl(node)
                         break
                     else:
-                        assert False, f"No implementation for function {f_name=!r} found!"
+                        assert (
+                            False
+                        ), f"No implementation for function {f_name=!r} found!"
 
         # TODO:
         #   Need to think of a safer way to confirm that no modifications to
@@ -1601,9 +1708,6 @@ class MontyDriver:
         return module
 
     def import_module(self, decl: ImportDecl) -> Optional[Module]:
-        # if (idx := self.data.fetch_by_origin(origin=decl)) is not None:
-        #     return self.data[idx]
-
         paths_to_inspect = [Path("."), STDLIB_PATH]
 
         assert decl.qualname
@@ -1742,7 +1846,7 @@ class MontyDriver:
 
         self.ctx.ast_nodes.update(local_nodes)
 
-        if (newly_defined := set(self.ctx.autoimpls) & set(self.ctx.builtin_types)):
+        if (newly_defined := set(self.ctx.autoimpls) & set(self.ctx.builtin_types)) :
             for primitive in newly_defined:
                 prototype = self.ctx.autoimpls.pop(primitive)
 
@@ -1751,7 +1855,13 @@ class MontyDriver:
                 impl_qualname = self.ctx.get_qualname(impl_item)
 
                 for func in prototype:
-                    self.ctx.functions.add(Function(name=f"{impl_qualname}.{func.name}", args=func.args[:], ret=func.ret))
+                    self.ctx.functions.add(
+                        Function(
+                            name=f"{impl_qualname}.{func.name}",
+                            args=func.args[:],
+                            ret=func.ret,
+                        )
+                    )
             else:
                 del newly_defined
 
@@ -1770,6 +1880,8 @@ class MontyDriver:
                     raise ImportError(span)
 
         for (node, item) in local_nodes.items():
+            assert item.scope is not NULL_SCOPE, "item scope was left unassigned!"
+
             if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
                 assert not node.decorator_list, f"decorators are not supported"
 
@@ -1777,6 +1889,7 @@ class MontyDriver:
                 assert False, f"Failed to infer type for {ast.dump(item.node)=!r}"
 
             if isinstance(inferred, Function):
+                assert isinstance(node, ast.FunctionDef), node
                 item.kind = inferred
 
                 if isinstance(item.get_direct_parent_node(ctx=self.ctx), ast.ClassDef):
@@ -1804,8 +1917,11 @@ class MontyDriver:
 test_input = """
 from std.builtins import int
 
-def _() -> int:
-    return 1 + 1
+def fib(n: int) -> int:
+    if n <= 1:
+        return n
+    else:
+        return fib(n - 1) + fib(n - 2)
 
 """.strip()
 
