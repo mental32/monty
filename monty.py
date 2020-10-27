@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 from sys import modules, path
 import typing
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from ast import dump, walk
 from collections import deque
 from dataclasses import InitVar, dataclass, field
@@ -161,6 +161,9 @@ class PrimitiveBase(TypeInfo):
 
     def size(self) -> int:
         """Get the size of this type."""
+        if self.name == "int":
+            return 64 // 8
+
         return 0  # Unsized
 
     def __post_init__(self, kind: Optional[type]):
@@ -298,6 +301,188 @@ class ImportDecl:
         return self.realname
 
 
+# (op, in(args), out(ret))
+Instr = Tuple[str, List[Any], int]
+SSAValue = int
+BlockId = int
+
+
+@dataclass
+class Ebb:
+    """(E)xtended (B)asic (B)lock builder used to construct MIR."""
+
+    blocks: List[List[Instr]] = field(default_factory=list)
+    stack_slots: Dict[SSAValue, Tuple[int, TypeInfo]] = field(default_factory=dict)
+
+    ast_node_to_ssa: Dict[ast.AST, SSAValue] = field(default_factory=dict)
+    name_to_stack_slot: Dict[str, SSAValue] = field(default_factory=dict)
+    refs: Dict[SSAValue, Any] = field(default_factory=dict)
+
+    __last_ssa_value: SSAValue = field(default=-1)
+    __cursor: int = -1
+
+    @property
+    def is_empty(self) -> bool:
+        return not bool(self.blocks)
+
+    @property
+    def cursor(self) -> int:
+        return self.__cursor
+
+    @property
+    def head(self) -> List[Instr]:
+        assert not self.is_empty, self
+        return self.blocks[self.__cursor]
+
+    # Helpers
+
+    def __emit(self, *, opstr: str, args: List[Any], ret: SSAValue = -1) -> SSAValue:
+        if ret == -1:
+            self.__last_ssa_value += 1
+            slot = self.__last_ssa_value
+        else:
+            slot = ret
+
+        instr = (opstr, args, slot)
+        self.head.append(instr)
+        return slot
+
+    def reference(self, obj: Any) -> SSAValue:
+        if self.refs:
+            ref = max(self.refs) + 1
+        else:
+            ref = 0
+
+        self.refs[ref] = obj
+        return ref
+
+    def switch_to_block(self, block_id: BlockId) -> BlockId:
+        """Switch the cursor to a block."""
+        _, self.__cursor = self.__cursor, block_id
+        return _
+
+    def create_block(self) -> BlockId:
+        """Create a new block."""
+        self.blocks.append([])
+        return len(self.blocks) - 1
+
+    @contextmanager
+    def with_block(self, target: Optional[BlockId] = None):
+        """Create a new block, switch to it and then switch back."""
+        previous_block_id = self.__cursor
+
+        if target is None:
+            new_block_id = self.create_block()
+        else:
+            new_block_id = target
+
+
+        print("Switching to block", new_block_id, "from", previous_block_id)
+
+        self.switch_to_block(new_block_id)
+        yield new_block_id
+
+        print("Switching BACK to block", previous_block_id, "from", new_block_id)
+        self.switch_to_block(previous_block_id)
+
+    # Constants
+
+    def int_const(self, value: int, bits: int = 64, signed: bool = True) -> SSAValue:
+        """Produce an integer constant."""
+        return self.__emit(opstr="int.const", args=[value, bits, signed])
+
+    def bool_const(self, value: Union[bool, int], *, is_ssa_value: bool = False) -> SSAValue:
+        """Produce a boolean constant."""
+        return self.__emit(opstr="bool.const", args=[is_ssa_value, value])
+
+    def str_const(self, const_idx: int) -> SSAValue:
+        assert isinstance(const_idx, int)
+        return self.__emit(opstr="str.const", args=[const_idx])
+
+    # Data-casting
+
+    def cast_bool_to_int(self, ty: TypeInfo, value: SSAValue) -> SSAValue:
+        """cast a boolean value to an integer one of some type."""
+        return self.__emit(opstr="bint", args=[ty, value])
+
+    # Arithmetic operations
+
+    def int_add(self, left: SSAValue, right: SSAValue) -> SSAValue:
+        """Add two integer values."""
+        return self.__emit(opstr="iadd", args=[left, right])
+
+    def int_sub(self, left: SSAValue, right: SSAValue) -> SSAValue:
+        """Add two integer values."""
+        return self.__emit(opstr="isub", args=[left, right])
+
+    def icmp(self, op: str, lhs: SSAValue, rhs: SSAValue) -> SSAValue:
+        """Perform an integer-based comparison."""
+        return self.__emit(opstr="icmp", args=[op, lhs, rhs])
+
+    # Variable operations
+
+    def use(self, ident: Any) -> SSAValue:
+        """use a variable as an ssa value."""
+        return self.__emit(opstr="usevar", args=[ident])
+
+    # def assign(self, ident: "T", value: SSAValue, ty: TypeId):
+    #     """Assign a value to a variable."""
+    #     self._typecheck(value, expected=ty)
+    #     self.variables[ident] = ty
+    #     assert isinstance(value, SSAValue)
+    #     return self.__emit(opstr=InstrOp.Assign, args=[value], ret=ident)
+
+    # Stack operations
+
+    def create_stack_slot(self, size: int, ty: TypeInfo) -> SSAValue:
+        """Creates a new stack slot of some `size` and returns its ssavalue."""
+        self.__last_ssa_value += 1
+        slot = self.__last_ssa_value
+        self.stack_slots[slot] = (size, ty)
+        return slot
+
+    def stack_load(self, slot: SSAValue) -> SSAValue:
+        (size, slot_memory_type) = self.stack_slots[slot]
+        # breakpoint()
+        return self.__emit(opstr="stackload", args=[slot, size, slot_memory_type])
+
+    def stack_store(self, slot: SSAValue, value: SSAValue) -> SSAValue:
+        return self.__emit(opstr="stackstore", args=[slot, value], ret=sys.maxsize)
+
+    # Data load/store
+
+    def load_data(self, data_ref: SSAValue) -> SSAValue:
+        return self.__emit(opstr="dataload", args=[data_ref])
+
+    # Flow-control
+
+    def nop(self):
+        """Emit a no-op."""
+        self.__emit(opstr="nop", args=[], ret=sys.maxsize)
+
+    def jump(self, target: BlockId):
+        """Jump to a target block."""
+        self.__emit(opstr="jump", args=[target], ret=sys.maxsize)
+
+    def branch_icmp(
+        self,
+        mode: str,
+        left: SSAValue,
+        right: SSAValue,
+        target: BlockId,
+    ) -> SSAValue:
+        return self.__emit(opstr="bicmp", args=[mode, left, right, target])
+
+    def return_(self, value: Optional[SSAValue]):
+        """Return from the function with a value."""
+        # self._typecheck(value, expected=self.returns)
+        args = [value] if value is not None else []
+        return self.__emit(opstr="return", args=args, ret=-1)
+
+    def call(self, function: SSAValue, args: List[SSAValue]) -> SSAValue:
+        return self.__emit(opstr="call", args=[function, args])
+
+
 class SpanInfo(NamedTuple):
     module_name: str = ""
     file_name: str = ""
@@ -331,6 +516,7 @@ class SpanInfo(NamedTuple):
 
 NULL_SCOPE = object()
 
+
 @dataclass
 class Item:
     span: SpanInfo = field(repr=False, default_factory=SpanInfo)
@@ -343,6 +529,8 @@ class Item:
 
     def __hash__(self) -> int:
         return hash(self.node)
+
+    # Constructors
 
     @classmethod
     def from_node(cls, node: ASTNode, *, module_name: str, source_ref: str) -> "Item":
@@ -484,6 +672,8 @@ class Item:
 
         return (root_entry, local_nodes)
 
+    # Helpers
+
     def get_direct_parent_node(self, ctx: "Context") -> Optional[ASTNode]:
         if (cached := getattr(self, "_direct_parent_node", None)) is not None:
             return cached
@@ -620,7 +810,11 @@ class Scope:
 
         result = None
 
-        if (parent := self.parent_node) is not None or self.item is not None and (parent := self.item.node):
+        if (
+            (parent := self.parent_node) is not None
+            or self.item is not None
+            and (parent := self.item.node)
+        ):
             scope = ctx.ast_nodes[parent].scope
             if scope is not self:
                 assert scope is not None
@@ -671,25 +865,18 @@ class Context:
     builtin_types: Dict[TypeInfo, ASTNode] = field(default_factory=dict)
 
     def __post_init__(self):
-        self.autoimpls = {
-            IntegerType: [
-                Function(
-                    name="__add__", args=[IntegerType, IntegerType], ret=IntegerType
-                ),
-                Function(
-                    name="__mul__", args=[IntegerType, IntegerType], ret=IntegerType
-                ),
-                Function(
-                    name="__sub__", args=[IntegerType, IntegerType], ret=IntegerType
-                ),
-                Function(name="__eq__", args=[IntegerType, IntegerType], ret=BoolType),
-                Function(name="__ne__", args=[IntegerType, IntegerType], ret=BoolType),
-                Function(name="__gt__", args=[IntegerType, IntegerType], ret=BoolType),
-                Function(name="__lt__", args=[IntegerType, IntegerType], ret=BoolType),
-                Function(name="__ge__", args=[IntegerType, IntegerType], ret=BoolType),
-                Function(name="__le__", args=[IntegerType, IntegerType], ret=BoolType),
-            ],
-        }
+        self.autoimpls = autoimpls = {}
+        autoimpls[IntegerType] = [
+            Function(name="__add__", args=[IntegerType, IntegerType], ret=IntegerType),
+            Function(name="__mul__", args=[IntegerType, IntegerType], ret=IntegerType),
+            Function(name="__sub__", args=[IntegerType, IntegerType], ret=IntegerType),
+            Function(name="__eq__", args=[IntegerType, IntegerType], ret=BoolType),
+            Function(name="__ne__", args=[IntegerType, IntegerType], ret=BoolType),
+            Function(name="__gt__", args=[IntegerType, IntegerType], ret=BoolType),
+            Function(name="__lt__", args=[IntegerType, IntegerType], ret=BoolType),
+            Function(name="__ge__", args=[IntegerType, IntegerType], ret=BoolType),
+            Function(name="__le__", args=[IntegerType, IntegerType], ret=BoolType),
+        ]
 
     def node_entry(self, node: ASTNode) -> Item:
         return self.ast_nodes[node]
@@ -741,7 +928,9 @@ class Context:
             ty = self.ast_nodes[ty.other.node].kind
 
         if isinstance(ty, KlassType):
-            inverted_bultin_map = {node: prim for prim, node in self.builtin_types.items()}
+            inverted_bultin_map = {
+                node: prim for prim, node in self.builtin_types.items()
+            }
 
             if ty.node in inverted_bultin_map:
                 ty = inverted_bultin_map[ty.node]
@@ -767,6 +956,304 @@ class Context:
         )
 
         return f"{entry.span.display()!r}" f" has type {st!r}"
+
+    def lower_into_mir(self, item: Item):
+        ebb = Ebb()
+        self._into_mir(item.node, item=item, ebb=ebb)
+        return ebb
+
+    @singledispatchmethod
+    def _into_mir(self, node: ASTNode, item: Item, ebb: Ebb):
+        assert False, (node, ebb)
+
+    @_into_mir.register
+    def _funcdef_into_mir(self, func: ast.FunctionDef, item: Item, ebb: Ebb):
+        assert ebb.is_empty, ebb
+
+        #     """Walk and lower a function item and ast into an Ebb."""
+        #     if item.function is None:
+        #         raise TypeError(f"language item was not a function! {item=!r}")
+
+        #     assert item.function is not None
+        #     assert isinstance(item.node, ast.FunctionDef)
+
+        function = item.kind
+        assert isinstance(function, Function)
+
+        #     callable_t = unit.tcx[function.type_id]
+
+        #     assert isinstance(callable_t, typing.Callable)
+
+        #     self = MirBuilder(unit, item)
+
+        #     ebb.parameters += [callable_t.parameters]
+        #     ebb.returns = callable_t.output
+
+        # breakpoint()
+
+        for arg, _arg in zip(function.args, func.args.args):
+            # breakpoint()
+            value_ty = self.resolve_type(ty=arg)
+            ty_size = value_ty.size()
+            ebb.name_to_stack_slot[_arg.arg] = slot = ebb.create_stack_slot(
+                ty_size, value_ty
+            )
+            # breakpoint()
+
+        #     with ebb.with_block():
+        #         self.visit(function.node)
+
+        #     return ebb.finalize()
+
+        _ = ebb.create_block()
+
+        for part in func.body:
+            self._into_mir(part, item=self.ast_nodes[part], ebb=ebb)
+
+    @_into_mir.register
+    def _assign_into_mir(self, assign: ast.Assign, item: Item, ebb: Ebb):
+        [target_node] = assign.targets
+        assert isinstance(target_node, ast.Name)
+
+        value_node = assign.value
+        value_type = self.resolve_type(ty=self.ast_nodes[value_node].kind)
+
+        self._into_mir(assign.value, item=self.ast_nodes[assign.value], ebb=ebb)
+
+        assign_value = ebb.ast_node_to_ssa[value_node]
+
+        if (target_id := target_node.id) not in ebb.name_to_stack_slot:
+            ebb.name_to_stack_slot[target_id] = slot = ebb.create_stack_slot(
+                size=value_type.size(), ty=value_type
+            )
+
+        slot = ebb.name_to_stack_slot[target_id]
+        ebb.stack_store(slot, assign_value)
+
+    @_into_mir.register
+    def _pass_into_mir(self, _: ast.Pass, item: Item, ebb: Ebb):
+        ebb.nop()
+
+    @_into_mir.register
+    def _return_into_mir(self, ret: ast.Return, item: Item, ebb: Ebb):
+        ret_value: Optional[int]
+
+        if (v := ret.value) is not None:
+            self._into_mir(ret.value, item=self.ast_nodes[v], ebb=ebb)
+            ret_value = ebb.ast_node_to_ssa[v]
+        else:
+            ret_value = None
+
+        ebb.return_(value=ret_value)
+
+    @_into_mir.register
+    def _name_into_mir(self, name: ast.Name, item: Item, ebb: Ebb):
+        if isinstance(name.ctx, ast.Load):
+            target = name.id
+
+            if target in ebb.name_to_stack_slot:
+                slot = ebb.name_to_stack_slot[target]
+                # breakpoint()
+                value = ebb.stack_load(slot)
+                value_type = item.kind
+
+            else:
+                # breakpoint()
+                it = item.scope.lookup(target, ctx=self)
+                assert it is not None
+
+                if isinstance(it.node, ast.arg):
+                    slot = ebb.name_to_stack_slot[target]
+                    value = ebb.stack_load(slot)
+                    value_type = item.kind
+                else:
+                    value_type = it.kind
+                    value = sys.maxsize
+
+            ebb.ast_node_to_ssa[name] = value
+
+    @_into_mir.register
+    def _const_into_mir(self, const: ast.Constant, item: Item, ebb: Ebb):
+        assert type(const.value) in (
+            int,
+            bool,
+        ), f"Only able to handle integer, boolean, and string constants {ast.dump(const)=!r}"
+
+        ty = type(value := const.value)
+
+        # if ty is str:
+        #     # value = self.data.insert(value, origin=const)
+        #     ssa = ebb.str_const(Pointer(inner=StringType))
+
+        if ty is bool:
+            ssa = ebb.bool_const(value)
+
+        elif ty is int:
+            ssa = ebb.int_const(value)
+
+        else:
+            assert False
+
+        ebb.ast_node_to_ssa[const] = ssa
+        # ebb.ssa_value_types[ssa] = value_ty
+
+    @_into_mir.register
+    def _binop_into_mir(self, binop: ast.BinOp, item: Item, ebb: Ebb):
+        self._into_mir(binop.left, item=self.ast_nodes[binop.left], ebb=ebb)
+        self._into_mir(binop.right, item=self.ast_nodes[binop.right], ebb=ebb)
+
+        lhs = ebb.ast_node_to_ssa[binop.left]
+        rhs = ebb.ast_node_to_ssa[binop.right]
+
+        kind = item.kind
+        op = type(binop.op)
+
+        if kind is IntegerType:
+            fn = {
+                ast.Add: ebb.int_add,
+                ast.Sub: ebb.int_sub,
+            }[op]
+
+            value = fn(lhs, rhs)
+            ebb.ast_node_to_ssa[binop] = value
+        else:
+            raise Exception(f"Attempted BinOp on unknown kinds {ast.dump(binop)}")
+
+    @_into_mir.register
+    def _call_into_mir(self, call: ast.Call, item: Item, ebb: Ebb):
+        # TODO: Name mangling...
+        # name = self.resolve_name_to_mangled_form(name, ...)
+
+        # func = self.unit.resolve_into_function(call, self.item.scope)
+        func = self.ast_nodes[call.func].kind
+
+        assert func is not None, f"{ast.dump(call)=!r}"
+
+        if func not in ebb.refs:
+            func_def = ebb.reference(func)
+        else:
+            inv = {o: s for s, o in ebb.refs.items()}
+            func_def = inv[func]
+
+        args = []
+
+        for arg in call.args:
+            self._into_mir(arg, item=self.ast_nodes[arg], ebb=ebb)
+            arg_value = ebb.ast_node_to_ssa[arg]
+            args.append(arg_value)
+
+        result = ebb.call(func_def, args=args)
+        ebb.ast_node_to_ssa[call] = result
+
+    @_into_mir.register
+    def _compare_into_mir(self, compare: ast.Compare, item: Item, ebb: Ebb):
+        left = self.ast_nodes[compare.left]
+
+        self._into_mir(compare.left, item=left, ebb=ebb)
+
+        result_ty = left.kind
+        result = ebb.ast_node_to_ssa[compare.left]
+
+        for (op, rvalue) in zip(compare.ops, compare.comparators):
+            rvalue_item = self.ast_nodes[rvalue]
+            rvalue_type = rvalue_item.kind
+
+            self._into_mir(rvalue, item=rvalue_item, ebb=ebb)
+
+            rvalue_ssa = ebb.ast_node_to_ssa[rvalue]
+
+            if rvalue_ssa is BoolType:
+                rvalue_ssa = ebb.cast_bool_to_int(IntegerType, rvalue_ssa)
+                rvalue_type = IntegerType
+
+            if rvalue_type is IntegerType:
+                ops = {ast.Eq: "eq", ast.NotEq: "neq", ast.Gt: "gt", ast.LtE: "sle"}
+
+                if (op := type(op)) not in ops: # type: ignore
+                    raise Exception(f"Unknown op {ast.dump(compare)=!r}")
+                else:
+                    result = ebb.icmp(ops[op], result, rvalue_ssa) # type: ignore
+
+                result = ebb.cast_bool_to_int(IntegerType, result)
+                result_ty = IntegerType
+            else:
+                raise Exception(f"Unkown rvalue type on comparator {rvalue_type=!r}")
+
+        if result_ty is IntegerType:
+            result = ebb.bool_const(result, is_ssa_value=True)
+
+        ebb.ast_node_to_ssa[compare] = result
+
+    #     ebb.ssa_value_types[result] = self.unit.tcx.insert(primitives.Boolean())
+
+    @_into_mir.register
+    def _ifstmt_into_mir(self, if_: ast.If, item: Item, ebb: Ebb):
+        if not ebb.head:
+            test_ = ebb.blocks.index(ebb.head)
+            tmp = None
+        else:
+            test_ = ebb.create_block()
+            tmp = ebb.switch_to_block(test_)
+
+        self._into_mir(if_.test, item=self.ast_nodes[if_.test], ebb=ebb)
+
+        expr_value = ebb.ast_node_to_ssa[if_.test]
+        expr_value = ebb.cast_bool_to_int(IntegerType, expr_value)
+
+        head = ebb.create_block()
+        _ = ebb.switch_to_block(head)
+
+        for node in if_.body:
+            self._into_mir(node, item=self.ast_nodes[node], ebb=ebb)
+
+        tail = None
+        for node in if_.orelse:
+            tail = ebb.create_block()
+            _ = ebb.switch_to_block(tail)
+
+            self._into_mir(node, item=self.ast_nodes[node], ebb=ebb)
+
+        _ = ebb.switch_to_block(test_)
+
+        one = ebb.int_const(1)
+        ebb.branch_icmp("eq", expr_value, one, head)
+
+        if tail is not None:
+            ebb.jump(tail)
+
+        if tmp is not None:
+            ebb.switch_to_block(tmp)
+
+
+    @_into_mir.register
+    def _while_into_mir(self, while_: ast.While, item: Item, ebb: Ebb):
+        head = ebb.create_block()
+        body = ebb.create_block()
+        tail = ebb.create_block()
+
+        _ = ebb.switch_to_block(head)
+        self._into_mir(test := while_.test, item=self.ast_nodes[while_.test], ebb=ebb)
+        test_value = ebb.ast_node_to_ssa[test]
+
+        # assert (a := ebb.ssa_value_types[test_value]) == (
+        #     e := BoolType
+        # ), f"{a=!r} {e=!r}"
+
+        const_one = ebb.int_const(1)
+        test_value = ebb.cast_bool_to_int(IntegerType, test_value)
+
+        ebb.branch_icmp("eq", test_value, const_one, body)
+        ebb.jump(tail)
+
+        _ = ebb.switch_to_block(body)
+
+        for node in while_.body:
+            self._into_mir(node, item=self.ast_nodes[node], ebb=ebb)
+        else:
+            ebb.jump(head)
+
+        ebb.jump(head)
+        ebb.switch_to_block(tail)
 
 
 class Typing:
@@ -998,7 +1485,9 @@ class Typing:
             if callsite_signature.args != func_kind.args:
                 n_expected_args = len(func_kind.args)
                 n_actual_args = len(callsite_signature.args)
-                assert n_expected_args != n_actual_args, f"{callsite_signature.args} != {func_kind.args}"
+                assert (
+                    n_expected_args != n_actual_args
+                ), f"{callsite_signature.args} != {func_kind.args}"
                 plural = lambda n: "s" if n > 1 else ""
                 reason = (
                     f"this function takes {n_expected_args}"
@@ -1225,7 +1714,9 @@ class Typing:
                 return name, ty
 
             elif isinstance(ty, KlassType):
-                inverted_builtin_map = {node: ty for ty, node in ctx.builtin_types.items()}
+                inverted_builtin_map = {
+                    node: ty for ty, node in ctx.builtin_types.items()
+                }
 
                 if ty.node in inverted_builtin_map:
                     ty = inverted_builtin_map[ty.node]
@@ -1298,16 +1789,18 @@ class Typing:
         (lhs, rhs) = map(f, map(ctx.node_entry, [node.left, node.right]))
 
         assert lhs is not None
-        assert lhs is not UnknownType, breakpoint()
+        assert lhs is not UnknownType, node.left
 
         assert rhs is not None
         assert rhs is not UnknownType, node.right
         assert isinstance(node.op, ASTInfix.__args__)  # type: ignore
 
-        return (
-            self._infer_infix_func(op=node.op, left=lhs, right=rhs, ctx=ctx).ret
-            or UnknownType
-        )
+        func = self._infer_infix_func(op=node.op, left=lhs, right=rhs, ctx=ctx)
+
+        if func is None:
+            return UnknownType
+
+        return func.ret
 
     @_infer_node.register(ast.Compare)
     def _infer_compare(self, node, item: Item, ctx: Context) -> Optional[TypeInfo]:
@@ -1440,8 +1933,8 @@ class Typing:
 
 @dataclass
 class MontyDriver:
-    ctx: Context = field(default_factory=Context)
-    tcx: Typing = field(default_factory=Typing)
+    ctx: Context = field(repr=False, default_factory=Context)
+    tcx: Typing = field(repr=False, default_factory=Typing)
 
     @cached_property
     def __monty(self) -> Union[Builtin, Module]:
@@ -1838,12 +2331,6 @@ class MontyDriver:
         self.ctx.modules[module_name] = module_obj
         self.ctx.ast_nodes[root_tree] = root_entry
 
-        assert (
-            ast.alias in kinds
-            if (kinds := set(map(type, local_nodes))) & {ast.Import, ast.ImportFrom}
-            else True
-        )
-
         self.ctx.ast_nodes.update(local_nodes)
 
         if (newly_defined := set(self.ctx.autoimpls) & set(self.ctx.builtin_types)) :
@@ -1855,13 +2342,13 @@ class MontyDriver:
                 impl_qualname = self.ctx.get_qualname(impl_item)
 
                 for func in prototype:
-                    self.ctx.functions.add(
-                        Function(
-                            name=f"{impl_qualname}.{func.name}",
-                            args=func.args[:],
-                            ret=func.ret,
-                        )
+                    proto = Function(
+                        name=f"{impl_qualname}.{func.name}",
+                        args=func.args[:],
+                        ret=func.ret,
                     )
+
+                    self.ctx.functions.add(proto)
             else:
                 del newly_defined
 
@@ -1913,6 +2400,18 @@ class MontyDriver:
 
         return module_obj
 
+    def lower_into_mir(self) -> Iterator[Ebb]:
+        """Returns an iterator that yields all 'used' functions."""
+        # TODO: Maybe draw a dependency graph and start yielding from the
+        # leaves in.
+
+        for (node, item) in self.ctx.ast_nodes.items():
+            if not isinstance(node, ast.FunctionDef):
+                continue
+
+            assert isinstance(item.kind, Function)
+            yield self.ctx.lower_into_mir(item)
+
 
 test_input = """
 from std.builtins import int
@@ -1922,7 +2421,6 @@ def fib(n: int) -> int:
         return n
     else:
         return fib(n - 1) + fib(n - 2)
-
 """.strip()
 
 
@@ -1934,3 +2432,10 @@ def compile(source: str) -> MontyDriver:
 
 
 _ = compile(test_input)
+
+for __ in _.lower_into_mir():
+    print("EBB")
+    for bb in __.blocks:
+        print("\n\tBB")
+        for instr in bb:
+            print(f"\t\t{instr}")
