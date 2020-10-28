@@ -1,13 +1,9 @@
-from abc import ABC, abstractmethod
 import ast
-import builtins
-from pathlib import Path
 import sys
-from sys import modules, path
 import typing
-from contextlib import contextmanager, suppress
-from ast import dump, walk
+from abc import ABC, abstractmethod
 from collections import deque
+from contextlib import contextmanager
 from dataclasses import InitVar, dataclass, field
 from functools import (
     cached_property,
@@ -16,6 +12,8 @@ from functools import (
     singledispatch,
     singledispatchmethod,
 )
+from pathlib import Path
+from sys import modules, path
 from typing import (
     Any,
     Callable,
@@ -32,6 +30,7 @@ from typing import (
     Union,
 )
 
+NULL_SCOPE = object()
 ASTNode = ast.AST
 ASTInfix = Union[
     ast.Eq,
@@ -317,6 +316,7 @@ class Ebb:
     ast_node_to_ssa: Dict[ast.AST, SSAValue] = field(default_factory=dict)
     name_to_stack_slot: Dict[str, SSAValue] = field(default_factory=dict)
     refs: Dict[SSAValue, Any] = field(default_factory=dict)
+    vars: Dict[Any, TypeInfo] = field(default_factory=dict)
 
     __last_ssa_value: SSAValue = field(default=-1)
     __cursor: int = -1
@@ -366,32 +366,15 @@ class Ebb:
         self.blocks.append([])
         return len(self.blocks) - 1
 
-    @contextmanager
-    def with_block(self, target: Optional[BlockId] = None):
-        """Create a new block, switch to it and then switch back."""
-        previous_block_id = self.__cursor
-
-        if target is None:
-            new_block_id = self.create_block()
-        else:
-            new_block_id = target
-
-
-        print("Switching to block", new_block_id, "from", previous_block_id)
-
-        self.switch_to_block(new_block_id)
-        yield new_block_id
-
-        print("Switching BACK to block", previous_block_id, "from", new_block_id)
-        self.switch_to_block(previous_block_id)
-
     # Constants
 
     def int_const(self, value: int, bits: int = 64, signed: bool = True) -> SSAValue:
         """Produce an integer constant."""
         return self.__emit(opstr="int.const", args=[value, bits, signed])
 
-    def bool_const(self, value: Union[bool, int], *, is_ssa_value: bool = False) -> SSAValue:
+    def bool_const(
+        self, value: Union[bool, int], *, is_ssa_value: bool = False
+    ) -> SSAValue:
         """Produce a boolean constant."""
         return self.__emit(opstr="bool.const", args=[is_ssa_value, value])
 
@@ -425,12 +408,12 @@ class Ebb:
         """use a variable as an ssa value."""
         return self.__emit(opstr="usevar", args=[ident])
 
-    # def assign(self, ident: "T", value: SSAValue, ty: TypeId):
-    #     """Assign a value to a variable."""
-    #     self._typecheck(value, expected=ty)
-    #     self.variables[ident] = ty
-    #     assert isinstance(value, SSAValue)
-    #     return self.__emit(opstr=InstrOp.Assign, args=[value], ret=ident)
+    def assign(self, ident: Any, value: SSAValue, ty: TypeInfo):
+        """Assign a value to a variable."""
+        # self._typecheck(value, expected=ty)
+        self.vars[ident] = ty
+        assert isinstance(value, SSAValue)
+        return self.__emit(opstr="assign", args=[value], ret=ident)
 
     # Stack operations
 
@@ -443,7 +426,6 @@ class Ebb:
 
     def stack_load(self, slot: SSAValue) -> SSAValue:
         (size, slot_memory_type) = self.stack_slots[slot]
-        # breakpoint()
         return self.__emit(opstr="stackload", args=[slot, size, slot_memory_type])
 
     def stack_store(self, slot: SSAValue, value: SSAValue) -> SSAValue:
@@ -512,9 +494,6 @@ class SpanInfo(NamedTuple):
             f"\n{prefix}[{self.file_name!s} @ {self.lineno}:{self.col_offset}]: {st!s}"
             + display
         )
-
-
-NULL_SCOPE = object()
 
 
 @dataclass
@@ -920,8 +899,14 @@ class Context:
 
         return qualname
 
-    def resolve_type(self, ty: TypeInfo) -> TypeInfo:
+    def resolve_type(self, ty: Union[TypeInfo, ASTNode]) -> TypeInfo:
         """Return a fully qualified type i.e. not a type-ref."""
+
+        assert isinstance(ty, (TypeInfo, ASTNode))
+
+        if isinstance(ty, ASTNode):
+            ty = self.ast_nodes[ty].kind
+
         assert isinstance(ty, TypeInfo), repr(ty)
 
         while isinstance(ty, TypeRef):
@@ -970,40 +955,17 @@ class Context:
     def _funcdef_into_mir(self, func: ast.FunctionDef, item: Item, ebb: Ebb):
         assert ebb.is_empty, ebb
 
-        #     """Walk and lower a function item and ast into an Ebb."""
-        #     if item.function is None:
-        #         raise TypeError(f"language item was not a function! {item=!r}")
-
-        #     assert item.function is not None
-        #     assert isinstance(item.node, ast.FunctionDef)
-
         function = item.kind
         assert isinstance(function, Function)
 
-        #     callable_t = unit.tcx[function.type_id]
-
-        #     assert isinstance(callable_t, typing.Callable)
-
-        #     self = MirBuilder(unit, item)
-
-        #     ebb.parameters += [callable_t.parameters]
-        #     ebb.returns = callable_t.output
-
-        # breakpoint()
+        # ebb.parameters += [callable_t.parameters]
+        # ebb.returns = callable_t.output
 
         for arg, _arg in zip(function.args, func.args.args):
-            # breakpoint()
             value_ty = self.resolve_type(ty=arg)
             ty_size = value_ty.size()
-            ebb.name_to_stack_slot[_arg.arg] = slot = ebb.create_stack_slot(
-                ty_size, value_ty
-            )
-            # breakpoint()
-
-        #     with ebb.with_block():
-        #         self.visit(function.node)
-
-        #     return ebb.finalize()
+            slot = ebb.create_stack_slot(ty_size, value_ty)
+            ebb.name_to_stack_slot[_arg.arg] = slot
 
         _ = ebb.create_block()
 
@@ -1053,21 +1015,20 @@ class Context:
 
             if target in ebb.name_to_stack_slot:
                 slot = ebb.name_to_stack_slot[target]
-                # breakpoint()
+
                 value = ebb.stack_load(slot)
-                value_type = item.kind
+                # value_type = item.kind
 
             else:
-                # breakpoint()
                 it = item.scope.lookup(target, ctx=self)
                 assert it is not None
 
                 if isinstance(it.node, ast.arg):
                     slot = ebb.name_to_stack_slot[target]
                     value = ebb.stack_load(slot)
-                    value_type = item.kind
+                    # value_type = item.kind
                 else:
-                    value_type = it.kind
+                    # value_type = it.kind
                     value = sys.maxsize
 
             ebb.ast_node_to_ssa[name] = value
@@ -1169,10 +1130,10 @@ class Context:
             if rvalue_type is IntegerType:
                 ops = {ast.Eq: "eq", ast.NotEq: "neq", ast.Gt: "gt", ast.LtE: "sle"}
 
-                if (op := type(op)) not in ops: # type: ignore
+                if (op := type(op)) not in ops:  # type: ignore
                     raise Exception(f"Unknown op {ast.dump(compare)=!r}")
                 else:
-                    result = ebb.icmp(ops[op], result, rvalue_ssa) # type: ignore
+                    result = ebb.icmp(ops[op], result, rvalue_ssa)  # type: ignore
 
                 result = ebb.cast_bool_to_int(IntegerType, result)
                 result_ty = IntegerType
@@ -1188,6 +1149,59 @@ class Context:
 
     @_into_mir.register
     def _ifstmt_into_mir(self, if_: ast.If, item: Item, ebb: Ebb):
+        def flatten(node: ast.If):
+            seq = []
+
+            while True:
+                prev = node
+
+                test = node.test
+                body = node.body
+                orelse = node.orelse
+
+                if len(orelse) == 1 and isinstance(orelse[0], ast.If):
+                    [node] = orelse  # type: ignore
+                    assert isinstance(node, ast.If)
+
+                if not isinstance(test, ast.Constant):
+                    # we can't prove this atm.
+                    seq.append((test, body, prev))
+
+                elif bool(test.value):
+                    # a true case in the middle of a chain invalidates the rest of the checks
+                    # due to short-circuiting.
+                    seq.append((test, body, prev))
+                    break
+
+                assert orelse
+
+                # if `node` hasn't changed then there is no next `elif`
+                # this means we're at the `else`
+                if node.test is test:
+                    seq.append((ast.Constant(value=True), orelse, prev))
+                    break
+
+            return seq
+
+        # breakpoint()
+
+        [(test, body, _), *orelse] = flatten(if_)
+
+        assert isinstance(_, ast.If), _
+
+        if not orelse:
+            assert test.value
+
+            for node in body:
+                self._into_mir(node, item=self.ast_nodes[node], ebb=ebb)
+
+            return
+
+        # breakpoint()
+
+        assert isinstance(body, list)
+        assert isinstance(test, ASTNode)
+
         if not ebb.head:
             test_ = ebb.blocks.index(ebb.head)
             tmp = None
@@ -1195,19 +1209,19 @@ class Context:
             test_ = ebb.create_block()
             tmp = ebb.switch_to_block(test_)
 
-        self._into_mir(if_.test, item=self.ast_nodes[if_.test], ebb=ebb)
+        self._into_mir(test, item=self.ast_nodes[test], ebb=ebb)
 
-        expr_value = ebb.ast_node_to_ssa[if_.test]
+        expr_value = ebb.ast_node_to_ssa[test]
         expr_value = ebb.cast_bool_to_int(IntegerType, expr_value)
 
         head = ebb.create_block()
         _ = ebb.switch_to_block(head)
 
-        for node in if_.body:
+        for node in body:
             self._into_mir(node, item=self.ast_nodes[node], ebb=ebb)
 
         tail = None
-        for node in if_.orelse:
+        for (_, _, node) in orelse:
             tail = ebb.create_block()
             _ = ebb.switch_to_block(tail)
 
@@ -1223,7 +1237,6 @@ class Context:
 
         if tmp is not None:
             ebb.switch_to_block(tmp)
-
 
     @_into_mir.register
     def _while_into_mir(self, while_: ast.While, item: Item, ebb: Ebb):
@@ -1295,7 +1308,6 @@ class Typing:
             ast.Load,
             ast.Name,
             ast.Constant,
-            ast.arguments,
             ast.arg,
             ast.Expr,
             ast.alias,
@@ -1318,6 +1330,18 @@ class Typing:
         self.typecheck(entry=item, ctx=ctx)
 
     @_typecheck_node.register
+    def _typecheck_arguments(self, node: ast.arguments, item: Item, ctx: Context):
+        names = set()
+
+        for posarg in node.posonlyargs:
+            assert posarg.arg not in names, "duplicate posonly argument in function definition."
+            names.add(posarg.arg)
+
+        for regarg in node.args:
+            assert regarg.arg not in names, "duplicate argument in function definition."
+            names.add(regarg.arg)
+
+    @_typecheck_node.register
     def _typecheck_funcdef(self, node: ast.FunctionDef, item: Item, ctx: Context):
         assert isinstance(item.kind, Function)
 
@@ -1332,7 +1356,7 @@ class Typing:
             raise TypeError(
                 f"\n| [{span_info.lineno}:{span_info.col_offset}]: expected type {item.kind.ret}, found {NoneType}."
                 f"\n|\t{span_info.display(lines=1)!r}"
-                "\n|"
+                 "\n|"
                 f"\n| implicitly returns None as its body has no `return` statement."
             )
 
@@ -1358,7 +1382,13 @@ class Typing:
         t = ctx.ast_nodes[node.test]
         t_k = t.kind
         assert t_k is not None
+
         t_t = ctx.resolve_type(t_k)
+
+        if isinstance(node.test, ast.Constant):
+            _ = bool(node.test.value)
+            t_t = BoolType
+
         assert t_t is BoolType, ast.dump(t.node)
 
     @_typecheck_node.register
@@ -1532,9 +1562,9 @@ class Typing:
             ast.While,
             ast.ImportFrom,
             ast.Import,
-            ast.If,
             ast.Pass,
             ast.LtE,
+            ast.If,
         ):
             return NoneType
 
@@ -2418,9 +2448,16 @@ from std.builtins import int
 
 def fib(n: int) -> int:
     if n <= 1:
-        return n
+        return 333
+    elif True:
+        return 444
     else:
-        return fib(n - 1) + fib(n - 2)
+        return 555
+
+    # if n <= 1:
+    #     return n
+    # else:
+    #     return fib(n - 1) + fib(n - 2)
 """.strip()
 
 
@@ -2431,11 +2468,12 @@ def compile(source: str) -> MontyDriver:
     return driver
 
 
-_ = compile(test_input)
+if __name__ == "__main__":
+    _ = compile(test_input)
 
-for __ in _.lower_into_mir():
-    print("EBB")
-    for bb in __.blocks:
-        print("\n\tBB")
-        for instr in bb:
-            print(f"\t\t{instr}")
+    for __ in _.lower_into_mir():
+        print("EBB")
+        for bb in __.blocks:
+            print("\n\tBB")
+            for instr in bb:
+                print(f"\t\t{instr}")
