@@ -7,16 +7,24 @@ from pathlib import Path
 
 from .utils import *
 from .ty import *
+from .context import *
 from .mirgen import *
 from .item import *
-from .context import *
 from .driver import MontyDriver
 
 
-_SourceObjectTypes = (types.ModuleType, types.MethodType, types.FunctionType, types.CodeType)
-_SourceObjectType = Union[types.ModuleType, types.MethodType, types.FunctionType, types.CodeType]
+_SourceObjectTypes = (
+    types.ModuleType,
+    types.MethodType,
+    types.FunctionType,
+    types.CodeType,
+)
+_SourceObjectType = Union[
+    types.ModuleType, types.MethodType, types.FunctionType, types.CodeType
+]
 
 Compileable = Union[str, Path, ASTNode, _SourceObjectType, Callable[..., Any]]
+
 
 def compile(source: Compileable, **kwargs) -> MontyDriver:
     """Parse and typecheck the provided source."""

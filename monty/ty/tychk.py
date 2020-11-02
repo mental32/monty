@@ -1,10 +1,28 @@
 import ast
 from functools import partial, singledispatch
 import typing
-from monty.ty import BoolType, Function, KlassType, ModuleType, NoneType, PRIMITIVE_TYPES, PrimitiveBase, TypeRef, UnknownType
+from monty.ty import (
+    BoolType,
+    Function,
+    KlassType,
+    ModuleType,
+    NoneType,
+    PRIMITIVE_TYPES,
+    PrimitiveBase,
+    TypeRef,
+    UnknownType,
+)
 from typing import List, Optional, TYPE_CHECKING, Tuple, Union
 
-from ..utils import ASTInfix, ASTNode, LEGAL_NODE_TYPES, TypeInfo, collapse_attribute, is_visible, panic
+from ..utils import (
+    ASTInfix,
+    ASTNode,
+    LEGAL_NODE_TYPES,
+    TypeInfo,
+    collapse_attribute,
+    is_visible,
+    panic,
+)
 from ..item import Item
 from ..context import Context
 
@@ -20,7 +38,9 @@ def _validate_argument(argument: ast.arg, item: Item) -> ast.arg:
 
     return argument
 
+
 # Typechecking
+
 
 def typecheck(entry: Item, ctx: Context):
     """Recursively typecheck some node entry."""
@@ -35,6 +55,7 @@ def typecheck(entry: Item, ctx: Context):
 
         _typecheck_node(item.node, item=item, ctx=ctx)
         continue
+
 
 @singledispatch
 def _typecheck_node(node: ASTNode, item: Item, ctx: Context):
@@ -61,21 +82,26 @@ def _typecheck_node(node: ASTNode, item: Item, ctx: Context):
     if type(node) not in SUPPORTED_NODES:
         raise NotImplementedError(item)
 
+
 @_typecheck_node.register
 def _typecheck_classdef(node: ast.ClassDef, item: Item, ctx: Context):
     typecheck(entry=item, ctx=ctx)
+
 
 @_typecheck_node.register
 def _typecheck_arguments(node: ast.arguments, item: Item, ctx: Context):
     names = set()
 
     for posarg in node.posonlyargs:
-        assert posarg.arg not in names, "duplicate posonly argument in function definition."
+        assert (
+            posarg.arg not in names
+        ), "duplicate posonly argument in function definition."
         names.add(posarg.arg)
 
     for regarg in node.args:
         assert regarg.arg not in names, "duplicate argument in function definition."
         names.add(regarg.arg)
+
 
 @_typecheck_node.register
 def _typecheck_funcdef(node: ast.FunctionDef, item: Item, ctx: Context):
@@ -92,9 +118,10 @@ def _typecheck_funcdef(node: ast.FunctionDef, item: Item, ctx: Context):
         raise TypeError(
             f"\n| [{span_info.lineno}:{span_info.col_offset}]: expected type {item.kind.ret}, found {NoneType}."
             f"\n|\t{span_info.display(lines=1)!r}"
-                "\n|"
+            "\n|"
             f"\n| implicitly returns None as its body has no `return` statement."
         )
+
 
 @_typecheck_node.register
 def _typecheck_attribute(node: ast.Attribute, item: Item, ctx: Context):
@@ -113,6 +140,7 @@ def _typecheck_attribute(node: ast.Attribute, item: Item, ctx: Context):
             f"\n| where:\n{kinds!s}"
         )
 
+
 @_typecheck_node.register
 def _typecheck_ifstmt(node: ast.If, item: Item, ctx: Context):
     t = ctx.ast_nodes[node.test]
@@ -126,6 +154,7 @@ def _typecheck_ifstmt(node: ast.If, item: Item, ctx: Context):
         t_t = BoolType
 
     assert t_t is BoolType, ast.dump(t.node)
+
 
 @_typecheck_node.register
 def _typecheck_return(node: ast.Return, item: Item, ctx: Context):
@@ -162,9 +191,11 @@ def _typecheck_return(node: ast.Return, item: Item, ctx: Context):
             + (f"\n| where:\n{kinds!s}" if kinds else "")
         )
 
+
 @_typecheck_node.register
 def _typecheck_augassign(node: ast.AugAssign, item: Item, ctx: Context):
     raise NotImplementedError()
+
 
 @_typecheck_node.register
 def _typecheck_annassign(node: ast.AnnAssign, item: Item, ctx: Context):
@@ -185,6 +216,7 @@ def _typecheck_annassign(node: ast.AnnAssign, item: Item, ctx: Context):
         raise TypeError(
             f"[{span_info.lineno}:{span_info.col_offset}]: Expected type {expected.__str__()!r} instead got {actual.__str__()!r}"
         )
+
 
 @_typecheck_node.register(ast.Compare)
 @_typecheck_node.register(ast.BinOp)
@@ -207,9 +239,11 @@ def _typecheck_binop(node, item: Item, ctx: Context):
             f"\n| where:\n{kinds!s}"
         )
 
+
 @_typecheck_node.register
 def _typecheck_assign(node: ast.Assign, item: Item, ctx: Context):
     assert len(node.targets) == 1
+
 
 @_typecheck_node.register
 def _typecheck_call(node: ast.Call, item: Item, ctx: Context):
@@ -265,7 +299,9 @@ def _typecheck_call(node: ast.Call, item: Item, ctx: Context):
 
         raise TypeError(span_info.fmt(reason))
 
+
 # Inference
+
 
 def infer(item: Item, ctx: Context) -> Optional[TypeInfo]:
     """Attempt to infer the type of some item."""
@@ -275,16 +311,13 @@ def infer(item: Item, ctx: Context) -> Optional[TypeInfo]:
 
     return _infer_node(item.node, item=item, ctx=ctx)
 
+
 @singledispatch
-def _infer_node(
-    node: ASTNode, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_node(node: ASTNode, item: Item, ctx: Context) -> Optional[TypeInfo]:
     item_node_type = type(item.node)
 
     if item_node_type not in LEGAL_NODE_TYPES:
-        raise NotImplementedError(
-            f"{item_node_type!r} is not supported at the moment."
-        )
+        raise NotImplementedError(f"{item_node_type!r} is not supported at the moment.")
 
     if item_node_type is ast.arguments:
         return UnknownType
@@ -309,24 +342,21 @@ def _infer_node(
 
     return None
 
-@_infer_node.register
-def _infer_classdef(
-    node: ast.ClassDef, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
-    return KlassType(node=node, name=node.name)
 
 @_infer_node.register
-def _infer_const(
-    node: ast.Constant, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_classdef(node: ast.ClassDef, item: Item, ctx: Context) -> Optional[TypeInfo]:
+    return KlassType(node=node, name=node.name)
+
+
+@_infer_node.register
+def _infer_const(node: ast.Constant, item: Item, ctx: Context) -> Optional[TypeInfo]:
     kind = PRIMITIVE_TYPES[type(node.value)]
     assert isinstance(kind, TypeInfo)
     return getattr(kind, "ret", kind)
 
+
 @_infer_node.register
-def _infer_name(
-    node: ast.Name, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_name(node: ast.Name, item: Item, ctx: Context) -> Optional[TypeInfo]:
     assert isinstance(item.node, ast.Name)
 
     if (
@@ -362,6 +392,7 @@ def _infer_name(
         value = ctx.ast_nodes[parent_node.value]
         return TypeRef(other=value)
 
+
 @_infer_node.register
 def _infer_funcdef(
     node: ast.FunctionDef, item: Item, ctx: Context
@@ -391,6 +422,7 @@ def _infer_funcdef(
         ret = node_.ret if isinstance(node_, Function) else node_
 
     return Function(name=item.node.name, args=arguments, ret=ret)
+
 
 @_infer_node.register
 def _infer_attribute(
@@ -423,10 +455,9 @@ def _infer_attribute(
     else:
         return result.kind
 
+
 @_infer_node.register
-def _infer_alias(
-    node: ast.alias, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_alias(node: ast.alias, item: Item, ctx: Context) -> Optional[TypeInfo]:
     assert isinstance(item.node, ast.alias)
 
     import_node = item.get_direct_parent_node(ctx=ctx)
@@ -445,6 +476,7 @@ def _infer_alias(
     assert result is not None
     return result.kind
 
+
 @_infer_node.register(ast.Import)
 @_infer_node.register(ast.ImportFrom)
 def _infer_import(
@@ -459,12 +491,12 @@ def _infer_import(
 
     return NoneType
 
+
 @_infer_node.register
-def _infer_expr(
-    node: ast.Expr, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_expr(node: ast.Expr, item: Item, ctx: Context) -> Optional[TypeInfo]:
     assert isinstance(item.node, ast.Expr)
     return TypeRef(other=ctx.ast_nodes[item.node.value])
+
 
 def _infer_infix_func(
     op: ASTInfix, left: TypeInfo, right: TypeInfo, ctx: Context
@@ -479,9 +511,7 @@ def _infer_infix_func(
             return name, ty
 
         elif isinstance(ty, KlassType):
-            inverted_builtin_map = {
-                node: ty for ty, node in ctx.builtin_types.items()
-            }
+            inverted_builtin_map = {node: ty for ty, node in ctx.builtin_types.items()}
 
             if ty.node in inverted_builtin_map:
                 ty = inverted_builtin_map[ty.node]
@@ -501,8 +531,6 @@ def _infer_infix_func(
     }
 
     _ast_binop_name = _ast_binop_name_map[type(op)]
-
-
 
     (lhs_name, lhs) = into_resolved_parts(ty=left)
     assert isinstance(lhs, PrimitiveBase)
@@ -546,10 +574,9 @@ def _infer_infix_func(
 
     return unify(ltr) or unify(rtl)
 
+
 @_infer_node.register(ast.BinOp)
-def _infer_binop(
-    node: ast.BinOp, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_binop(node: ast.BinOp, item: Item, ctx: Context) -> Optional[TypeInfo]:
     f = partial(infer, ctx=ctx)
     (lhs, rhs) = map(f, map(ctx.node_entry, [node.left, node.right]))
 
@@ -566,6 +593,7 @@ def _infer_binop(
         return UnknownType
 
     return func.ret
+
 
 @_infer_node.register(ast.Compare)
 def _infer_compare(node, item: Item, ctx: Context) -> Optional[TypeInfo]:
@@ -598,6 +626,7 @@ def _infer_compare(node, item: Item, ctx: Context) -> Optional[TypeInfo]:
 
     return acc
 
+
 @_infer_node.register(ast.Add)
 @_infer_node.register(ast.Sub)
 @_infer_node.register(ast.Mult)
@@ -607,10 +636,9 @@ def _infer_infix_op(node, item: Item, ctx: Context) -> Optional[TypeInfo]:
     assert isinstance(parent, ast.BinOp), parent
     return _infer_binop(node=parent, item=ctx.ast_nodes[parent], ctx=ctx)
 
+
 @_infer_node.register
-def _infer_call(
-    node: ast.Call, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_call(node: ast.Call, item: Item, ctx: Context) -> Optional[TypeInfo]:
     func_kind: Optional[TypeInfo]
 
     if isinstance(node.func, ast.Attribute):
@@ -639,6 +667,7 @@ def _infer_call(
         return UnknownType
     else:
         return func_kind.ret
+
 
 @_infer_node.register
 def _infer_arg(node: ast.arg, item: Item, ctx: Context) -> Optional[TypeInfo]:
@@ -677,18 +706,13 @@ def _infer_arg(node: ast.arg, item: Item, ctx: Context) -> Optional[TypeInfo]:
     result = item.scope.lookup(target=annotation_id, ctx=ctx)
 
     if result is None:
-        return (
-            f_.ret
-            if (f_ := ctx.check_builtins(annotation_id)) is not None
-            else None
-        )
+        return f_.ret if (f_ := ctx.check_builtins(annotation_id)) is not None else None
     else:
         return result.kind
 
+
 @_infer_node.register
-def _infer_return(
-    node: ast.Return, item: Item, ctx: Context
-) -> Optional[TypeInfo]:
+def _infer_return(node: ast.Return, item: Item, ctx: Context) -> Optional[TypeInfo]:
     assert isinstance(item.node, ast.Return)
 
     if item.node.value is not None:

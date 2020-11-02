@@ -1,5 +1,6 @@
 import __monty  # type: ignore
 
+
 @__monty.lang("int")
 class int:
     """

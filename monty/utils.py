@@ -1,34 +1,8 @@
 import ast
-import sys
-import typing
 from abc import ABC, abstractmethod
-from collections import deque
-from contextlib import contextmanager
-from dataclasses import InitVar, dataclass, field
-from functools import (
-    cached_property,
-    lru_cache,
-    partial,
-    singledispatch,
-    singledispatchmethod,
-)
 from pathlib import Path
 from sys import modules, path
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterator,
-    List,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Union
 
 NULL_SCOPE = object()
 ASTNode = ast.AST
@@ -82,9 +56,6 @@ def panic(msg: str = "..."):
     raise AssertionError(msg)
 
 
-class Builtin:
-    """Base class used as a market type for all compiler built-in stuff."""
-
 class TypeInfo(ABC):
     """Base class for all types."""
 
@@ -92,40 +63,13 @@ class TypeInfo(ABC):
     def size(self) -> int:
         """Get the size of this type."""
 
+
 class AbstractEbb:
     pass
 
 
-# import x.y as z
-#
-# qualname = ("x", "y")
-# access_path = "z"
-#
-# scope.lookup("z") == ImportDecl(qualname = ("x", "y"))
-@dataclass
-class ImportDecl:
-    node: ast.alias = field(repr=False)
-    parent: Union[ast.Import, ast.ImportFrom] = field(repr=False)
-
-    def __repr__(self) -> str:
-        return f"ImportDec({ast.dump(self.node)=!r})"
-
-    @cached_property
-    def qualname(self) -> List[str]:
-        return self.node.name.split(".")
-
-    @cached_property
-    def realname(self) -> str:
-        return self.node.asname or self.node.name
-
-    def __hash__(self) -> int:
-        return hash(self.node)
-
-    def __str__(self) -> str:
-        return self.realname
-
-
 def collapse_attribute(n: Union[ast.Attribute, ast.Name]) -> str:
+    """Recursively fold an attribute or name node into a dotted name string."""
     if isinstance(n, ast.Attribute):
         assert isinstance(n.value, (ast.Attribute, ast.Name))
         return f"{collapse_attribute(n.value)!s}.{n.attr}"

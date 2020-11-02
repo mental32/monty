@@ -1,14 +1,31 @@
 import ast
+import sys
+import typing
 from collections import deque
 from dataclasses import dataclass, field
-from functools import lru_cache, partial, singledispatch
+from functools import cached_property, lru_cache, partial, singledispatch
 from pathlib import Path
-import typing
-import sys
-from typing import Set, Callable, Dict, Iterator, List, NamedTuple, Optional, TYPE_CHECKING, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    NamedTuple,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
-from .utils import ASTNode, CAN_HAVE_SCOPE, LEGAL_NODE_TYPES, NULL_SCOPE, collapse_attribute
 from .ty import TypeInfo, UnknownType
+from .utils import (
+    CAN_HAVE_SCOPE,
+    LEGAL_NODE_TYPES,
+    NULL_SCOPE,
+    ASTNode,
+    collapse_attribute,
+)
 
 if TYPE_CHECKING:
     from .context import Context
@@ -302,6 +319,7 @@ class Item:
         else:
             return None
 
+
 @dataclass
 class Scope:
     item: Optional[Item] = field(default=None)
@@ -377,3 +395,32 @@ class Module:
             for node in ast.walk(self.root.node)
             if isinstance(node, ast.FunctionDef)
         }
+
+
+# import x.y as z
+#
+# qualname = ("x", "y")
+# access_path = "z"
+#
+# scope.lookup("z") == ImportDecl(qualname = ("x", "y"))
+@dataclass
+class ImportDecl:
+    node: ast.alias = field(repr=False)
+    parent: Union[ast.Import, ast.ImportFrom] = field(repr=False)
+
+    def __repr__(self) -> str:
+        return f"ImportDec({ast.dump(self.node)=!r})"
+
+    @cached_property
+    def qualname(self) -> List[str]:
+        return self.node.name.split(".")
+
+    @cached_property
+    def realname(self) -> str:
+        return self.node.asname or self.node.name
+
+    def __hash__(self) -> int:
+        return hash(self.node)
+
+    def __str__(self) -> str:
+        return self.realname

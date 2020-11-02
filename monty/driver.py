@@ -1,16 +1,45 @@
 import ast
-import builtins
 from dataclasses import dataclass, field
 from functools import cached_property
-from monty.mirgen import Ebb
 from pathlib import Path
-from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import (
+    Callable,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
-from .ty import Function, IntegerType, KlassType, PRIMITIVE_TYPES, StringType, NoneType
-from .item import Item, Module, SpanInfo
-from .utils import ASTNode, Builtin, ImportDecl, NULL_SCOPE, STDLIB_PATH, collapse_attribute
+from .ty import (
+    BoolType,
+    FloatType,
+    Function,
+    IntegerType,
+    KlassType,
+    PRIMITIVE_TYPES,
+    StringType,
+    NoneType,
+)
+from .item import Item, Module, SpanInfo, ImportDecl
+from .utils import ASTNode, Builtin, NULL_SCOPE, STDLIB_PATH, collapse_attribute
 from .context import Context
 from .ty.tychk import typecheck, infer
+from .mirgen import lower_into_mir, Ebb
+
+
+@dataclass(init=False)
+class BuiltinModule(Module):
+    """A compiler builtin module."""
+
+    def __init__(self, driver: "MontyDriver", *, name: str):
+        root = Item()
+        root.span = SpanInfo(module_name=name)
+        super().__init__(name=name, root=root)
+        self.driver = driver
 
 
 @dataclass
@@ -18,17 +47,8 @@ class MontyDriver:
     ctx: Context = field(repr=False, default_factory=Context)
 
     @cached_property
-    def __monty(self) -> Union[Builtin, Module]:
-        class _BuiltinModule(Module, Builtin):
-            driver: MontyDriver
-
-            def __init__(self, driver: "MontyDriver"):
-                root = Item()
-                root.span = SpanInfo(module_name="__monty")
-                super().__init__(name="__monty", root=root)
-                self.driver = driver
-
-        return _BuiltinModule(driver=self)
+    def __monty(self) -> Module:
+        return BuiltinModule(driver=self, name="__monty")
 
     def __post_init__(self):
         self.ctx.modules["__monty"] = phantom_module = self.__monty
@@ -52,6 +72,8 @@ class MontyDriver:
 
             kind = {
                 "int": IntegerType,
+                "bool": BoolType,
+                "float": FloatType,
             }[name]
 
             self.ctx.builtin_types[kind] = node
@@ -494,4 +516,4 @@ class MontyDriver:
                 continue
 
             assert isinstance(item.kind, Function)
-            yield self.ctx.lower_into_mir(item)
+            yield lower_into_mir(item=item, ctx=self.ctx)

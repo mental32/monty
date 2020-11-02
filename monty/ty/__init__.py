@@ -1,16 +1,22 @@
-
-
 import ast
 from dataclasses import InitVar, dataclass, field
 from functools import partial, singledispatchmethod
 from typing import Any, Callable, List, Optional, TYPE_CHECKING, Tuple, Union
 import typing
 
-from ..utils import ASTNode, LEGAL_NODE_TYPES, TypeInfo, collapse_attribute, is_visible, panic
+from ..utils import (
+    ASTNode,
+    LEGAL_NODE_TYPES,
+    TypeInfo,
+    collapse_attribute,
+    is_visible,
+    panic,
+)
 
 if TYPE_CHECKING:
     from ..context import Context
     from ..item import Item
+
 
 @dataclass
 class Pointer(TypeInfo):
