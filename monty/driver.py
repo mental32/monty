@@ -510,6 +510,16 @@ class MontyDriver:
 
         typecheck(entry=root_entry, ctx=self.ctx)
 
+        # Resolve TypeRef's for funcdef return annotations
+        #
+        # Technically this should happen for all type-ref instances since at
+        # this point all relevant types in the dep tree should be processed.
+        for func in self.ctx.functions:
+            assert isinstance(func, Function)
+
+            if isinstance(ret := func.ret, TypeRef):
+                func.ret = self.ctx.resolve_type(ret)
+
         return module_obj
 
     def lower_into_mir(self) -> Iterator[Tuple[Item, Ebb]]:

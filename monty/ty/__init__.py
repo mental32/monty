@@ -43,6 +43,7 @@ class Function(TypeInfo):
     name: str
     args: List[TypeInfo]
     ret: TypeInfo
+    docstring: str = field(default="")
     impl: Optional[Callable[[ASTNode], None]] = field(default=None)
 
     def size(self) -> int:
