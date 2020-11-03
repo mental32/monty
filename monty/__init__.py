@@ -8,7 +8,7 @@ from pathlib import Path
 from .utils import *
 from .ty import *
 from .context import *
-from .mirgen import *
+from .mir import *
 from .item import *
 from .driver import MontyDriver
 
