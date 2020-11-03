@@ -472,11 +472,16 @@ class MontyDriver:
 
                     raise ImportError(span)
 
+        docstring = "<missing>"
+
         for (node, item) in local_nodes.items():
             assert item.scope is not NULL_SCOPE, "item scope was left unassigned!"
 
             if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
                 assert not node.decorator_list, f"decorators are not supported"
+
+                if (docstring := ast.get_docstring(node)) is not None:
+                    node.body.pop(0)
 
             if (inferred := infer(item, self.ctx)) is None:
                 assert False, f"Failed to infer type for {ast.dump(item.node)=!r}"
@@ -484,6 +489,7 @@ class MontyDriver:
             if isinstance(inferred, Function):
                 assert isinstance(node, ast.FunctionDef), node
                 item.kind = inferred
+                inferred.docstring = docstring
 
                 if isinstance(item.get_direct_parent_node(ctx=self.ctx), ast.ClassDef):
                     func = Function(
