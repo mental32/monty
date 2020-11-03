@@ -506,7 +506,7 @@ class MontyDriver:
 
         return module_obj
 
-    def lower_into_mir(self) -> Iterator[Ebb]:
+    def lower_into_mir(self) -> Iterator[Tuple[Item, Ebb]]:
         """Returns an iterator that yields all 'used' functions."""
         # TODO: Maybe draw a dependency graph and start yielding from the
         # leaves in.
@@ -516,4 +516,4 @@ class MontyDriver:
                 continue
 
             assert isinstance(item.kind, Function)
-            yield lower_into_mir(item=item, ctx=self.ctx)
+            yield (item, lower_into_mir(item=item, ctx=self.ctx))
