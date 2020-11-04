@@ -4,6 +4,7 @@ from pathlib import Path
 from sys import modules, path
 from typing import Union
 
+STDLIB_PATH = Path(__file__).parent.parent.joinpath("std").absolute()
 NULL_SCOPE = object()
 ASTNode = ast.AST
 ASTInfix = Union[
@@ -18,7 +19,7 @@ ASTInfix = Union[
     ast.Gt,
     ast.GtE,
 ]
-STDLIB_PATH = Path(__file__).parent.parent.joinpath("std").absolute()
+
 CAN_HAVE_SCOPE = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 LEGAL_NODE_TYPES = {
     ast.ClassDef,
@@ -62,10 +63,6 @@ class TypeInfo(ABC):
     @abstractmethod
     def size(self) -> int:
         """Get the size of this type."""
-
-
-class AbstractEbb:
-    pass
 
 
 def collapse_attribute(n: Union[ast.Attribute, ast.Name]) -> str:

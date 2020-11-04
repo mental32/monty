@@ -371,6 +371,9 @@ class Scope:
                 assert scope is not None
                 result = scope.lookup(target, ctx=ctx)
 
+        if result is None and self.parent_node is None:
+            result = ctx.modules["std.builtins"].root.scope.lookup(target=target, ctx=ctx)
+
         return result
 
 

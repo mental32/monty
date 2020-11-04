@@ -166,7 +166,7 @@ PRIMITIVE_TYPES = {
     int: Function(name="builtins.int", args=[], ret=IntegerType),
     float: Function(name="builtins.float", args=[], ret=FloatType),
     bool: Function(name="builtins.bool", args=[], ret=BoolType),
-    type(None): NoneType,
+    type(None): Function(name="builtins.NoneType", args=[], ret=NoneType),
 }
 
 
