@@ -1,0 +1,16 @@
+[package]
+name = "montyc"
+version = "0.0.0"
+authors = ["mental <mentalfoss@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+logos = "0.11"
+regex = "1"
+nom = "6"
+lazy_static = "1.4.0"
+static_assertions = "1.1.0"
+
+[dev-dependencies]
+glob = "0.3.0"
+rayon = "1.5.0"
