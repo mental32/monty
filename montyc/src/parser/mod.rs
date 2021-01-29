@@ -1,14 +1,12 @@
-use std::{cell::RefCell, ops::Range};
+use std::{cell::RefCell, num::NonZeroUsize, ops::Range};
 use std::{iter, rc::Rc};
-
-
 
 use ast::AstObject;
 use lazy_static::lazy_static;
 use logos::Logos;
 use regex::Regex;
 
-mod ast;
+pub mod ast;
 mod comb;
 mod token;
 
@@ -22,14 +20,14 @@ mod span_ref {
     #[derive(Debug)]
     pub(crate) struct SpanRef {
         ptr: usize,
-        seq: Vec<Range<usize>>,
+        pub(crate) seq: Vec<Range<usize>>,
     }
 
     impl Default for SpanRef {
         fn default() -> Self {
             Self {
                 ptr: 1,
-                seq: vec![],
+                seq: vec![0..0],
             }
         }
     }
@@ -73,6 +71,17 @@ impl PyParse {
             source: input.to_string(),
             span_ref: Default::default(),
         }
+    }
+
+    #[inline]
+    pub fn resolve_ref(&self, reference: Option<NonZeroUsize>) -> Option<&str> {
+        let span_ref = self.span_ref.borrow();
+        let range = span_ref
+            .seq
+            .get(usize::from(reference?).saturating_sub(1))?
+            .clone();
+
+        Some(&self.source[range])
     }
 
     #[inline]

@@ -112,19 +112,6 @@ fn expect_digits<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, (PyToken
     expect_with(stream, move |(t, _)| matches!(t, PyToken::Digits(_)))
 }
 
-fn expect_wrapped<'a>(
-    parser: impl Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject>,
-    wrapper: PyToken,
-) -> impl Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
-    move |stream| {
-        let (stream, _) = expect_many_n::<0>(wrapper)(stream)?;
-        let (stream, ast_object) = parser(stream)?;
-        let (stream, _) = expect_many_n::<0>(wrapper)(stream)?;
-
-        Ok((stream, ast_object))
-    }
-}
-
 fn expect_wrapped_values<const N: usize>(
     values: [PyToken; N],
     wrapper: PyToken,

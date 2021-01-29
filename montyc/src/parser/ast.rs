@@ -14,7 +14,7 @@ pub struct IfStmt {
 #[derive(Debug, Clone)]
 pub struct AstObject {
     pub(crate) span: Span,
-    pub(crate) inner: AstNode,
+    pub inner: AstNode,
 }
 
 impl Default for AstObject {
@@ -119,11 +119,6 @@ pub enum AstNode {
     },
 
     And {
-        left: Box<AstObject>,
-        right: Box<AstObject>,
-    },
-
-    Modulo {
         left: Box<AstObject>,
         right: Box<AstObject>,
     },
