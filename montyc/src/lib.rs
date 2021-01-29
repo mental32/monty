@@ -7,5 +7,6 @@
 
 #![feature(const_generics)]
 #![allow(incomplete_features)]
+#![feature(bool_to_option)]
 
 pub mod parser;

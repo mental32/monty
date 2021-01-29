@@ -16,7 +16,7 @@ where
         let stream = parser.token_stream().map(Result::unwrap).collect::<Vec<_>>().into_boxed_slice();
 
         match f(&stream) {
-            Ok(([], obj)) => gathered.push(dbg!(obj)),
+            Ok(([], obj)) => gathered.push(obj),
             why => panic!("Failed to parse... {:?} ({:#?})", string, why),
         }
     }
@@ -24,28 +24,28 @@ where
     gathered
 }
 
-// #[test]
-// fn test_parse_statements() {
-//     assert_parses_exactly(vec![
-//         "if False: pass\nelif True: pass\nelse: return None",
-//         "f = 0",
-//         "pass",
-//         "return object() ** await x + 5",
-//         "if True: pass",
-//         "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
-//     ], statements);
-// }
+#[test]
+fn test_parse_statements() {
+    assert_parses_exactly(vec![
+        "if False: pass\nelif True: pass\nelse: return None",
+        "f = 0",
+        "pass",
+        "return object() ** await x + 5",
+        "if True: pass",
+        "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
+    ], statements);
+}
 
-// #[test]
-// fn test_parse_statement() {
-//     assert_parses_exactly(vec![
-//         "f = 0",
-//         "pass",
-//         "return object() ** await x + 5",
-//         "if True: pass",
-//         "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
-//     ], statement);
-// }
+#[test]
+fn test_parse_statement() {
+    assert_parses_exactly(vec![
+        "f = 0",
+        "pass",
+        "return object() ** await x + 5",
+        "if True: pass",
+        "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
+    ], statement);
+}
 
 #[test]
 fn test_parse_spanrefs() {
@@ -72,23 +72,23 @@ fn test_parse_false() {
     }
 }
 
-// #[test]
-// fn test_parse_assign() {
-//     assert_parses_exactly(
-//         vec![
-//             "_lkALSFDw555ca1=False",
-//             "Adadsgsawedcasdbvdrsfetgsa:int=7000",
-//             "pi    :float = 3.14",
-//             "vibe:              checked=True",
-//         ],
-//         assignment,
-//     );
-// }
+#[test]
+fn test_parse_assign() {
+    assert_parses_exactly(
+        vec![
+            "_lkALSFDw555ca1=False",
+            "Adadsgsawedcasdbvdrsfetgsa:int=7000",
+            "pi    :float = 3.14",
+            "vibe:              checked=True",
+        ],
+        assignment,
+    );
+}
 
-// // #[test]
-// // fn test_parse_funcdef() {
-// //     assert_parses_exactly(vec!["def foo(): pass"], funcdef_raw);
-// // }
+#[test]
+fn test_parse_funcdef() {
+    assert_parses_exactly(vec!["def foo(): pass"], function_def);
+}
 
 #[test]
 fn test_parse_term() {

@@ -1,6 +1,6 @@
 //! Tokenizer & lexer interface.
 
-use logos::{Logos};
+use logos::Logos;
 
 use super::SpanEntry;
 
@@ -173,7 +173,6 @@ pub enum PyToken {
     Dissapointment,
 
     // -- Regex rules
-
     /// SpanRef tokens are inserted in a pre-processing phase of parsing source.
     ///
     /// Why? because it was such a pain in the ass to properly include all the
@@ -194,6 +193,6 @@ pub enum PyToken {
     #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]
     Ident(SpanEntry),
 
-    #[regex(r"\d+", |lex| str::parse::<isize>(lex.slice()).unwrap())]
+    #[regex(r"\d+", |lex| str::parse::<isize>(lex.slice()).unwrap())]     // TODO(mental): try avoid panicking here...
     Digits(isize),
 }

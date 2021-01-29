@@ -3,6 +3,7 @@ use std::{iter, rc::Rc};
 
 
 
+use ast::AstObject;
 use lazy_static::lazy_static;
 use logos::Logos;
 use regex::Regex;
@@ -74,23 +75,15 @@ impl PyParse {
         }
     }
 
-    // #[inline]
-    // pub fn statement(&self) -> AstObject {
-    //     let stream = self.token_sequence();
-    //     let (stream, object) = comb::statement(&stream).unwrap();
+    #[inline]
+    pub fn parse_module(&self) -> AstObject {
+        let stream = self.token_sequence();
+        let (stream, object) = comb::statements(&stream).unwrap();
 
-    //     assert!(stream.is_empty(), "{:?}", stream);
+        assert!(stream.is_empty(), "{:?}", stream);
 
-    //     object
-    // }
-
-    // #[inline]
-    // pub fn expression(&self) -> AstObject {
-    //     let stream = self.token_sequence();
-    //     let (stream, object) = comb::expression(&stream).unwrap();
-    //     assert!(stream.is_empty(), "{:?}", stream);
-    //     object
-    // }
+        object
+    }
 
     #[inline]
     fn token_sequence(&self) -> Box<[Token]> {
@@ -121,13 +114,8 @@ impl PyParse {
             let span = (lexer.span(), lexer.slice());
 
             if let PyToken::Ident(inner) = &mut token {
-                match inner {
-                    None => {
-                        *inner = span_ref.borrow_mut().push(span.0.clone());
-                    }
-
-                    _ => unreachable!(),
-                }
+                let mut ident = span_ref.borrow_mut().push(span.0.clone());
+                std::mem::swap(inner, &mut ident);
             } else if let PyToken::Invalid = token {
                 // we're not letting logos handle string literal or comment
                 // parsing so `Invalid` may be produced when encountering

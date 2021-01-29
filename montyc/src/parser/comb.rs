@@ -7,14 +7,10 @@ use ast::AstNode;
 use nom::{
     branch::alt,
     combinator::not,
+    error::{self, Error, ErrorKind},
     multi::{many0, many1, many_m_n},
     sequence::{preceded, terminated, tuple},
-    IResult,
-};
-
-use nom::{
-    error::{Error, ErrorKind},
-    Err,
+    Err, IResult,
 };
 
 #[cfg(test)]
@@ -468,6 +464,7 @@ fn sum<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
 
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, base) = term(stream)?;
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
     if let Ok((stream, (tok, _))) = expect_any_token([Plus, Minus])(stream) {
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -728,17 +725,18 @@ fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> 
     let (stream, (_, name)) =
         terminated(expect_ident, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
-    let kind = if let Ok((stream, _)) = terminated(
+    let mut parsed = terminated(
         expect_(PyToken::Colon),
         expect_many_n::<0>(PyToken::Whitespace),
-    )(stream)
-    {
+    );
+
+    let (stream, kind) = if let Ok((stream, _)) = parsed(stream) {
         let (stream, (_, kind)) =
             terminated(expect_ident, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
-        Some(Box::new(kind))
+        (stream, Some(Box::new(kind)))
     } else {
-        None
+        (stream, None)
     };
 
     let (stream, _) = terminated(
@@ -775,20 +773,19 @@ fn block<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, ast::Block> {
 
     let mut indented_block = preceded(
         expect_(PyToken::Newline),
-        preceded(
-            expect_(PyToken::Whitespace),
-            terminated(statement, expect_(PyToken::Newline)),
-        ),
+        preceded(many0(expect_(PyToken::Whitespace)), statement),
     );
 
     if let Ok((stream, stmt)) = indented_block(stream) {
         return Ok((stream, vec![stmt]));
-    } else if let Ok((stream, stmt)) = small_stmt(stream) {
+    } else if let Ok((stream, stmt)) =
+        preceded(expect_many_n::<0>(PyToken::Whitespace), simple_stmt)(stream)
+    {
         return Ok((stream, vec![stmt]));
     } else if let Ok((_, _)) = invalid_block(stream) {
         todo!("raise an indentation error here.");
     } else {
-        unreachable!()
+        unimplemented!("{:?}", stream)
     }
 }
 
@@ -871,29 +868,111 @@ fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
 }
 
 #[inline]
+fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, (SpanEntry, SpanEntry)> {
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+    let (stream, (name, name_obj)) = expect_ident(stream)?;
+
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+    let (stream, kind) = match expect(stream, PyToken::Colon) {
+        Ok((stream, _)) => {
+            let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+            let (stream, (kind, _)) = expect_ident(stream)?;
+            (stream, kind)
+        }
+
+        Err(Err::Error(error::Error {
+            input: [(_, first), ..],
+            ..
+        })) => panic!(
+            "Missing type annotation @ {:?}",
+            name_obj.span.start..first.end
+        ),
+
+        Err(_) => unimplemented!(),
+    };
+
+    match (name, kind) {
+        (PyToken::Ident(name), PyToken::Ident(kind)) => Ok((stream, (name, kind))),
+        _ => unreachable!(),
+    }
+}
+
+#[inline]
+fn arguments<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<(SpanEntry, SpanEntry)>> {
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    many0(alt((
+        terminated(argument, expect_(PyToken::Comma)),
+        argument,
+    )))(stream)
+}
+
+#[inline]
 fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
     let (stream, (_, def)) = expect(stream, PyToken::FnDef)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, _ident) = expect_ident(stream)?;
+    let (stream, (_, ident)) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, _) = expect(stream, PyToken::LParen)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, arguments) = arguments(stream)?;
     let (stream, _) = expect(stream, PyToken::RParen)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+    let arrow =
+        expect(stream, PyToken::Minus).and_then(|(stream, _)| expect(stream, PyToken::GreaterThan));
+
+    let (stream, ret) = if let Ok((stream, _)) = arrow {
+        let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+        let (stream, (ret, _)) = expect_ident(stream)?;
+
+        let ret = match ret {
+            PyToken::Ident(r) => r,
+            _ => unreachable!(),
+        };
+
+        (stream, ret)
+    } else {
+        (stream, None)
+    };
+
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
     let (stream, _) = expect(stream, PyToken::Colon)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, stmt) = block(stream)?;
+    let (stream, mut body) = block(stream)?;
 
     let def_span_end = def.span.end;
-    let span_end = stmt
+    let span_end = body
         .iter()
         .last()
         .map(|o| o.span.end)
         .unwrap_or(def_span_end);
 
+    let block = body
+        .get(0)
+        .map(|first| matches!(first.inner, AstNode::Block(_)))
+        .unwrap_or_default()
+        .then(|| body.pop())
+        .flatten()
+        .unwrap_or_else(|| AstObject::from(body));
+
+    let block = Box::new(block);
+
+    let args = if arguments.is_empty() {
+        None
+    } else {
+        Some(arguments)
+    };
+
     let obj = AstObject {
         span: def_span_end..span_end,
-        inner: AstNode::BareToken(PyToken::FnDef),
+        inner: AstNode::FuncDef {
+            ret,
+            args,
+            ident: Box::new(ident),
+            body: block,
+        },
     };
 
     Ok((stream, obj))
@@ -915,7 +994,7 @@ fn compound_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObjec
 #[inline]
 fn simple_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
     let (stream, block) = alt((
-        many1(preceded(small_stmt, expect_(PyToken::Newline))),
+        many1(terminated(small_stmt, expect_(PyToken::Newline))),
         |stream| small_stmt(stream).map(|(stream, r)| (stream, vec![r])),
     ))(stream)?;
 
@@ -930,17 +1009,36 @@ fn simple_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject>
 
 #[inline]
 pub(crate) fn statement<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
+    let stream = expect_many_n::<0>(PyToken::Whitespace)(stream)
+        .map(|(stream, _)| stream)
+        .unwrap_or(stream);
+
     alt((simple_stmt, compound_stmt))(stream)
 }
 
 #[inline]
-fn statements<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
-    let (stream, block) = many1(statement)(stream)?;
+pub(crate) fn statements<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
+    let (stream, mut block) = many1(statement)(stream)?;
 
-    let obj = AstObject {
-        span: Default::default(),
-        inner: AstNode::Block(block),
-    };
+    let obj = block
+        .get(0)
+        .map(|first| matches!(first.inner, AstNode::Block(_)))
+        .unwrap_or_default()
+        .then(|| block.pop())
+        .flatten()
+        .unwrap_or_else(|| AstObject::from(block));
+
+    assert!(matches!(
+        obj,
+        AstObject {
+            inner: AstNode::Block(_),
+            ..
+        }
+    ));
+
+    let stream = many0(expect_any_token([PyToken::Whitespace, PyToken::Newline]))(stream)
+        .map(|(stream, _)| stream)
+        .unwrap_or(stream);
 
     Ok((stream, obj))
 }

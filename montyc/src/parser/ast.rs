@@ -1,3 +1,5 @@
+use logos::Span;
+
 use super::*;
 
 pub(crate) type Block = Vec<AstObject>;
@@ -24,7 +26,7 @@ impl Default for AstObject {
     }
 }
 
-static_assertions::assert_eq_size!(AstNode, (usize, usize, usize, usize));
+static_assertions::assert_eq_size!(AstNode, (usize, usize, usize, usize, usize, usize, usize));
 
 #[derive(Debug, Clone)]
 pub enum AstNode {
@@ -91,7 +93,6 @@ pub enum AstNode {
         right: Box<AstObject>,
     },
 
-
     Div {
         left: Box<AstObject>,
         right: Box<AstObject>,
@@ -112,18 +113,15 @@ pub enum AstNode {
         right: Box<AstObject>,
     },
 
-
     Or {
         left: Box<AstObject>,
         right: Box<AstObject>,
     },
 
-
     And {
         left: Box<AstObject>,
         right: Box<AstObject>,
     },
-
 
     Modulo {
         left: Box<AstObject>,
@@ -134,6 +132,13 @@ pub enum AstNode {
         name: Box<AstObject>,
         value: Box<AstObject>,
         kind: Option<Box<AstObject>>,
+    },
+
+    FuncDef {
+        ret: SpanEntry,
+        ident: Box<AstObject>,
+        args: Option<Vec<(SpanEntry, SpanEntry)>>,
+        body: Box<AstObject>,
     },
 
     Return(Box<AstObject>),
@@ -158,6 +163,18 @@ pub enum AstNode {
     UInvert(Box<AstObject>),
 
     Await(Box<AstObject>),
+}
+
+impl From<Vec<AstObject>> for AstObject {
+    fn from(block: Vec<AstObject>) -> Self {
+        let span = block.iter().next().map(|o| o.span.start).unwrap_or(0)
+            ..block.iter().last().map(|o| o.span.end).unwrap_or(0);
+
+        Self {
+            span,
+            inner: AstNode::Block(block),
+        }
+    }
 }
 
 impl From<PyToken> for AstNode {
