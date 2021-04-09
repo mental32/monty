@@ -1,18 +1,21 @@
-use core::panic;
+use nom::IResult;
+
+use crate::parser::{Parser, TokenSlice, token::PyToken};
 
 use super::*;
-use super::ast::AstObject;
+// use super::ast::AstObject;
 
 #[inline]
-fn assert_parses_exactly<'a, S, F>(st: S, f: F) -> Vec<AstObject>
+fn assert_parses_exactly<'a, S, F, R>(st: S, f: F) -> Vec<R>
 where
     S: IntoIterator<Item = &'a str>,
-    F: for<'b> Fn(TokenSlice<'b>) -> IResult<TokenSlice<'b>, AstObject>,
+    F: for<'b> Fn(TokenSlice<'b>) -> IResult<TokenSlice<'b>, R>,
+    R: std::fmt::Debug
 {
     let mut gathered = vec![];
 
     for string in st.into_iter() {
-        let parser = PyParse::new(string);
+        let parser = Parser::new(string);
         let stream = parser.token_stream().map(Result::unwrap).collect::<Vec<_>>().into_boxed_slice();
 
         match f(&stream) {
@@ -24,33 +27,33 @@ where
     gathered
 }
 
-#[test]
-fn test_parse_statements() {
-    assert_parses_exactly(vec![
-        "if False: pass\nelif True: pass\nelse: return None",
-        "f = 0",
-        "pass",
-        "return object() ** await x + 5",
-        "if True: pass",
-        "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
-    ], statements);
-}
+// #[test]
+// fn test_parse_statements() {
+//     assert_parses_exactly(vec![
+//         "if False: pass\nelif True: pass\nelse: return None",
+//         "f = 0",
+//         "pass",
+//         "return object() ** await x + 5",
+//         "if True: pass",
+//         "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
+//     ], statements);
+// }
 
-#[test]
-fn test_parse_statement() {
-    assert_parses_exactly(vec![
-        "f = 0",
-        "pass",
-        "return object() ** await x + 5",
-        "if True: pass",
-        "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
-    ], statement);
-}
+// #[test]
+// fn test_parse_statement() {
+//     assert_parses_exactly(vec![
+//         "f = 0",
+//         "pass",
+//         "return object() ** await x + 5",
+//         "if True: pass",
+//         "def _asFSDF120983_740823570wRCSCE           (                   ):return None +-None",
+//     ], statement);
+// }
 
 #[test]
 fn test_parse_spanrefs() {
     assert_parses_exactly(vec![r"# Hello, There!", r#""Hello, There!""#], |stream| {
-        let (stream, (_, o)) = expect_spanref(stream)?;
+        let (stream, o) = expect_with(stream, |(tok, _)| matches!(tok, PyToken::SpanRef(_)))?;
         Ok((stream, o))
     });
 }
@@ -59,7 +62,7 @@ fn test_parse_spanrefs() {
 #[test]
 fn test_parse_true() {
     match assert_parses_exactly(Some("True"), expect_(PyToken::True)).as_slice() {
-        [top, ..] => assert!(matches!(top.inner, AstNode::Constant(super::ast::Constant::Bool(true)))),
+        [top, ..] => assert!(matches!(top.inner, PyToken::True)),
         [] => unreachable!(),
     }
 }
@@ -67,7 +70,7 @@ fn test_parse_true() {
 #[test]
 fn test_parse_false() {
     match assert_parses_exactly(Some("False"), expect_(PyToken::False)).as_slice() {
-        [top, ..] => assert!(matches!(top.inner, AstNode::Constant(super::ast::Constant::Bool(false)))),
+        [top, ..] => assert!(matches!(top.inner, PyToken::False)),
         [] => unreachable!(),
     }
 }
@@ -85,13 +88,13 @@ fn test_parse_assign() {
     );
 }
 
-#[test]
-fn test_parse_funcdef() {
-    assert_parses_exactly(vec!["def foo(): pass"], function_def);
-}
+// #[test]
+// fn test_parse_funcdef() {
+//     assert_parses_exactly(vec!["def foo(): pass"], function_def);
+// }
 
 #[test]
-fn test_parse_term() {
+fn test_parse_expression() {
     assert_parses_exactly(
         vec![
             // term
@@ -99,36 +102,6 @@ fn test_parse_term() {
             "a   //await b.c()",
             "await False@True[].b.c()",
             // await powers
-            "foooooooooo. bar   () ** await 3",
-            "await 1 ** 2",
-            "await   a               .            b.c() ** d .e .f . g . h ()",
-            "1 ** 1",
-            "a ** b",
-            "a ** b.c()",
-            // primary
-            "a.b",
-            "f.b.c",
-            "f()",
-            "a.b()",
-            "a.b.c()",
-            "a().b[]()",
-            "list[]",
-            // atoms
-            "True",
-            "False",
-            "None",
-            "...",
-            "1738",
-            "__nom_parser__",
-        ],
-        term,
-    );
-}
-
-#[test]
-fn test_parse_power() {
-    assert_parses_exactly(
-        vec![
             // await powers
             "foooooooooo. bar   () ** await 3",
             "await 1 ** 2",
@@ -152,7 +125,7 @@ fn test_parse_power() {
             "1738",
             "__nom_parser__",
         ],
-        power,
+        expression,
     );
 }
 
@@ -160,6 +133,10 @@ fn test_parse_power() {
 fn test_parse_primary() {
     assert_parses_exactly(
         vec![
+            // await powers
+            "foooooooooo. bar   ()",
+            "await   1",
+            "await   a               .            b.c()  .d .e .f(  ) . g . h ()",
             // primary
             "a.b",
             "f.b.c",
@@ -176,7 +153,7 @@ fn test_parse_primary() {
             "1738",
             "__nom_parser__",
         ],
-        primary,
+        await_primary,
     );
 }
 

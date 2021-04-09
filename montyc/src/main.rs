@@ -1,24 +1,31 @@
-use std::{io, path::Path};
+use montyc::{
+    ast::{funcdef::FunctionDef, module::Module, stmt::Statement},
+    context::GlobalContext,
+    func::Function,
+    scope::downcast_ref,
+};
 
-use argh::FromArgs;
+fn main() {
+    let mut ctx = GlobalContext::default();
 
-/// Invoke the montyc machinery.
-#[derive(Debug, FromArgs)]
-struct Args {
-    #[argh(positional)]
-    file: String,
-}
+    let module: Module = ctx.parse("def f(): return");
 
-fn main() -> io::Result<()> {
-    let args: Args = argh::from_env();
+    let module_ref = ctx.register_module(module, "this.py".into());
+    let module_context = ctx.modules.get(&module_ref).unwrap();
 
-    let path: &Path = args.file.as_ref();
+    for thing in module_context.scope.iter() {
+        let o = thing.object.unspanned();
+        let object = o.as_ref();
+        let local_context = module_context.make_local_context(&ctx);
 
-    let contents = std::fs::read_to_string(path)?;
+        thing.typecheck(local_context);
 
-    let parser = montyc::parser::PyParse::new(contents);
-
-    eprintln!("{:#?}", parser.parse_module());
-
-    Ok(())
+        if let Some(fndef) = downcast_ref::<FunctionDef>(object) {
+            eprintln!("FunctionDef! {:?}", fndef)
+        } else if let Some(fnc) = downcast_ref::<Function>(object) {
+            eprintln!("Function! {:?}", fnc);
+        } else if let Some(Statement::FnDef(fnc)) = downcast_ref(object) {
+            eprintln!("Fn in a statement! {:?}", fnc)
+        }
+    }
 }

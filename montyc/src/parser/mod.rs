@@ -1,24 +1,25 @@
 use std::{cell::RefCell, num::NonZeroUsize, ops::Range};
 use std::{iter, rc::Rc};
 
-use ast::AstObject;
 use lazy_static::lazy_static;
 use logos::Logos;
+use nom::{IResult};
 use regex::Regex;
 
-pub mod ast;
-mod comb;
-mod token;
+use crate::ast::{AstObject, Spanned};
+
+pub mod comb;
+pub mod token;
 
 mod span_ref {
     use std::{num::NonZeroUsize, ops::Range};
 
-    pub(crate) type SpanEntry = Option<NonZeroUsize>;
+    pub type SpanEntry = Option<NonZeroUsize>;
 
     // -- SpanRef
 
     #[derive(Debug)]
-    pub(crate) struct SpanRef {
+    pub struct SpanRef {
         ptr: usize,
         pub(crate) seq: Vec<Range<usize>>,
     }
@@ -34,6 +35,27 @@ mod span_ref {
 
     impl SpanRef {
         #[inline]
+        pub fn push_noclobber(&mut self, value: Range<usize>, source: &str) -> SpanEntry {
+            let expected = source.get(value.clone()).unwrap();
+
+            for (idx, range) in self.seq.iter().enumerate() {
+                if source
+                    .get(range.clone())
+                    .map(|sl| sl == expected)
+                    .unwrap_or(false)
+                {
+                    return NonZeroUsize::new(idx + 1);
+                }
+            }
+
+            self.ptr += 1;
+            let key = self.ptr;
+            self.seq.push(value);
+
+            NonZeroUsize::new(key)
+        }
+
+        #[inline]
         pub fn push(&mut self, value: Range<usize>) -> SpanEntry {
             self.ptr += 1;
             let key = self.ptr;
@@ -41,13 +63,27 @@ mod span_ref {
 
             NonZeroUsize::new(key)
         }
+
+        #[inline]
+        pub fn resolve_ref<'a>(
+            &self,
+            reference: Option<NonZeroUsize>,
+            source: &'a str,
+        ) -> Option<&'a str> {
+            let range = self
+                .seq
+                .get(usize::from(reference?).saturating_sub(1))?
+                .clone();
+
+            source.get(range)
+        }
     }
 }
 
-use span_ref::{SpanEntry, SpanRef};
+pub use span_ref::{SpanEntry, SpanRef};
 use token::PyToken;
 
-// -- PyParse
+// -- Parser
 
 pub(crate) type Span = Range<usize>;
 
@@ -56,12 +92,24 @@ pub(crate) type Token = (PyToken, Span);
 pub(crate) type TokenSlice<'a> = &'a [Token];
 
 #[derive(Debug, Default)]
-pub struct PyParse {
+pub struct Parser {
     source: String,
     span_ref: Rc<RefCell<SpanRef>>,
 }
 
-impl PyParse {
+impl<S> From<(S, Rc<RefCell<SpanRef>>)> for Parser
+where
+    S: ToString,
+{
+    fn from((source, span_ref): (S, Rc<RefCell<SpanRef>>)) -> Self {
+        Self {
+            source: source.to_string(),
+            span_ref,
+        }
+    }
+}
+
+impl Parser {
     #[inline]
     pub fn new<I>(input: I) -> Self
     where
@@ -84,15 +132,15 @@ impl PyParse {
         Some(&self.source[range])
     }
 
-    #[inline]
-    pub fn parse_module(&self) -> AstObject {
-        let stream = self.token_sequence();
-        let (stream, object) = comb::statements(&stream).unwrap();
+    // #[inline]
+    // pub fn parse_module(&self) -> AstObject {
+    //     let stream = self.token_sequence();
+    //     let (stream, object) = comb::statements(&stream).unwrap();
 
-        assert!(stream.is_empty(), "{:?}", stream);
+    //     assert!(stream.is_empty(), "{:?}", stream);
 
-        object
-    }
+    //     object
+    // }
 
     #[inline]
     fn token_sequence(&self) -> Box<[Token]> {
@@ -123,7 +171,9 @@ impl PyParse {
             let span = (lexer.span(), lexer.slice());
 
             if let PyToken::Ident(inner) = &mut token {
-                let mut ident = span_ref.borrow_mut().push(span.0.clone());
+                let mut ident = span_ref
+                    .borrow_mut()
+                    .push_noclobber(span.0.clone(), &self.source);
                 std::mem::swap(inner, &mut ident);
             } else if let PyToken::Invalid = token {
                 // we're not letting logos handle string literal or comment
@@ -176,43 +226,57 @@ impl PyParse {
     }
 }
 
-#[test]
-#[ignore]
-fn test_lex_stdlib() {
-    use glob::glob;
-    use rayon::prelude::*;
+pub fn parse<P, R>(source: &str, func: P, span_ref: Option<Rc<RefCell<SpanRef>>>) -> R
+where
+    P: for<'a> Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, R>,
+    R: AstObject,
+{
+    let parser = match span_ref {
+        Some(span_ref) => Parser::from((source, span_ref)),
+        None => Parser::new(source),
+    };
 
-    fn brrrrrr(source: String) -> Option<()> {
-        let parser = PyParse::new(source);
-        let mut stream = parser.token_stream();
+    let seq = parser.token_sequence();
 
-        while let Some(oh) = stream.next() {
-            oh.ok()?;
+    let (stream, result) = func(&seq).unwrap();
+    assert!(stream.is_empty(), "{:?}", stream);
+
+    result
+}
+
+pub type ParserT<R> = for<'a> fn(TokenSlice<'a>) -> nom::IResult<TokenSlice<'a>, R>;
+
+pub trait Parseable: AstObject
+{
+    const PARSER: ParserT<Self>;
+}
+
+impl<R> From<&str> for Spanned<R>
+where
+    R: Parseable + Clone,
+{
+    fn from(st: &str) -> Self {
+        let r = parse(st, R::PARSER, Default::default());
+
+        Spanned {
+            span: 0..st.len(),
+            inner: r,
         }
-
-        Some(())
     }
+}
 
-    let stdlib_path = std::env::var("STDLIB").expect("`STDLIB` was not set in envvars!");
+impl<R, S> From<(S, Rc<RefCell<SpanRef>>)> for Spanned<R>
+where
+    R: Parseable + Clone,
+    S: AsRef<str>,
+{
+    fn from((s, sr): (S, Rc<RefCell<SpanRef>>)) -> Self {
+        let st = s.as_ref();
+        let r = parse(st, R::PARSER, Some(sr));
 
-    let paths: Vec<_> = glob(stdlib_path.as_str())
-        .expect("Failed to glob.")
-        .into_iter()
-        .collect();
-
-    let n = paths
-        .par_iter()
-        .filter_map(|path| path.as_ref().ok())
-        .filter_map(|path| std::fs::read_to_string(path).ok())
-        .filter_map(brrrrrr)
-        .count();
-
-    let cov = (n as f64 / paths.len() as f64) * 100f64;
-
-    eprintln!(
-        "stdlib-lex-fuzz: {:?} total files, {:?} correctly lexed. ({2:.2}%)",
-        paths.len(),
-        n,
-        cov,
-    );
+        Spanned {
+            span: 0..st.len(),
+            inner: r,
+        }
+    }
 }
