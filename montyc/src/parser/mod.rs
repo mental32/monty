@@ -154,10 +154,10 @@ impl Parser {
     pub fn token_stream<'a>(&'a self) -> impl Iterator<Item = Result<Token, &'static str>> + 'a {
         lazy_static! {
             // Single quote string literals.
-            static ref MULTI_SQ_STRING: Regex = Regex::new(r###"r?'''[\w\W]*'''"###).unwrap();
+            static ref MULTI_SQ_STRING: Regex = Regex::new(r###"r?'''[^']*'''"###).unwrap();
             static ref SINGLE_SQ_STRING: Regex = Regex::new(r###"r?'[^"]*'"###).unwrap();
             // Double quote string literals.
-            static ref MULTI_DQ_STRING: Regex = Regex::new(r###"r?"""[\w\W]*""""###).unwrap();
+            static ref MULTI_DQ_STRING: Regex = Regex::new(r###"r?"""[^"]*""""###).unwrap();
             static ref SINGLE_DQ_STRING: Regex = Regex::new(r###"r?"[^"]*""###).unwrap();
             // Comments.
             static ref COMMENT: Regex = Regex::new(r"^#[^\n]*").unwrap();
