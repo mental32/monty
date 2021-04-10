@@ -1,38 +1,61 @@
-use std::{any::{Any, TypeId}, mem::MaybeUninit, rc::Rc};
+use std::{
+    any::{Any, TypeId},
+    mem::MaybeUninit,
+    rc::Rc,
+};
 use std::{fmt, sync::Arc};
 
-use logos::Span;
+use logos::{source, Span};
 use typing::{TypeMap, TypedObject};
 
-use crate::{context::LocalContext, parser::token::PyToken, typing::{self, LocalTypeId}};
+use crate::{
+    context::LocalContext,
+    parser::token::PyToken,
+    typing::{self, LocalTypeId},
+};
 
 pub mod assign;
 pub mod atom;
+pub mod class;
 pub mod expr;
-pub mod ifelif;
-pub mod primary;
-pub mod module;
 pub mod funcdef;
+pub mod ifelif;
+pub mod import;
+pub mod module;
+pub mod primary;
 pub mod retrn;
 pub mod stmt;
-pub mod class;
-pub mod import;
 
 pub type Iter<U> = Box<dyn Iterator<Item = U>>;
 
 pub type ObjectIter = Iter<Rc<dyn AstObject>>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Spanned<T> where T: AstObject + Clone {
+pub struct Spanned<T>
+where
+    T: AstObject + Clone,
+{
     pub span: Span,
     pub inner: T,
 }
 
-impl<T> Spanned<T> where T: AstObject + Clone {
+impl<T> Spanned<T>
+where
+    T: AstObject + Clone,
+{
+    pub fn reveal<'a>(&self, source: &'a str) -> Option<&'a str> {
+        source.get(self.span.clone())
+    }
+}
+
+impl<T> Spanned<T>
+where
+    T: AstObject + Clone,
+{
     pub fn map<U, F>(self, f: F) -> Spanned<U>
     where
         F: FnOnce(T) -> U,
-        U: AstObject + Clone
+        U: AstObject + Clone,
     {
         Spanned {
             span: self.span,
@@ -94,10 +117,7 @@ impl<T> TypedObject for Spanned<T>
 where
     T: TypedObject + fmt::Debug + AstObject + Clone,
 {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>
-    ) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
         self.inner.infer_type(ctx)
     }
 
@@ -127,10 +147,7 @@ impl<T> TypedObject for Rc<T>
 where
     T: TypedObject + fmt::Debug,
 {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>
-    ) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
         self.as_ref().infer_type(ctx)
     }
 
@@ -160,10 +177,7 @@ impl<T> TypedObject for Arc<T>
 where
     T: TypedObject + fmt::Debug,
 {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>
-    ) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
         self.as_ref().infer_type(ctx)
     }
 
@@ -193,10 +207,7 @@ impl<T> TypedObject for Option<T>
 where
     T: TypedObject + fmt::Debug,
 {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>
-    ) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
         self.as_ref()?.infer_type(ctx)
     }
 
