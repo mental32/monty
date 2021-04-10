@@ -8,7 +8,13 @@ use std::{
 
 use fmt::Debug;
 
-use crate::{ast::{AstObject, assign::Assign, atom::Atom, funcdef::FunctionDef, stmt::Statement}, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, parser::SpanEntry, typing::{LocalTypeId, TypeMap}};
+use crate::{
+    ast::{assign::Assign, atom::Atom, funcdef::FunctionDef, stmt::Statement, AstObject},
+    context::{GlobalContext, LocalContext, ModuleRef},
+    func::Function,
+    parser::SpanEntry,
+    typing::{LocalTypeId, TypeMap},
+};
 
 fn collect_subnodes(object: &dyn AstObject) -> Vec<Rc<dyn AstObject>> {
     let stream = match object.walk() {
@@ -56,14 +62,14 @@ pub enum ScopeRoot {
 
 // -- trait Scope
 
+pub type ScopeIter<'object, 'iter, 'ctx> = Box<dyn Iterator<Item = (Rc<dyn AstObject + 'object>, LocalContext<'ctx>)> + 'iter>;
+
 pub trait Scope: core::fmt::Debug {
     fn iter<'b>(&'b self) -> Box<(dyn Iterator<Item = ScopedObject<'b>> + 'b)>;
 
     fn root(&self) -> ScopeRoot;
 
-    fn parent(&self) -> Option<&dyn Scope> {
-        None
-    }
+    fn walk<'a, 'b>(&'b self, module_ref: ModuleRef, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b>;
 
     fn lookup(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>>;
 
@@ -80,12 +86,11 @@ pub struct OpaqueScope {
 
 impl<T> From<LocalScope<T>> for OpaqueScope {
     fn from(scope: LocalScope<T>) -> Self {
-        let LocalScope { _root, root, nodes } = scope;
+        let LocalScope { inner, .. } = scope;
 
-        Self { root, nodes }
+        inner
     }
 }
-
 
 impl From<Rc<dyn AstObject>> for OpaqueScope {
     fn from(root: Rc<dyn AstObject>) -> Self {
@@ -98,8 +103,7 @@ impl From<Rc<dyn AstObject>> for OpaqueScope {
     }
 }
 
-impl Scope for OpaqueScope
-{
+impl Scope for OpaqueScope {
     fn iter<'b>(&'b self) -> Box<(dyn Iterator<Item = ScopedObject<'b>> + 'b)> {
         let it = self.nodes.iter().map(move |object| ScopedObject {
             scope: self,
@@ -116,7 +120,7 @@ impl Scope for OpaqueScope
     fn lookup(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>> {
         self.nodes
             .iter()
-            .filter(|node| key(node.as_ref()))
+            .filter(|node| key(dbg!(node.as_ref())))
             .next()
             .cloned()
     }
@@ -138,15 +142,30 @@ impl Scope for OpaqueScope
 
         results
     }
+
+    fn walk<'a, 'b>(&'b self, module_ref: ModuleRef, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b> {
+        let nodes: Vec<_> = self.iter().collect();
+        let mut nodes = nodes.into_iter();
+
+        let it = std::iter::from_fn(move || {
+            let scoped = nodes.next()?;
+
+            let object = scoped.object.unspanned();
+            let ctx = scoped.make_local_context(module_ref.clone(), global_context);
+
+            Some((object, ctx))
+        });
+
+        Box::new(it)
+    }
 }
 
 // -- LocalScope
 
 #[derive(Debug, Clone)]
 pub struct LocalScope<T> {
-    pub _root: PhantomData<Rc<T>>,
-    pub root: ScopeRoot,
-    pub nodes: Vec<Rc<dyn AstObject>>,
+    pub _t: PhantomData<Rc<T>>,
+    pub inner: OpaqueScope,
 }
 
 impl<T> From<T> for LocalScope<T>
@@ -158,52 +177,34 @@ where
         let nodes = collect_subnodes(root.as_ref());
 
         Self {
-            root: ScopeRoot::AstObject(root as Rc<dyn AstObject>),
-            nodes,
-            _root: PhantomData,
+            inner: OpaqueScope {
+                root: ScopeRoot::AstObject(root as Rc<dyn AstObject>),
+                nodes,
+            },
+            _t: PhantomData,
         }
     }
 }
 
-impl<T: Debug> Scope for LocalScope<T>
-{
+impl<T: Debug> Scope for LocalScope<T> {
     fn iter<'b>(&'b self) -> Box<(dyn Iterator<Item = ScopedObject<'b>> + 'b)> {
-        let it = self.nodes.iter().map(move |object| ScopedObject {
-            scope: self,
-            object: object.clone(),
-        });
-
-        Box::new(it)
+        self.inner.iter()
     }
 
     fn root<'b>(&'b self) -> ScopeRoot {
-        self.root.clone()
+        self.inner.root.clone()
     }
 
     fn lookup(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>> {
-        self.nodes
-            .iter()
-            .filter(|node| key(node.as_ref()))
-            .next()
-            .cloned()
+        self.inner.lookup(key)
+    }
+
+    fn walk<'a, 'b>(&'b self, module_ref: ModuleRef, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b> {
+        self.inner.walk(module_ref, global_context)
     }
 
     fn lookup_any(&self, target: SpanEntry) -> Vec<Rc<dyn AstObject>> {
-        let mut results = vec![];
-
-        for object in self.nodes.iter().map(|o| o.unspanned()) {
-            let item = object.as_ref();
-
-            if let Some(asn) = downcast_ref::<Assign>(item) {
-                if matches!(asn.name.inner, Atom::Name(n) if n == target) {
-                    results.push(object.clone());
-                }
-            } else {
-                unimplemented!("unhandled lookup case: {:?}", object);
-            }
-        }
-
-        results
+        self.inner.lookup_any(target)
     }
 }
 
@@ -215,10 +216,14 @@ pub struct ScopedObject<'a> {
 }
 
 impl<'a> ScopedObject<'a> {
-    pub fn make_local_context(&self, module_context: ModuleRef, global_context: &'a GlobalContext) -> LocalContext<'a> {
+    pub fn make_local_context(
+        &self,
+        module_ref: ModuleRef,
+        global_context: &'a GlobalContext,
+    ) -> LocalContext<'a> {
         LocalContext {
             global_context,
-            module_context,
+            module_ref,
             scope: self.scope,
         }
     }

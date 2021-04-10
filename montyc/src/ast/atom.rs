@@ -82,6 +82,6 @@ impl TypedObject for Atom {
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
-        todo!()
+        // always okay
     }
 }

@@ -43,6 +43,9 @@ pub enum PyToken {
     #[token("else")]
     Else,
 
+    #[token("class")]
+    ClassDef,
+
     #[token("def")]
     FnDef,
 
@@ -174,7 +177,7 @@ pub enum PyToken {
 
     // -- Regex rules
 
-    #[regex(r"[\t ]+")]
+    #[regex(r"\t| ")]
     Whitespace,
 
     #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]

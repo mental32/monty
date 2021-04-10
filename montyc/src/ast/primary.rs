@@ -94,6 +94,12 @@ impl TypedObject for Primary {
         &self,
         ctx: LocalContext<'a>,
     ) {
-        todo!()
+        match self {
+            Primary::Atomic(at) => at.typecheck(ctx),
+            Primary::Subscript { value, index } => {}
+            Primary::Call { func, args } => {}
+            Primary::Attribute { left, attr } => {}
+            Primary::Await(_) => {}
+        }
     }
 }

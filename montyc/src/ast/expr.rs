@@ -110,21 +110,31 @@ impl TypedObject for Expr {
                 body: _,
                 orelse: _,
             } => None,
+
             Expr::BinOp {
                 left: _,
                 op: _,
                 right: _,
             } => None,
+
             Expr::Unary { op: _, value: _ } => None,
+
             Expr::Named {
                 target: _,
                 value: _,
             } => None,
+
             Expr::Primary(p) => p.infer_type(ctx),
         }
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
-        todo!()
+        match self {
+            Expr::If { test, body, orelse } => {}
+            Expr::BinOp { left, op, right } => {}
+            Expr::Unary { op, value } => {}
+            Expr::Named { target, value } => {}
+            Expr::Primary(p) => p.typecheck(ctx),
+        }
     }
 }

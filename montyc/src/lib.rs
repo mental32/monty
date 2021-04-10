@@ -1,4 +1,5 @@
 #![feature(variant_count)]
+#![allow(warnings)]
 
 pub mod typing;
 pub mod ast;

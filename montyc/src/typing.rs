@@ -39,6 +39,7 @@ pub enum BuiltinTypeId {
     None = 5,
     Ellipsis = 6,
     Module = 7,
+    Unknown = 8,
     Never = 255,
 }
 
@@ -64,7 +65,7 @@ impl TypeDescriptor {
     }
 }
 
-use crate::{ast::AstObject, context::LocalContext, parser::SpanEntry, scope::Scope};
+use crate::{ast::AstObject, context::LocalContext, parser::SpanEntry};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;
@@ -83,6 +84,7 @@ impl TypeMap {
     pub const NONE_TYPE: LocalTypeId = LocalTypeId(5);
     pub const ELLIPSIS: LocalTypeId = LocalTypeId(6);
     pub const MODULE: LocalTypeId = LocalTypeId(7);
+    pub const UNKNOWN: LocalTypeId = LocalTypeId(8);
     pub const NEVER: LocalTypeId = LocalTypeId(255);
 
     #[inline]
@@ -99,6 +101,7 @@ impl TypeMap {
             TypeDescriptor::Simple(BuiltinTypeId::Ellipsis),
         );
         mapping.insert(Self::MODULE, TypeDescriptor::Simple(BuiltinTypeId::Module));
+        mapping.insert(Self::UNKNOWN, TypeDescriptor::Simple(BuiltinTypeId::Unknown));
         mapping.insert(Self::NEVER, TypeDescriptor::Simple(BuiltinTypeId::Never));
 
         Self(mapping)

@@ -1,13 +1,13 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, func::Function, scope::{LocalScope, OpaqueScope, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
+use crate::{context::LocalContext, func::Function, parser::SpanEntry, scope::{LocalScope, OpaqueScope, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
 
 use super::{atom::Atom, primary::Primary, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
     pub name: Spanned<Atom>,
-    // pub args: Option<Vec<Rc<dyn AstObject>>>,
+    pub args: Option<Vec<(SpanEntry, Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
     // decorator_list: Option<Vec<Rc<dyn AstObject>>>,
     pub returns: Option<Spanned<Primary>>,
@@ -75,11 +75,11 @@ impl TypedObject for FunctionDef {
         });
 
         let mut scope = func.scope.clone();
-        scope.root = ScopeRoot::Func(func.clone());
+        scope.inner.root = ScopeRoot::Func(func.clone());
 
         let ctx = LocalContext {
             global_context: ctx.global_context,
-            module_context: ctx.module_context,
+            module_ref: ctx.module_ref,
             scope: &scope as &dyn Scope,
         };
 

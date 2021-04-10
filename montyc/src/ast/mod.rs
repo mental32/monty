@@ -15,6 +15,8 @@ pub mod module;
 pub mod funcdef;
 pub mod retrn;
 pub mod stmt;
+pub mod class;
+pub mod import;
 
 pub type Iter<U> = Box<dyn Iterator<Item = U>>;
 

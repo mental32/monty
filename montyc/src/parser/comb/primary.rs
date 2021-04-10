@@ -89,7 +89,7 @@ fn primary_left_recurse<'a>(
 }
 
 #[inline]
-fn primary<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+pub fn primary<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
     let (stream, atom) = atom(stream)?;
     let base = atom.map(Primary::Atomic);
 

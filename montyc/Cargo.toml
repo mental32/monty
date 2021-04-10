@@ -5,8 +5,11 @@ authors = ["mental <mentalfoss@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+# parsing dependencies
 logos = "0.11"
 regex = "1"
 nom = "6"
 lazy_static = "1.4.0"
+
 derive_more = "0.99.13"
+structopt = "0.3.21"

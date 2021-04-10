@@ -1,31 +1,53 @@
+use std::{io, path::{Path, PathBuf}};
+
 use montyc::{
-    ast::{funcdef::FunctionDef, module::Module, stmt::Statement},
-    context::GlobalContext,
-    func::Function,
-    scope::downcast_ref,
+    ast::stmt::Statement, context::GlobalContext, scope::downcast_ref, typing::TypedObject,
 };
 
-fn main() {
+use structopt::*;
+
+#[derive(Debug, StructOpt)]
+pub struct Opts {
+    #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
+    libstd: PathBuf,
+
+    #[structopt(parse(from_os_str))]
+    input: PathBuf,
+}
+
+fn main() -> io::Result<()> {
+    let opts = Opts::from_args();
+
+    let std = opts.libstd.canonicalize().unwrap();
+
+    assert!(std.exists());
+
     let mut ctx = GlobalContext::default();
 
-    let module: Module = ctx.parse("def f(): return");
+    // let builtins = {
+    //     let builtins_path = std.join("builtins.py");
+    //     let builtins = std::fs::read_to_string(&builtins_path)?;
+    
+    //     ctx.parse_and_register_module(builtins, builtins_path)
+    // };
 
-    let module_ref = ctx.register_module(module, "this.py".into());
-    let module_context = ctx.modules.get(&module_ref).unwrap();
+    let main = {
+        let path = opts.input.canonicalize().unwrap();
+        let source = std::fs::read_to_string(&path)?;
 
-    for thing in module_context.scope.iter() {
-        let o = thing.object.unspanned();
-        let object = o.as_ref();
-        let local_context = module_context.make_local_context(&ctx);
+        ctx.parse_and_register_module(source, path)
+    };
 
-        thing.typecheck(local_context);
+    dbg!(&ctx.modules.get(&main).unwrap().module);
 
-        if let Some(fndef) = downcast_ref::<FunctionDef>(object) {
-            eprintln!("FunctionDef! {:?}", fndef)
-        } else if let Some(fnc) = downcast_ref::<Function>(object) {
-            eprintln!("Function! {:?}", fnc);
-        } else if let Some(Statement::FnDef(fnc)) = downcast_ref(object) {
-            eprintln!("Fn in a statement! {:?}", fnc)
-        }
-    }
+    // for (object, local_context) in ctx.walk(module_ref) {
+    //     let object = match downcast_ref::<Statement>(object.as_ref()) {
+    //         Some(inner) => inner,
+    //         None => unreachable!(),
+    //     };
+
+    //     object.typecheck(local_context);
+    // }
+
+    Ok(())
 }

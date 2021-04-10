@@ -18,6 +18,8 @@ pub mod ifelse;
 pub mod block;
 pub mod funcdef;
 pub mod stmt;
+pub mod class;
+pub mod import;
 
 pub use {
     atom::*,
@@ -47,15 +49,36 @@ pub fn return_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanne
     Ok((stream, ret))
 }
 
+fn chomp<'a>(mut stream: TokenSlice<'a>)  -> IResult<TokenSlice<'a>, ()> {
+    loop {
+        if let Ok((s, _)) = expect(stream, PyToken::Whitespace) {
+            stream = s;
+            continue;
+        } else if let Ok((s, _)) = expect(stream, PyToken::Newline) {
+            stream = s;
+            continue;
+        } else if let Ok((s, _)) = expect_with(stream, |(t, _)| matches!(t, PyToken::SpanRef(_))) {
+            stream = s;
+            continue;
+        } else {
+            break
+        }
+    }
+
+    Ok((stream, ()))
+}
+
 #[inline]
 pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, ()) = chomp(stream)?;
 
-    let (stream, body) = stmt::statement(stream)?;
+    let (stream, body) = stmt::statement(stream).unwrap();
 
     let module = Module {
         body: vec![body],
     };
+
+    let (stream, ()) = chomp(stream)?;
 
     Ok((stream, module))
 }
