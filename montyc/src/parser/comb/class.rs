@@ -96,7 +96,7 @@ fn decorator_list<'a>(
         if let Ok((tail, dec)) = decorator(stream) {
             list.push(Rc::new(dec));
 
-            let (tail, _) = chomp(tail).unwrap_or((tail, ()));
+            let (tail, refs) = chomp(tail).unwrap_or((tail, vec![]));
 
             stream = tail;
         } else {
