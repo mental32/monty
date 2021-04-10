@@ -28,8 +28,6 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
         .map(|t| t.span.start.clone())
         .unwrap_or(tok.span.start);
 
-    let end = name.span.end.clone();
-
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, _) = expect(stream, PyToken::Colon)?;
     let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -54,6 +52,8 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
         let (s, stmt) = statement(stream)?;
         body.push(Rc::new(stmt));
     }
+
+    let end = body.last().map(|s| s.span.end).unwrap_or(name.span.end.clone());
 
     let def = Spanned {
         inner: ClassDef {
