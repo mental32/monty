@@ -120,7 +120,7 @@ impl Scope for OpaqueScope {
     fn lookup(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>> {
         self.nodes
             .iter()
-            .filter(|node| key(dbg!(node.as_ref())))
+            .filter(|node| key(node.as_ref()))
             .next()
             .cloned()
     }

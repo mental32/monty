@@ -154,11 +154,11 @@ impl Parser {
     pub fn token_stream<'a>(&'a self) -> impl Iterator<Item = Result<Token, &'static str>> + 'a {
         lazy_static! {
             // Single quote string literals.
-            static ref MULTI_SQ_STRING: Regex = Regex::new(r###"^r?'''[\w\W]*'''"###).unwrap();
-            static ref SINGLE_SQ_STRING: Regex = Regex::new(r###"^r?'[^"]*'"###).unwrap();
+            static ref MULTI_SQ_STRING: Regex = Regex::new(r###"r?'''[\w\W]*'''"###).unwrap();
+            static ref SINGLE_SQ_STRING: Regex = Regex::new(r###"r?'[^"]*'"###).unwrap();
             // Double quote string literals.
-            static ref MULTI_DQ_STRING: Regex = Regex::new(r###"^r?"""[\w\W]*""""###).unwrap();
-            static ref SINGLE_DQ_STRING: Regex = Regex::new(r###"^r?"[^"]*""###).unwrap();
+            static ref MULTI_DQ_STRING: Regex = Regex::new(r###"r?"""[\w\W]*""""###).unwrap();
+            static ref SINGLE_DQ_STRING: Regex = Regex::new(r###"r?"[^"]*""###).unwrap();
             // Comments.
             static ref COMMENT: Regex = Regex::new(r"^#[^\n]*").unwrap();
         }
@@ -170,10 +170,12 @@ impl Parser {
             let mut token = lexer.next()?;
             let span = (lexer.span(), lexer.slice());
 
+            let mut span_range = span.0.clone();
+
             if let PyToken::Ident(inner) = &mut token {
                 let mut ident = span_ref
                     .borrow_mut()
-                    .push_noclobber(span.0.clone(), &self.source);
+                    .push_noclobber(span_range.clone(), &self.source);
                 std::mem::swap(inner, &mut ident);
             } else if let PyToken::Invalid = token {
                 // we're not letting logos handle string literal or comment
@@ -203,8 +205,10 @@ impl Parser {
                             None => return Some(Err("fatal[1]: unrecoverable lexing error.")),
                         };
 
+                        span_range = range.start..(range.start + capture.0.end);
+
                         let (n, offset) = {
-                            let n = span_ref.borrow_mut().push(range.clone());
+                            let n = span_ref.borrow_mut().push(span_range.clone());
                             let bump = capture.1.len();
                             (n, bump)
                         };
@@ -219,7 +223,7 @@ impl Parser {
 
             assert_ne!(token, PyToken::Invalid, "{:?}", span);
 
-            Some(Ok((token, span.0)))
+            Some(Ok((token, span_range)))
         };
 
         iter::from_fn(f)

@@ -6,7 +6,7 @@ use super::{AstObject, Spanned, stmt::Statement};
 
 #[derive(Debug, Clone)]
 pub struct Module {
-    pub body: Vec<Spanned<Statement>>,
+    pub body: Vec<Rc<Spanned<Statement>>>,
 }
 
 impl AstObject for Module {

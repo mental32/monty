@@ -55,11 +55,11 @@ impl AstObject for PyToken {
     }
 
     fn unspanned(&self) -> Rc<dyn AstObject> {
-        unreachable!()
+        Rc::new(self.clone())
     }
 
     fn walk(&self) -> Option<ObjectIter> {
-        unreachable!()
+        None
     }
 }
 

@@ -38,14 +38,13 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
 
     let mut body = vec![];
 
-    if let Ok((s, _)) = dbg!(expect(stream, PyToken::Newline)) {
+    if let Ok((s, _)) = expect(stream, PyToken::Newline) {
         stream = s;
         loop {
-            if let Ok((s, _)) = dbg!(expect_many_n::<4>(PyToken::Whitespace)(stream)) {
+            if let Ok((s, _)) = expect_many_n::<4>(PyToken::Whitespace)(stream) {
                 let (s, stmt) = statement(s)?;
                 body.push(Rc::new(stmt));
                 let (s, _) = expect_many_n::<0>(PyToken::Newline)(s)?;
-                dbg!(&s);
                 stream = s;
             } else {
                 break;

@@ -22,7 +22,7 @@ fn argument_annotated<'a>(
     stream: TokenSlice<'a>,
 ) -> IResult<TokenSlice<'a>, (Spanned<PyToken>, Spanned<Primary>)> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, name) = dbg!(expect_ident(stream))?;
+    let (stream, name) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
     let (stream, kind) = match expect(stream, PyToken::Colon) {
@@ -72,8 +72,6 @@ fn arguments<'a>(
         terminated(argument_annotated, expect_(PyToken::Comma)),
         argument_annotated,
     )))(stream)?;
-
-    dbg!((&recv, &args));
 
     Ok((stream, (recv, args)))
 }

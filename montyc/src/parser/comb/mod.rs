@@ -70,12 +70,23 @@ fn chomp<'a>(mut stream: TokenSlice<'a>)  -> IResult<TokenSlice<'a>, ()> {
 
 #[inline]
 pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
-    let (stream, ()) = chomp(stream)?;
+    let (mut stream, ()) = chomp(stream)?;
 
-    let (stream, body) = stmt::statement(stream).unwrap();
+
+    let mut body = vec![];
+
+    loop {
+        if let Ok((s, stmt)) = stmt::statement(stream) {
+            body.push(Rc::new(stmt));
+            let (s, _) = expect_many_n::<0>(PyToken::Newline)(s)?;
+            stream = s;
+        } else {
+            break;
+        }
+    }
 
     let module = Module {
-        body: vec![body],
+        body,
     };
 
     let (stream, ()) = chomp(stream)?;
