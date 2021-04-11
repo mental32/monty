@@ -1,6 +1,9 @@
-use std::{rc::Rc};
+use std::rc::Rc;
 
-use crate::{context::LocalContext, typing::{TypeMap, TypedObject}};
+use crate::{
+    context::LocalContext,
+    typing::{TypeMap, TypedObject},
+};
 
 use super::{atom::Atom, AstObject, ObjectIter, Spanned};
 
@@ -28,6 +31,28 @@ pub enum Primary {
 
     /// `(await +)+<primary>`
     Await(Rc<Spanned<Primary>>),
+}
+
+impl Primary {
+    /// break a dotted name down into its named components
+    pub fn components(&self) -> Vec<Atom> {
+        let mut names = vec![];
+
+        match self {
+            Primary::Atomic(n) => {
+                names.push(n.clone());
+            },
+
+            Primary::Attribute { left, attr } => {
+                names.extend(left.inner.components());
+                names.push(attr.inner.clone());
+            },
+
+            _ => unreachable!(),
+        }
+
+        names
+    }
 }
 
 impl AstObject for Primary {
@@ -77,10 +102,7 @@ impl AstObject for Primary {
 }
 
 impl TypedObject for Primary {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>,
-    ) -> Option<crate::typing::LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
         match self {
             Primary::Atomic(at) => at.infer_type(ctx),
             Primary::Subscript { value: _, index: _ } => None,
@@ -90,10 +112,7 @@ impl TypedObject for Primary {
         }
     }
 
-    fn typecheck<'a>(
-        &self,
-        ctx: LocalContext<'a>,
-    ) {
+    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         match self {
             Primary::Atomic(at) => at.typecheck(ctx),
             Primary::Subscript { value, index } => {}
