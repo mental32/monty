@@ -1,4 +1,4 @@
-#![feature(variant_count)]
+#![feature(variant_count, bool_to_option)]
 #![allow(warnings)]
 
 pub mod typing;
