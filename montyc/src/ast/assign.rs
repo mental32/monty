@@ -1,6 +1,6 @@
 use std::{rc::Rc};
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT}, typing::{TypeMap, TypedObject}};
+use crate::{context::LocalContext, parser::{Parseable, ParserT}, scope::LookupTarget, typing::{TypeMap, TypedObject}};
 
 use super::{atom::Atom, AstObject, ObjectIter, Spanned};
 
@@ -47,6 +47,16 @@ impl TypedObject for Assign {
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+        todo!()
+    }
+}
+
+impl LookupTarget for Assign {
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        todo!()
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
         todo!()
     }
 }

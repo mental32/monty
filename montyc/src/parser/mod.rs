@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use logos::Logos;
 use nom::{IResult};
 use regex::Regex;
+use span_ref::SpanType;
 
 use crate::ast::{AstObject, Spanned};
 
@@ -19,9 +20,18 @@ mod span_ref {
     // -- SpanRef
 
     #[derive(Debug)]
+    pub enum SpanType {
+        Comment,
+        String,
+        Ident,
+        Unknown,
+    }
+
+    #[derive(Debug)]
     pub struct SpanRef {
         ptr: usize,
         pub(crate) seq: Vec<Range<usize>>,
+        seq_types: Vec<SpanType>,
     }
 
     impl Default for SpanRef {
@@ -29,6 +39,7 @@ mod span_ref {
             Self {
                 ptr: 1,
                 seq: vec![0..0],
+                seq_types: vec![SpanType::Unknown],
             }
         }
     }
@@ -56,7 +67,7 @@ mod span_ref {
         }
 
         #[inline]
-        pub fn push(&mut self, value: Range<usize>) -> SpanEntry {
+        pub fn push(&mut self, value: Range<usize>, kind: SpanType) -> SpanEntry {
             self.ptr += 1;
             let key = self.ptr;
             self.seq.push(value);
@@ -188,14 +199,14 @@ impl Parser {
                         let ch = slice.chars().nth(0).unwrap();
                         let rest = &lexer.source().get(range.start..).unwrap();
 
-                        let capture = match ch {
-                            '\'' | '"' | 'r' => MULTI_DQ_STRING
+                        let (capture, span_type) = match ch {
+                            '\'' | '"' | 'r' => (MULTI_DQ_STRING
                                 .find(rest)
                                 .or_else(|| MULTI_SQ_STRING.find(rest))
                                 .or_else(|| SINGLE_SQ_STRING.find(rest))
-                                .or_else(|| SINGLE_DQ_STRING.find(rest)),
+                                .or_else(|| SINGLE_DQ_STRING.find(rest)), SpanType::String),
 
-                            '#' => COMMENT.find(rest),
+                            '#' => (COMMENT.find(rest), SpanType::Comment),
 
                             _ => return Some(Err("fatal[0]: unrecoverable lexing error.")),
                         };
@@ -208,7 +219,7 @@ impl Parser {
                         span_range = range.start..(range.start + capture.0.end);
 
                         let (n, offset) = {
-                            let n = span_ref.borrow_mut().push(span_range.clone());
+                            let n = span_ref.borrow_mut().push(span_range.clone(), span_type);
                             let bump = capture.1.len();
                             (n, bump)
                         };

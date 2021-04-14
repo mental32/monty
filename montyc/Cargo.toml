@@ -11,7 +11,21 @@ regex = "1"
 nom = "6"
 lazy_static = "1.4.0"
 
+# "make my life easier" dependencies
 derive_more = "0.99.13"
 structopt = "0.3.21"
+thiserror = "1.0.24"
+
+# Logging dependencies
 log = "0.4.14"
 env_logger = "0.8.3"
+
+# # codegen dependencies
+# cranelift-codegen = "0.73.0"
+# cranelift-frontend = "0.73.0"
+# cranelift-object = "0.73.0"
+# cranelift-module = "0.73.0"
+
+# error reporting
+codespan = "0.11.1"
+codespan-reporting = "0.11.1"

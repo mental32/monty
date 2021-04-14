@@ -9,7 +9,7 @@ fn main() -> io::Result<()> {
 
     let opts = CompilerOptions::from_args();
 
-    let global_context = GlobalContext::from(opts);
+    let _global_context = GlobalContext::from(opts);
 
     Ok(())
 }

@@ -1,10 +1,24 @@
 use std::rc::Rc;
 
+use codespan_reporting::term::termcolor::{Color, ColorSpec, WriteColor};
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label},
+    files::SimpleFile,
+    term::{termcolor::StandardStream, ColorArg},
+};
+
 use nom::IResult;
 
-use crate::{context::LocalContext, func::Function, parser::{Parseable, ParserT, TokenSlice, comb::return_stmt}, scope::{downcast_ref, Scope, ScopeRoot}, typing::{LocalTypeId, TypeMap, TypedObject}};
+use crate::{
+    context::LocalContext,
+    func::Function,
+    parser::{comb::return_stmt, Parseable, ParserT, TokenSlice},
+    scope::{downcast_ref, LookupTarget, Scope, ScopeRoot},
+    typing::{LocalTypeId, TypeMap, TypedObject},
+    MontyError,
+};
 
-use super::{expr::Expr, AstObject, Spanned};
+use super::{expr::Expr, AstObject, Spanned, stmt::Statement};
 
 #[derive(Debug, Clone)]
 pub struct Return {
@@ -28,10 +42,7 @@ impl AstObject for Return {
 }
 
 impl TypedObject for Return {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>,
-    ) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
         None
     }
 
@@ -45,6 +56,7 @@ impl TypedObject for Return {
             }
 
             ScopeRoot::Func(func) => func.kind.inner.ret,
+            ScopeRoot::Class(_) => return panic!("return in a class def"),
         };
 
         let actual = match &self.value {
@@ -54,16 +66,32 @@ impl TypedObject for Return {
 
         let type_map = ctx.global_context.type_map.borrow();
 
-        assert_eq!(
-            expected,
-            actual,
-            "{:?} != {:?}",
-            type_map.get(expected),
-            type_map.get(actual)
-        );
+        if expected != actual {
+            let ret_node = ctx
+                .this
+                .as_ref()
+                .and_then(|n| downcast_ref::<Spanned<Statement>>(n.as_ref()).cloned())
+                .and_then(|n| Some(n.map(|st| match st {
+                                    Statement::Ret(r) => r,
+                                    _ => unreachable!(),
+                                })))
+                .map(|ret| Rc::new(ret))
+                .unwrap();
+
+            let def_node = match ctx.scope.root() {
+                ScopeRoot::Func(f) => f.def.clone(),
+                _ => unreachable!(),
+            };
+
+            ctx.error(MontyError::BadReturnType {
+                expected,
+                actual,
+                ret_node,
+                def_node,
+            })
+        }
     }
 }
-
 
 #[inline]
 pub fn return_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Return> {
@@ -74,4 +102,14 @@ pub fn return_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, R
 
 impl Parseable for Return {
     const PARSER: ParserT<Self> = return_unspanned;
+}
+
+impl LookupTarget for Return {
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        false
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        todo!()
+    }
 }

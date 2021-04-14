@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, func::Function, parser::SpanEntry, scope::{LocalScope, OpaqueScope, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
+use crate::{context::LocalContext, func::Function, parser::SpanEntry, scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, downcast_ref}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
 
-use super::{atom::Atom, primary::Primary, AstObject, Spanned};
+use super::{AstObject, Spanned, atom::Atom, primary::Primary, stmt::Statement};
 
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
@@ -59,6 +59,13 @@ impl TypedObject for FunctionDef {
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         let type_id = self.infer_type(&ctx).unwrap();
+
+        let this = ctx.this.unwrap().as_ref().unspanned();
+        let this = match downcast_ref::<Statement>(this.as_ref()) {
+            Some(Statement::FnDef(f)) => Spanned { span: f.returns.span().unwrap().clone(), inner: f.clone() },
+            x => panic!("{:?}", x),
+        };
+
         let scope = LocalScope::from(self.clone()).into();
 
         let kind = ctx
@@ -72,6 +79,7 @@ impl TypedObject for FunctionDef {
         let func = Rc::new(Function {
             scope,
             kind,
+            def: Rc::new(this),
         });
 
         let mut scope = func.scope.clone();
@@ -80,9 +88,20 @@ impl TypedObject for FunctionDef {
         let ctx = LocalContext {
             global_context: ctx.global_context,
             module_ref: ctx.module_ref,
-            scope: &scope as &dyn Scope,
+            scope: Rc::new(scope) as Rc<_>,
+            this: None,
         };
 
         func.typecheck(ctx)
+    }
+}
+
+impl LookupTarget for FunctionDef {
+    fn is_named(&self, target: SpanEntry) -> bool {
+        self.name.is_named(target)
+    }
+
+    fn name(&self) -> SpanEntry {
+        todo!()
     }
 }

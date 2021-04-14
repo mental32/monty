@@ -45,13 +45,5 @@ class str:
     errors defaults to 'strict'.
     """
 
-
-_T = typing.TypeVar("_T")
-
-def len(object: typing.Sized, /) -> int:
-    """Return the number of items in a container."""
-    return object.__len__()
-
-def abs(object: typing.SupportsAbs[_T], /) -> _T:
-    """Return the absolute value of the argument."""
-    return object.__abs__()
+def f() -> str:
+    return

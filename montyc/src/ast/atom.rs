@@ -2,7 +2,12 @@ use std::rc::Rc;
 
 use typing::TypedObject;
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT, SpanEntry, token::PyToken}, scope::{downcast_ref, Scope}, typing::{self, LocalTypeId, TypeMap}};
+use crate::{
+    context::LocalContext,
+    parser::{token::PyToken, Parseable, ParserT, SpanEntry},
+    scope::{downcast_ref, LookupTarget, Scope},
+    typing::{self, LocalTypeId, TypeMap},
+};
 
 use super::{assign::Assign, AstObject};
 
@@ -60,28 +65,46 @@ impl TypedObject for Atom {
             Atom::Float(_) => Some(TypeMap::FLOAT),
             Atom::Name(None) => unreachable!(),
             Atom::Name(target) => {
-                let key = |o: &dyn AstObject| -> bool {
-                    let asn = match downcast_ref::<Assign>(o) {
-                        Some(asn) => asn,
-                        None => return false,
-                    };
+                log::trace!("infer_type: performing name lookup on atom {:?}", self);
 
-                    match &asn.name.inner {
-                        Atom::Name(key) => key == target,
-                        _ => unreachable!(),
+                let results = ctx.scope.lookup_any(target.clone());
+
+                match results.as_slice() {
+                    [] => None,
+                    [top, ..] => {
+                        if let Some(asn) = downcast_ref::<Assign>(top.as_ref()) {
+                            asn.value.inner.infer_type(ctx)
+                        } else {
+                            top.infer_type(ctx)
+                        }
                     }
-                };
-
-                let obj = ctx.scope.lookup(&key)?;
-
-                downcast_ref::<Assign>(obj.unspanned().as_ref())?
-                    .value
-                    .infer_type(ctx)
+                }
             }
         }
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         // always okay
+    }
+}
+
+impl LookupTarget for Atom {
+    fn is_named(&self, target: SpanEntry) -> bool {
+        let target = match target {
+            Some(n) => n,
+            None => return false,
+        };
+
+        match self {
+            Self::Name(Some(n)) => *n == target,
+            _ => false,
+        }
+    }
+
+    fn name(&self) -> SpanEntry {
+        match self {
+            Self::Name(n) => n.clone(),
+            _ => None,
+        }
     }
 }

@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use crate::{
     context::LocalContext,
+    scope::LookupTarget,
     typing::{TypeMap, TypedObject},
 };
 
@@ -41,12 +42,12 @@ impl Primary {
         match self {
             Primary::Atomic(n) => {
                 names.push(n.clone());
-            },
+            }
 
             Primary::Attribute { left, attr } => {
                 names.extend(left.inner.components());
                 names.push(attr.inner.clone());
-            },
+            }
 
             _ => unreachable!(),
         }
@@ -103,6 +104,8 @@ impl AstObject for Primary {
 
 impl TypedObject for Primary {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
+        log::trace!("infer_type: {:?}", self);
+
         match self {
             Primary::Atomic(at) => at.infer_type(ctx),
             Primary::Subscript { value: _, index: _ } => None,
@@ -120,5 +123,15 @@ impl TypedObject for Primary {
             Primary::Attribute { left, attr } => {}
             Primary::Await(_) => {}
         }
+    }
+}
+
+impl LookupTarget for Primary {
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        matches!(self, Self::Atomic(Atom::Name((n))) if n.clone() == target)
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        todo!()
     }
 }

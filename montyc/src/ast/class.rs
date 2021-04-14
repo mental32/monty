@@ -1,9 +1,13 @@
 use std::rc::Rc;
 
-use crate::typing::TypedObject;
+use crate::{
+    class::Class,
+    context::LocalContext,
+    scope::{downcast_ref, LocalScope, LookupTarget},
+    typing::{LocalTypeId, TypedObject},
+};
 
-use super::{AstObject, Spanned, atom::Atom, primary::Primary, stmt::Statement};
-
+use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct ClassDef {
@@ -27,11 +31,29 @@ impl AstObject for ClassDef {
 }
 
 impl TypedObject for ClassDef {
-    fn infer_type<'a>(&self, ctx: &crate::context::LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
-        todo!()
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+        if let Some(type_id) = ctx.global_context.is_builtin(self, &ctx.module_ref) {
+            return Some(type_id);
+        } else {
+            todo!();
+        }
     }
 
-    fn typecheck<'a>(&self, ctx: crate::context::LocalContext<'a>) {
-        todo!()
+    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+        let scope = LocalScope::from(self.clone());
+
+        for node in scope.inner.nodes.iter().map(|n| n.unspanned()) {
+            node.typecheck(ctx.clone())
+        }
+    }
+}
+
+impl LookupTarget for ClassDef {
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        self.name.is_named(target)
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        self.name.name()
     }
 }

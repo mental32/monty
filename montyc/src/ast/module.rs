@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT}, typing::{LocalTypeId, TypedObject}};
+use crate::{context::LocalContext, parser::{Parseable, ParserT, SpanEntry}, scope::LookupTarget, typing::{LocalTypeId, TypedObject}};
 
 use super::{AstObject, Spanned, stmt::Statement};
 
@@ -52,4 +52,14 @@ impl TypedObject for Module {
 
 impl Parseable for Module {
     const PARSER: ParserT<Self> = crate::parser::comb::module;
+}
+
+impl LookupTarget for Module {
+    fn is_named(&self, target: SpanEntry) -> bool {
+        false
+    }
+
+    fn name(&self) -> SpanEntry {
+        todo!()
+    }
 }

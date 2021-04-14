@@ -7,6 +7,7 @@ use std::{
     rc::Rc,
 };
 
+use codespan_reporting::diagnostic::Diagnostic;
 use log::*;
 
 use crate::{
@@ -20,10 +21,10 @@ use crate::{
         AstObject, Spanned,
     },
     func::Function,
-    parser::{Parseable, SpanRef},
+    parser::{Parseable, SpanEntry, SpanRef},
     scope::{downcast_ref, LocalScope, OpaqueScope, Scope, ScopedObject},
     typing::{LocalTypeId, TypeMap},
-    CompilerOptions,
+    CompilerOptions, MontyError,
 };
 
 fn shorten(path: &Path) -> String {
@@ -41,6 +42,12 @@ fn shorten(path: &Path) -> String {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::From)]
 pub struct ModuleRef(PathBuf);
 
+impl ModuleRef {
+    pub fn into_pathbuf(&self) -> PathBuf {
+        self.0.clone()
+    }
+}
+
 /// Used to track global compilation state per-compilation.
 #[derive(Debug)]
 pub struct GlobalContext {
@@ -48,7 +55,7 @@ pub struct GlobalContext {
     pub functions: Vec<Function>,
     pub span_ref: Rc<RefCell<SpanRef>>,
     pub type_map: RefCell<TypeMap>,
-    pub builtins: HashMap<LocalTypeId, Rc<dyn AstObject>>,
+    pub builtins: HashMap<LocalTypeId, (Rc<dyn AstObject>, ModuleRef)>,
     pub libstd: PathBuf,
 }
 
@@ -74,6 +81,11 @@ impl From<CompilerOptions> for GlobalContext {
 
         // pre-emptively load in core modules i.e. builtins, ctypes, and typing.
 
+        // TODO: Figure out a way to either special case a `__monty` module reference everywhere or
+        //       have a `ModuleContext` that can represent magical builtin modules like `__monty`.
+        //
+        // ctx.modules.insert(ModuleRef("__monty".into()), SPECIAL_MONTY_MODULE);
+
         ctx.preload_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.
             //
@@ -91,6 +103,7 @@ impl From<CompilerOptions> for GlobalContext {
                 let object_original = item.object.clone();
                 let object_unspanned = item.object.unspanned();
 
+                // associate opaque class definitions of builtin types...
                 if let Some(Statement::Class(class_def)) = downcast_ref(object_unspanned.as_ref()) {
                     let dec_name = match class_def.decorator_list.as_slice() {
                         [] => continue,
@@ -106,10 +119,18 @@ impl From<CompilerOptions> for GlobalContext {
                     let klass_name = class_def.name.reveal(&module_context.source).unwrap();
 
                     match klass_name {
-                        "int" => ctx.builtins.insert(TypeMap::INTEGER, object_original),
-                        "float" => ctx.builtins.insert(TypeMap::FLOAT, object_original),
-                        "str" => ctx.builtins.insert(TypeMap::STRING, object_original),
-                        "bool" => ctx.builtins.insert(TypeMap::BOOL, object_original),
+                        "int" => ctx
+                            .builtins
+                            .insert(TypeMap::INTEGER, (object_original, mref.clone())),
+                        "float" => ctx
+                            .builtins
+                            .insert(TypeMap::FLOAT, (object_original, mref.clone())),
+                        "str" => ctx
+                            .builtins
+                            .insert(TypeMap::STRING, (object_original, mref.clone())),
+                        "bool" => ctx
+                            .builtins
+                            .insert(TypeMap::BOOL, (object_original, mref.clone())),
                         st => panic!("unknown builtin {:?}", st),
                     };
 
@@ -117,7 +138,9 @@ impl From<CompilerOptions> for GlobalContext {
                         "\tAssociated builtin with class definition! {:?}",
                         klass_name
                     );
-                } else if let Some(Statement::Import(import)) =
+                }
+                // run regular import machinery...
+                else if let Some(Statement::Import(import)) =
                     downcast_ref(object_unspanned.as_ref())
                 {
                     let this = Rc::new(import.clone());
@@ -129,9 +152,9 @@ impl From<CompilerOptions> for GlobalContext {
                     }
                 }
 
-                let local = item.make_local_context(mref.clone(), ctx);
-
-                item.typecheck(local);
+                item.with_context(ctx, |local, object| {
+                    object.typecheck(local);
+                })
             }
         });
 
@@ -153,6 +176,19 @@ impl Default for GlobalContext {
 }
 
 impl GlobalContext {
+    pub fn is_builtin<T>(&self, t: &T, t_mref: &ModuleRef) -> Option<LocalTypeId>
+    where
+        T: AstObject,
+    {
+        for (type_id, (object, mref)) in self.builtins.iter() {
+            if t_mref == mref && t.is_named(object.name()) {
+                return Some(type_id.clone());
+            }
+        }
+
+        None
+    }
+
     fn preload_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
         let path = path.as_ref();
 
@@ -201,10 +237,6 @@ impl GlobalContext {
                 .next()
         }
 
-        if matches!(qualname.as_slice(), ["__monty"]) {
-            return Some("__monty".into());
-        }
-
         let paths_to_inspect: &[PathBuf] = &[PathBuf::from("."), self.libstd.clone()] as &[_];
 
         'outer: for path in paths_to_inspect.iter() {
@@ -225,7 +257,7 @@ impl GlobalContext {
         None
     }
 
-    pub fn import_module(&mut self, decl: ImportDecl, source: &str) -> Option<Vec<ModuleRef>> {
+    fn import_module(&mut self, decl: ImportDecl, source: &str) -> Option<Vec<ModuleRef>> {
         let qualnames = match decl.parent.as_ref() {
             Import::Names(_) => vec![decl.name.inner.components()],
             Import::From { module, names, .. } => {
@@ -251,6 +283,12 @@ impl GlobalContext {
                     _ => unreachable!(),
                 })
                 .collect();
+
+            // the magical `__monty` module name is special.
+            if matches!(qualname.as_slice(), ["__monty"]) {
+                modules.push(ModuleRef("__monty".into()));
+                continue;
+            }
 
             let path = {
                 let module_ref = ModuleRef(self.resolve_import_to_path(qualname)?);
@@ -279,7 +317,7 @@ impl GlobalContext {
         Some(modules)
     }
 
-    pub fn parse<T, S>(&self, s: S) -> T
+    fn parse<T, S>(&self, s: S) -> T
     where
         S: AsRef<str>,
         T: Parseable + Clone,
@@ -288,16 +326,19 @@ impl GlobalContext {
         inner
     }
 
-    pub fn parse_and_register_module<S, P>(&mut self, source: S, path: P) -> ModuleRef
+    fn parse_and_register_module<S, P>(&mut self, source: S, path: P) -> ModuleRef
     where
         S: AsRef<str>,
         P: Into<PathBuf>,
     {
         let module: Module = self.parse(&source);
-        self.register_module(module, path.into(), source.as_ref().to_string())
+        let source = source.as_ref().to_string();
+        let path = path.into();
+
+        self.register_module(module, path, source)
     }
 
-    pub fn walk(
+    fn walk(
         &self,
         module_ref: ModuleRef,
     ) -> impl Iterator<Item = (Rc<dyn AstObject>, LocalContext)> {
@@ -308,19 +349,26 @@ impl GlobalContext {
             let scoped = it.next()?;
 
             let object = scoped.object.unspanned();
-            let ctx = scoped.make_local_context(module_ref.clone(), self);
+            let ctx = LocalContext {
+                global_context: self,
+                module_ref: module_ref.clone(),
+                scope: scoped.scope,
+                this: Some(object.clone()),
+            };
 
             Some((object, ctx))
         })
     }
 
-    pub fn register_module(&mut self, module: Module, path: PathBuf, source: String) -> ModuleRef {
+    fn register_module(&mut self, module: Module, path: PathBuf, source: String) -> ModuleRef {
         let module = Rc::new(module);
         let key = ModuleRef::from(path.clone());
 
         let source = source.into_boxed_str().into();
 
-        let scope = OpaqueScope::from(module.clone() as Rc<dyn AstObject>);
+        let mut scope = OpaqueScope::from(module.clone() as Rc<dyn AstObject>);
+        let _ = scope.module_ref.replace(key.clone());
+
         let scope = Rc::new(scope) as Rc<dyn Scope>;
 
         if let Some(previous) = self.modules.insert(
@@ -340,22 +388,25 @@ impl GlobalContext {
 
         key
     }
+
+    pub fn compile<I>(&mut self, i: I) {}
 }
 
 #[derive(Debug, Clone)]
 pub struct ModuleContext {
-    pub path: PathBuf,
-    pub module: Rc<Module>,
-    pub scope: Rc<dyn Scope>,
+    path: PathBuf,
+    module: Rc<Module>,
+    scope: Rc<dyn Scope>,
     pub source: Rc<str>,
 }
 
 impl ModuleContext {
-    pub fn make_local_context<'a>(&'a self, global_context: &'a GlobalContext) -> LocalContext<'a> {
+    pub fn local_context<'a>(&'a self, global_context: &'a GlobalContext) -> LocalContext {
         LocalContext {
             global_context,
             module_ref: ModuleRef::from(self.path.clone()),
-            scope: self.scope.as_ref(),
+            scope: self.scope.clone(),
+            this: None,
         }
     }
 }
@@ -364,5 +415,50 @@ impl ModuleContext {
 pub struct LocalContext<'a> {
     pub global_context: &'a GlobalContext,
     pub module_ref: ModuleRef,
-    pub scope: &'a dyn Scope,
+    pub scope: Rc<dyn Scope>,
+    pub this: Option<Rc<dyn AstObject>>,
+}
+
+impl<'a> LocalContext<'a> {
+    pub fn error(&self, err: MontyError) -> ! {
+        let mut writer = codespan_reporting::term::termcolor::StandardStream::stderr(
+            codespan_reporting::term::termcolor::ColorChoice::Auto,
+        );
+        let config = codespan_reporting::term::Config::default();
+
+        let module_path = self.module_ref.into_pathbuf();
+        let file_name = module_path.file_name().unwrap().to_string_lossy();
+        let file_source = self
+            .global_context
+            .modules
+            .get(&self.module_ref)
+            .expect("missing source!")
+            .source
+            .as_ref();
+
+        let file = codespan_reporting::files::SimpleFile::new(file_name, file_source);
+
+        let diagnostic: Diagnostic<()> = err.into();
+
+        codespan_reporting::term::emit(&mut writer, &config, &file, &diagnostic);
+
+        std::process::exit(1);
+    }
+
+    pub fn resolve(&self, name: impl Into<SpanEntry>) -> Option<String> {
+        let reference = name.into();
+        let source = self
+            .global_context
+            .modules
+            .get(&self.module_ref)
+            .unwrap()
+            .source
+            .clone();
+
+        self.global_context
+            .span_ref
+            .borrow()
+            .resolve_ref(reference, source.as_ref())
+            .map(ToString::to_string)
+    }
 }

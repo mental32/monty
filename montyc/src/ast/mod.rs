@@ -11,6 +11,7 @@ use typing::{TypeMap, TypedObject};
 use crate::{
     context::LocalContext,
     parser::token::PyToken,
+    scope::LookupTarget,
     typing::{self, LocalTypeId},
 };
 
@@ -64,13 +65,15 @@ where
     }
 }
 
-pub trait AstObject: fmt::Debug + TypedObject + Any {
+pub trait AstObject: fmt::Debug + TypedObject + LookupTarget + Any {
     fn span(&self) -> Option<Span>;
 
     fn unspanned(&self) -> Rc<dyn AstObject>;
 
     fn walk(&self) -> Option<ObjectIter>;
 }
+
+// PyToken trait impls
 
 impl AstObject for PyToken {
     fn span(&self) -> Option<Span> {
@@ -86,15 +89,37 @@ impl AstObject for PyToken {
     }
 }
 
+impl LookupTarget for PyToken {
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        match self {
+            Self::SpanRef(n) | Self::Ident(n) => n.clone() == target,
+            _ => false,
+        }
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        match self {
+            Self::Ident(n) => n.clone(),
+            _ => None,
+        }
+    }
+}
+
 impl TypedObject for PyToken {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
         unreachable!()
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
-        unreachable!()
+        log::warn!(
+            "Skipping typecheck: {:?} => {:?}",
+            self,
+            ctx.resolve(self.clone())
+        );
     }
 }
+
+// Spanned<T> trait impls
 
 impl<T: 'static> AstObject for Spanned<T>
 where
@@ -126,6 +151,21 @@ where
     }
 }
 
+impl<T: 'static> LookupTarget for Spanned<T>
+where
+    T: AstObject + fmt::Debug + Clone,
+{
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        self.inner.is_named(target)
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        self.inner.name()
+    }
+}
+
+// Rc<T> trait impls
+
 impl<T: 'static> AstObject for Rc<T>
 where
     T: AstObject + fmt::Debug,
@@ -155,6 +195,21 @@ where
         self.as_ref().typecheck(ctx)
     }
 }
+
+impl<T: 'static> LookupTarget for Rc<T>
+where
+    T: AstObject + fmt::Debug,
+{
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        self.as_ref().is_named(target)
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        self.as_ref().name()
+    }
+}
+
+// Arc<T> trait impls
 
 impl<T: 'static> AstObject for Arc<T>
 where
@@ -186,6 +241,21 @@ where
     }
 }
 
+impl<T: 'static> LookupTarget for Arc<T>
+where
+    T: AstObject + fmt::Debug,
+{
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        self.as_ref().is_named(target)
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        self.as_ref().name()
+    }
+}
+
+// Option<T> trait impls
+
 impl<T: 'static> AstObject for Option<T>
 where
     T: AstObject + fmt::Debug,
@@ -213,5 +283,18 @@ where
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         self.as_ref().unwrap().typecheck(ctx)
+    }
+}
+
+impl<T: 'static> LookupTarget for Option<T>
+where
+    T: AstObject + fmt::Debug,
+{
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        self.as_ref().unwrap().is_named(target)
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        self.as_ref().unwrap().name()
     }
 }

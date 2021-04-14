@@ -1,10 +1,6 @@
 use std::rc::Rc;
 
-use crate::{
-    context::LocalContext,
-    parser::{Parseable, ParserT, Span},
-    typing::{TypeMap, TypedObject},
-};
+use crate::{context::LocalContext, parser::{Parseable, ParserT, Span}, scope::LookupTarget, typing::{TypeMap, TypedObject}};
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -136,5 +132,15 @@ impl TypedObject for Expr {
             Expr::Named { target, value } => {}
             Expr::Primary(p) => p.typecheck(ctx),
         }
+    }
+}
+
+impl LookupTarget for Expr {
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        todo!()
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        todo!()
     }
 }

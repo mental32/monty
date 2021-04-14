@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use nom::IResult;
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT, TokenSlice, comb::stmt::statement, token::PyToken}, scope::downcast_ref, typing::TypedObject};
+use crate::{context::LocalContext, parser::{Parseable, ParserT, TokenSlice, comb::stmt::statement, token::PyToken}, scope::{LookupTarget, downcast_ref}, typing::{TypeMap, TypedObject}};
 
 use super::{AstObject, Spanned, assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, import::Import, retrn::Return};
 
@@ -21,7 +21,16 @@ pub enum Statement {
 
 impl AstObject for Statement {
     fn span(&self) -> Option<logos::Span> {
-        todo!()
+        match self {
+            Statement::Expression(e) => e.span(),
+            Statement::FnDef(f) => f.span(),
+            Statement::Ret(r) => r.span(),
+            Statement::Asn(a) => a.span(),
+            Statement::Import(i) => i.span(),
+            Statement::Class(c) => c.span(),
+            Statement::SpanRef(s) => s.span(),
+            Statement::Pass => None,
+        }
     }
 
     fn unspanned(&self) -> std::rc::Rc<dyn AstObject> {
@@ -44,7 +53,16 @@ impl AstObject for Statement {
 
 impl TypedObject for Statement {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
-        todo!()
+        match self {
+            Statement::Expression(e) => e.infer_type(ctx),
+            Statement::FnDef(f) => f.infer_type(ctx),
+            Statement::Ret(r) => r.infer_type(ctx),
+            Statement::Asn(a) => a.infer_type(ctx),
+            Statement::Import(i) => i.infer_type(ctx),
+            Statement::Class(c) => c.infer_type(ctx),
+            Statement::SpanRef(_) => {todo!()},
+            Statement::Pass => Some(TypeMap::NONE_TYPE)
+        }
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
@@ -71,3 +89,32 @@ pub fn statement_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>
 impl Parseable for Statement {
     const PARSER: ParserT<Self> = statement_unspanned;
 }
+
+impl LookupTarget for Statement {
+    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+        match self {
+            Statement::Expression(e) => e.is_named(target),
+            Statement::FnDef(e) => e.is_named(target),
+            Statement::Ret(e) => e.is_named(target),
+            Statement::Asn(e) => e.is_named(target),
+            Statement::Import(e) => e.is_named(target),
+            Statement::Class(e) => e.is_named(target),
+            Statement::SpanRef(e) => e.is_named(target),
+            Statement::Pass => false,
+        }
+    }
+
+    fn name(&self) -> crate::parser::SpanEntry {
+        match self {
+            Statement::Expression(e) => e.name(),
+            Statement::FnDef(e)=> e.name(),
+            Statement::Ret(e) => e.name(),
+            Statement::Asn(e) => e.name(),
+            Statement::Import(e) => e.name(),
+            Statement::Class(e) => e.name(),
+            Statement::SpanRef(e) => e.name(),
+            Statement::Pass => None,
+        }
+    }
+}
+

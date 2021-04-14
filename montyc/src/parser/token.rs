@@ -1,6 +1,6 @@
 //! Tokenizer & lexer interface.
 
-use logos::Logos;
+use logos::{Logos, Span};
 
 use super::SpanEntry;
 
@@ -186,19 +186,24 @@ pub enum PyToken {
     #[regex(r"\d+", |lex| str::parse::<isize>(lex.slice()).unwrap())]     // TODO(mental): try avoid panicking here...
     Digits(isize),
 
-    // -- Special rules
+    // -- Dynamic rules
 
     /// SpanRef tokens are generated lazily when lexing over the source.
     ///
-    /// Why? because it was such a pain in the ass to properly include all the
-    /// different ways of lexing a string in Python in this logos Lexer, no I',
-    /// not saying logos is responsible for this but I definitely am too much
-    /// of a dumb dumb to figure out how to do it properly.
+    /// They are generated upon encountering:
     ///
-    /// so for now we have spanref's which is a token generated dynamically
-    /// when a string (any kind of string literal or comment) is parsed `${n}`
-    /// and we just keep a big table where you can use `n` to get the original
-    /// span happy? good.
+    ///   * comments
+    ///   * string literals (including multiline literals)
+    ///   * identifier literals
     ///
     SpanRef(SpanEntry),
+}
+
+impl From<PyToken> for SpanEntry {
+    fn from(token: PyToken) -> Self {
+        match token {
+            PyToken::SpanRef(n) => n,
+            _ => unreachable!(),
+        }
+    }
 }

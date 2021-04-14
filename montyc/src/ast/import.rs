@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use crate::{parser::SpanEntry, typing::TypedObject};
+use crate::{parser::SpanEntry, scope::LookupTarget, typing::TypedObject};
 
-use super::{primary::Primary, AstObject, Spanned};
+use super::{AstObject, Spanned, atom::Atom, primary::Primary};
 
 #[derive(Debug, Clone)]
 pub struct ImportDecl {
@@ -88,5 +88,20 @@ impl TypedObject for Import {
 
     fn typecheck<'a>(&self, ctx: crate::context::LocalContext<'a>) {
 
+    }
+}
+
+impl LookupTarget for Import {
+    fn is_named(&self, target: SpanEntry) -> bool {
+        let names = match self {
+            Import::Names(names)
+            | Import::From { names, .. } => names,
+        };
+
+        names.iter().any(|name| matches!(name.inner, Primary::Atomic(Atom::Name(n)) if n == target))
+    }
+
+    fn name(&self) -> SpanEntry {
+        todo!()
     }
 }
