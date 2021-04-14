@@ -3,7 +3,7 @@ use std::{iter, rc::Rc};
 
 use lazy_static::lazy_static;
 use logos::Logos;
-use nom::{IResult};
+use nom::IResult;
 use regex::Regex;
 use span_ref::SpanType;
 
@@ -200,11 +200,14 @@ impl Parser {
                         let rest = &lexer.source().get(range.start..).unwrap();
 
                         let (capture, span_type) = match ch {
-                            '\'' | '"' | 'r' => (MULTI_DQ_STRING
-                                .find(rest)
-                                .or_else(|| MULTI_SQ_STRING.find(rest))
-                                .or_else(|| SINGLE_SQ_STRING.find(rest))
-                                .or_else(|| SINGLE_DQ_STRING.find(rest)), SpanType::String),
+                            '\'' | '"' | 'r' => (
+                                MULTI_DQ_STRING
+                                    .find(rest)
+                                    .or_else(|| MULTI_SQ_STRING.find(rest))
+                                    .or_else(|| SINGLE_SQ_STRING.find(rest))
+                                    .or_else(|| SINGLE_DQ_STRING.find(rest)),
+                                SpanType::String,
+                            ),
 
                             '#' => (COMMENT.find(rest), SpanType::Comment),
 
@@ -261,8 +264,7 @@ where
 
 pub type ParserT<R> = for<'a> fn(TokenSlice<'a>) -> nom::IResult<TokenSlice<'a>, R>;
 
-pub trait Parseable: AstObject
-{
+pub trait Parseable: AstObject {
     const PARSER: ParserT<Self>;
 }
 

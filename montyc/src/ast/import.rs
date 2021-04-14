@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{parser::SpanEntry, scope::LookupTarget, typing::TypedObject};
 
-use super::{AstObject, Spanned, atom::Atom, primary::Primary};
+use super::{atom::Atom, primary::Primary, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct ImportDecl {
@@ -37,16 +37,14 @@ impl Import {
                 module,
                 names,
                 level,
-            } => {
-                names
+            } => names
                 .iter()
                 .map(|target| ImportDecl {
                     parent: self.clone(),
                     name: target.clone(),
                     alias: None,
                 })
-                .collect()
-            }
+                .collect(),
         };
 
         decls
@@ -86,19 +84,18 @@ impl TypedObject for Import {
         todo!()
     }
 
-    fn typecheck<'a>(&self, ctx: crate::context::LocalContext<'a>) {
-
-    }
+    fn typecheck<'a>(&self, ctx: crate::context::LocalContext<'a>) {}
 }
 
 impl LookupTarget for Import {
     fn is_named(&self, target: SpanEntry) -> bool {
         let names = match self {
-            Import::Names(names)
-            | Import::From { names, .. } => names,
+            Import::Names(names) | Import::From { names, .. } => names,
         };
 
-        names.iter().any(|name| matches!(name.inner, Primary::Atomic(Atom::Name(n)) if n == target))
+        names
+            .iter()
+            .any(|name| matches!(name.inner, Primary::Atomic(Atom::Name(n)) if n == target))
     }
 
     fn name(&self) -> SpanEntry {

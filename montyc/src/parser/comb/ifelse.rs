@@ -4,7 +4,6 @@
 // use crate::parser::{TokenSlice, token::PyToken};
 // use super::{block::block, expect_, expect_many_n, expression};
 
-
 // #[inline]
 // fn else_block<'a>(_stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<BranchTail>> {
 //     todo!();

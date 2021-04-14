@@ -1,8 +1,11 @@
-use nom::{IResult, Err, error::{Error, ErrorKind}, multi::{many0, many1, many_m_n}};
+use nom::{
+    error::{Error, ErrorKind},
+    multi::{many0, many1, many_m_n},
+    Err, IResult,
+};
 
 use crate::ast::Spanned;
-use crate::parser::{Span, TokenSlice, token::PyToken};
-
+use crate::parser::{token::PyToken, Span, TokenSlice};
 
 #[inline]
 pub fn expect_many_n<const N: usize>(
@@ -119,7 +122,6 @@ pub fn expect_wrapped_values<const N: usize>(
         Ok((stream, results))
     }
 }
-
 
 // #[inline]
 // pub fn parse_single_binop<'a, F>(

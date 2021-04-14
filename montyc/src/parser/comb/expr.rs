@@ -1,15 +1,12 @@
 use std::rc::Rc;
 
+use nom::{branch::alt, IResult};
 
-use nom::{
-    branch::alt,
-    IResult,
+use crate::ast::{
+    expr::{Expr, InfixOp, UnaryOp},
+    Spanned,
 };
-
-use crate::ast::{Spanned, expr::{Expr, InfixOp, UnaryOp}};
 use crate::parser::{token::PyToken, TokenSlice};
-
-
 
 use super::core::{
     expect, expect_, expect_any_of, expect_any_token, expect_many_n, expect_wrapped_values,

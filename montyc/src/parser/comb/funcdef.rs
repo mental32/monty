@@ -35,7 +35,7 @@ fn argument_annotated<'a>(
                 Primary::Subscript { value, index } => {}
                 Primary::Call { func, args } => {}
                 Primary::Attribute { left, attr } => {}
-                Primary::Await(_) => unreachable!()
+                Primary::Await(_) => unreachable!(),
             }
 
             (stream, kind)

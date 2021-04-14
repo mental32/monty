@@ -53,7 +53,10 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
         body.push(Rc::new(stmt));
     }
 
-    let end = body.last().map(|s| s.span.end).unwrap_or(name.span.end.clone());
+    let end = body
+        .last()
+        .map(|s| s.span.end)
+        .unwrap_or(name.span.end.clone());
 
     let def = Spanned {
         inner: ClassDef {

@@ -81,10 +81,7 @@ pub trait Scope: core::fmt::Debug {
 
     fn module_ref(&self) -> ModuleRef;
 
-    fn walk<'a, 'b>(
-        &'b self,
-        global_context: &'a GlobalContext,
-    ) -> ScopeIter<'a, 'b, 'b>;
+    fn walk<'a, 'b>(&'b self, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b>;
 
     fn lookup_with(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>>;
 
@@ -156,10 +153,7 @@ impl Scope for OpaqueScope {
         results
     }
 
-    fn walk<'a, 'b>(
-        &'b self,
-        global_context: &'a GlobalContext,
-    ) -> ScopeIter<'a, 'b, 'b> {
+    fn walk<'a, 'b>(&'b self, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b> {
         let nodes: Vec<_> = self.iter().collect();
         let mut nodes = nodes.into_iter();
 
@@ -225,10 +219,7 @@ impl<T: Debug> Scope for LocalScope<T> {
         self.inner.lookup_with(key)
     }
 
-    fn walk<'a, 'b>(
-        &'b self,
-        global_context: &'a GlobalContext,
-    ) -> ScopeIter<'a, 'b, 'b> {
+    fn walk<'a, 'b>(&'b self, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b> {
         self.inner.walk(global_context)
     }
 
@@ -249,11 +240,10 @@ pub struct ScopedObject {
 }
 
 impl ScopedObject {
-    pub fn with_context<F, T>(
-        &self,
-        global_context: &GlobalContext,
-        f: F
-    ) -> T where F: Fn(LocalContext, Rc<dyn AstObject>) -> T {
+    pub fn with_context<F, T>(&self, global_context: &GlobalContext, f: F) -> T
+    where
+        F: Fn(LocalContext, Rc<dyn AstObject>) -> T,
+    {
         let ctx = LocalContext {
             scope: self.scope.clone(),
             this: Some(self.object.clone()),

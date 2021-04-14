@@ -1,8 +1,14 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, func::Function, parser::SpanEntry, scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, downcast_ref}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
+use crate::{
+    context::LocalContext,
+    func::Function,
+    parser::SpanEntry,
+    scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot},
+    typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject},
+};
 
-use super::{AstObject, Spanned, atom::Atom, primary::Primary, stmt::Statement};
+use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
@@ -62,7 +68,10 @@ impl TypedObject for FunctionDef {
 
         let this = ctx.this.unwrap().as_ref().unspanned();
         let this = match downcast_ref::<Statement>(this.as_ref()) {
-            Some(Statement::FnDef(f)) => Spanned { span: f.returns.span().unwrap().clone(), inner: f.clone() },
+            Some(Statement::FnDef(f)) => Spanned {
+                span: f.returns.span().unwrap().clone(),
+                inner: f.clone(),
+            },
             x => panic!("{:?}", x),
         };
 

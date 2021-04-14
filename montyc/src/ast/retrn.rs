@@ -18,7 +18,7 @@ use crate::{
     MontyError,
 };
 
-use super::{expr::Expr, AstObject, Spanned, stmt::Statement};
+use super::{expr::Expr, stmt::Statement, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct Return {
@@ -71,10 +71,12 @@ impl TypedObject for Return {
                 .this
                 .as_ref()
                 .and_then(|n| downcast_ref::<Spanned<Statement>>(n.as_ref()).cloned())
-                .and_then(|n| Some(n.map(|st| match st {
-                                    Statement::Ret(r) => r,
-                                    _ => unreachable!(),
-                                })))
+                .and_then(|n| {
+                    Some(n.map(|st| match st {
+                        Statement::Ret(r) => r,
+                        _ => unreachable!(),
+                    }))
+                })
                 .map(|ret| Rc::new(ret))
                 .unwrap();
 

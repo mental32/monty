@@ -9,7 +9,6 @@ use std::{
 
 pub type NodeId = Option<NonZeroUsize>;
 
-
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, derive_more::From)]
 #[repr(transparent)]
 pub struct LocalTypeId(usize);
@@ -101,7 +100,10 @@ impl TypeMap {
             TypeDescriptor::Simple(BuiltinTypeId::Ellipsis),
         );
         mapping.insert(Self::MODULE, TypeDescriptor::Simple(BuiltinTypeId::Module));
-        mapping.insert(Self::UNKNOWN, TypeDescriptor::Simple(BuiltinTypeId::Unknown));
+        mapping.insert(
+            Self::UNKNOWN,
+            TypeDescriptor::Simple(BuiltinTypeId::Unknown),
+        );
         mapping.insert(Self::NEVER, TypeDescriptor::Simple(BuiltinTypeId::Never));
 
         Self(mapping)
@@ -112,7 +114,13 @@ impl TypeMap {
     where
         T: Into<TypeDescriptor>,
     {
-        let idx = self.0.keys().max().cloned().map(|n| LocalTypeId(n.0 + 1)).unwrap_or(LocalTypeId(255));
+        let idx = self
+            .0
+            .keys()
+            .max()
+            .cloned()
+            .map(|n| LocalTypeId(n.0 + 1))
+            .unwrap_or(LocalTypeId(255));
         self.0.insert(idx, t.into());
         idx
     }
@@ -150,10 +158,7 @@ impl TypeMap {
         //         cast the variant payload reference correctly.
         let inner = unsafe { &*ptr }.clone();
 
-        let result = TaggedType {
-            type_id,
-            inner,
-        };
+        let result = TaggedType { type_id, inner };
 
         Some(Ok(result))
     }

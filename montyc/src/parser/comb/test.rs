@@ -1,6 +1,6 @@
 use nom::IResult;
 
-use crate::parser::{Parser, TokenSlice, token::PyToken};
+use crate::parser::{token::PyToken, Parser, TokenSlice};
 
 use super::*;
 // use super::ast::AstObject;
@@ -10,13 +10,17 @@ fn assert_parses_exactly<'a, S, F, R>(st: S, f: F) -> Vec<R>
 where
     S: IntoIterator<Item = &'a str>,
     F: for<'b> Fn(TokenSlice<'b>) -> IResult<TokenSlice<'b>, R>,
-    R: std::fmt::Debug
+    R: std::fmt::Debug,
 {
     let mut gathered = vec![];
 
     for string in st.into_iter() {
         let parser = Parser::new(string);
-        let stream = parser.token_stream().map(Result::unwrap).collect::<Vec<_>>().into_boxed_slice();
+        let stream = parser
+            .token_stream()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
 
         match f(&stream) {
             Ok(([], obj)) => gathered.push(obj),
@@ -57,7 +61,6 @@ fn test_parse_spanrefs() {
         Ok((stream, o))
     });
 }
-
 
 #[test]
 fn test_parse_true() {
@@ -160,14 +163,7 @@ fn test_parse_primary() {
 #[test]
 fn test_parse_atom() {
     assert_parses_exactly(
-        vec![
-            "True",
-            "False",
-            "None",
-            "...",
-            "1738",
-            "__nom_parser__",
-        ],
+        vec!["True", "False", "None", "...", "1738", "__nom_parser__"],
         atom,
     );
 }

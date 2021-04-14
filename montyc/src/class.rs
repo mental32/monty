@@ -1,5 +1,8 @@
-use crate::{ast::class::ClassDef, scope::LocalScope, typing::{LocalTypeId, TypedObject}};
-
+use crate::{
+    ast::class::ClassDef,
+    scope::LocalScope,
+    typing::{LocalTypeId, TypedObject},
+};
 
 #[derive(Debug)]
 pub struct Class {

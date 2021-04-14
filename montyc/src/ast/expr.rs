@@ -1,6 +1,11 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT, Span}, scope::LookupTarget, typing::{TypeMap, TypedObject}};
+use crate::{
+    context::LocalContext,
+    parser::{Parseable, ParserT, Span},
+    scope::LookupTarget,
+    typing::{TypeMap, TypedObject},
+};
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 

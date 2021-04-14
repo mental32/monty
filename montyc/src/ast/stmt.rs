@@ -2,10 +2,17 @@ use std::rc::Rc;
 
 use nom::IResult;
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT, TokenSlice, comb::stmt::statement, token::PyToken}, scope::{LookupTarget, downcast_ref}, typing::{TypeMap, TypedObject}};
+use crate::{
+    context::LocalContext,
+    parser::{comb::stmt::statement, token::PyToken, Parseable, ParserT, TokenSlice},
+    scope::{downcast_ref, LookupTarget},
+    typing::{TypeMap, TypedObject},
+};
 
-use super::{AstObject, Spanned, assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, import::Import, retrn::Return};
-
+use super::{
+    assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, import::Import,
+    retrn::Return, AstObject, Spanned,
+};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -60,8 +67,10 @@ impl TypedObject for Statement {
             Statement::Asn(a) => a.infer_type(ctx),
             Statement::Import(i) => i.infer_type(ctx),
             Statement::Class(c) => c.infer_type(ctx),
-            Statement::SpanRef(_) => {todo!()},
-            Statement::Pass => Some(TypeMap::NONE_TYPE)
+            Statement::SpanRef(_) => {
+                todo!()
+            }
+            Statement::Pass => Some(TypeMap::NONE_TYPE),
         }
     }
 
@@ -73,7 +82,7 @@ impl TypedObject for Statement {
             Statement::Asn(a) => a.typecheck(ctx),
             Statement::Import(i) => i.typecheck(ctx),
             Statement::Class(c) => c.typecheck(ctx),
-            Statement::SpanRef(_) => {},
+            Statement::SpanRef(_) => {}
             Statement::Pass => {}
         }
     }
@@ -107,7 +116,7 @@ impl LookupTarget for Statement {
     fn name(&self) -> crate::parser::SpanEntry {
         match self {
             Statement::Expression(e) => e.name(),
-            Statement::FnDef(e)=> e.name(),
+            Statement::FnDef(e) => e.name(),
             Statement::Ret(e) => e.name(),
             Statement::Asn(e) => e.name(),
             Statement::Import(e) => e.name(),
@@ -117,4 +126,3 @@ impl LookupTarget for Statement {
         }
     }
 }
-

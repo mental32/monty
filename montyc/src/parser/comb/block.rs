@@ -1,8 +1,7 @@
-use nom::{IResult};
+use nom::IResult;
 
-use crate::ast::{Spanned, expr::Expr};
+use crate::ast::{expr::Expr, Spanned};
 use crate::parser::TokenSlice;
-
 
 #[inline]
 pub fn block<'a>(_stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Spanned<Expr>>> {
@@ -12,7 +11,6 @@ pub fn block<'a>(_stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Spanned
     // fn invalid_block<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
     //     terminated(expect_(PyToken::Newline), not(expect_(PyToken::Whitespace)))(stream)
     // }
-
 
     // let mut indented_block = preceded(
     //     expect_(PyToken::Newline),

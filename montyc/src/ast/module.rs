@@ -1,8 +1,13 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT, SpanEntry}, scope::LookupTarget, typing::{LocalTypeId, TypedObject}};
+use crate::{
+    context::LocalContext,
+    parser::{Parseable, ParserT, SpanEntry},
+    scope::LookupTarget,
+    typing::{LocalTypeId, TypedObject},
+};
 
-use super::{AstObject, Spanned, stmt::Statement};
+use super::{stmt::Statement, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -35,17 +40,11 @@ impl AstObject for Module {
 }
 
 impl TypedObject for Module {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>
-    ) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
         None
     }
 
-    fn typecheck<'a>(
-        &self,
-        ctx: LocalContext<'a>
-    ) {
+    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         todo!();
     }
 }

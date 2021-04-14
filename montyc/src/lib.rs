@@ -44,13 +44,16 @@ impl From<MontyError> for codespan_reporting::diagnostic::Diagnostic<()> {
                 let ret_span = ret_node.span().unwrap();
 
                 let primary = match &ret_node.inner.value {
-                    Some(value) => Label::primary((), value.span().unwrap_or(ret_span)).with_message("{type} is implicitly returned here."),
-                    None => Label::primary((), ret_span).with_message("`None` is implicitly returned here.")
+                    Some(value) => Label::primary((), value.span().unwrap_or(ret_span))
+                        .with_message("{type} is implicitly returned here."),
+                    None => Label::primary((), ret_span)
+                        .with_message("`None` is implicitly returned here."),
                 };
 
                 labels.push(primary);
 
-                let def = Label::secondary((), def_node.span().unwrap()).with_message("function defined here with different type.");
+                let def = Label::secondary((), def_node.span().unwrap())
+                    .with_message("function defined here with different type.");
 
                 labels.push(def);
 

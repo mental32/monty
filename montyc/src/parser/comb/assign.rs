@@ -1,6 +1,6 @@
 use nom::{sequence::terminated, IResult};
 
-use crate::ast::{Spanned, assign::Assign};
+use crate::ast::{assign::Assign, Spanned};
 use crate::parser::{token::PyToken, TokenSlice};
 
 use super::{
@@ -14,7 +14,6 @@ pub fn assignment_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a
     let (stream, Spanned { inner, .. }) = assignment(stream)?;
     Ok((stream, inner))
 }
-
 
 #[inline]
 pub fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Assign>> {

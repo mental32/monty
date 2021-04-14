@@ -90,7 +90,10 @@ pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
 
     let (stream, mut tail) = chomp(stream)?;
 
-    body.extend(tail.drain(..).map(|sr| Rc::new(sr.map(|t| Statement::SpanRef(t)))));
+    body.extend(
+        tail.drain(..)
+            .map(|sr| Rc::new(sr.map(|t| Statement::SpanRef(t)))),
+    );
 
     let module = Module { body };
 

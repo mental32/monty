@@ -1,15 +1,33 @@
 use std::rc::Rc;
 
-use nom::{IResult, branch::alt};
+use nom::{branch::alt, IResult};
 
-use crate::{ast::{AstObject, Spanned, funcdef, stmt::{self, Statement}}, parser::{token::PyToken, TokenSlice}};
+use crate::{
+    ast::{
+        funcdef,
+        stmt::{self, Statement},
+        AstObject, Spanned,
+    },
+    parser::{token::PyToken, TokenSlice},
+};
 
-use super::{assignment, expect, expect_many_n, expect_with, expression, funcdef::function_def, return_stmt};
+use super::{
+    assignment, expect, expect_many_n, expect_with, expression, funcdef::function_def, return_stmt,
+};
 
 #[inline]
 fn dyn_assign<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    let (stream, Spanned { span, inner: assign }) = assignment(stream)?;
-    let assign = Spanned { span, inner: Statement::Asn(assign) };
+    let (
+        stream,
+        Spanned {
+            span,
+            inner: assign,
+        },
+    ) = assignment(stream)?;
+    let assign = Spanned {
+        span,
+        inner: Statement::Asn(assign),
+    };
 
     Ok((stream, assign))
 }
@@ -17,7 +35,10 @@ fn dyn_assign<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
 #[inline]
 fn dyn_return<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, Spanned { span, inner: ret }) = return_stmt(stream)?;
-    let ret = Spanned { span, inner: Statement::Ret(ret) };
+    let ret = Spanned {
+        span,
+        inner: Statement::Ret(ret),
+    };
 
     Ok((stream, ret))
 }
@@ -25,7 +46,10 @@ fn dyn_return<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
 #[inline]
 fn dyn_funcdef<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, Spanned { span, inner }) = function_def(stream)?;
-    let fndef = Spanned { span, inner: Statement::FnDef(inner) };
+    let fndef = Spanned {
+        span,
+        inner: Statement::FnDef(inner),
+    };
 
     Ok((stream, fndef))
 }
@@ -33,7 +57,10 @@ fn dyn_funcdef<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<St
 #[inline]
 fn dyn_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, Spanned { span, inner }) = super::import::import(stream)?;
-    let imprt = Spanned { span, inner: Statement::Import(inner) };
+    let imprt = Spanned {
+        span,
+        inner: Statement::Import(inner),
+    };
 
     Ok((stream, imprt))
 }
@@ -41,19 +68,25 @@ fn dyn_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
 #[inline]
 fn dyn_classdef<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, Spanned { span, inner }) = super::class::class_def(stream)?;
-    let klass = Spanned { span, inner: Statement::Class(inner) };
+    let klass = Spanned {
+        span,
+        inner: Statement::Class(inner),
+    };
 
     Ok((stream, klass))
 }
 
 #[inline]
 fn dyn_span_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    let (stream, Spanned { span, inner }) = expect_with(stream, |(t, _)| matches!(t, PyToken::SpanRef(_)))?;
-    let span = Spanned { span, inner: Statement::SpanRef(inner) };
+    let (stream, Spanned { span, inner }) =
+        expect_with(stream, |(t, _)| matches!(t, PyToken::SpanRef(_)))?;
+    let span = Spanned {
+        span,
+        inner: Statement::SpanRef(inner),
+    };
 
     Ok((stream, span))
 }
-
 
 #[inline]
 fn dyn_pass<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
@@ -74,11 +107,7 @@ fn small_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
 
 #[inline]
 fn compound_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    alt((
-        dyn_funcdef,
-        dyn_import,
-        dyn_classdef,
-    ))(stream)
+    alt((dyn_funcdef, dyn_import, dyn_classdef))(stream)
 }
 
 #[inline]

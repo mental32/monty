@@ -1,6 +1,11 @@
-use std::{rc::Rc};
+use std::rc::Rc;
 
-use crate::{context::LocalContext, parser::{Parseable, ParserT}, scope::LookupTarget, typing::{TypeMap, TypedObject}};
+use crate::{
+    context::LocalContext,
+    parser::{Parseable, ParserT},
+    scope::LookupTarget,
+    typing::{TypeMap, TypedObject},
+};
 
 use super::{atom::Atom, AstObject, ObjectIter, Spanned};
 
@@ -39,10 +44,7 @@ impl AstObject for Assign {
 }
 
 impl TypedObject for Assign {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>
-    ) -> Option<crate::typing::LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
         None
     }
 

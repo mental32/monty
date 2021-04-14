@@ -1,11 +1,18 @@
 use std::rc::Rc;
 
-use nom::{IResult, error::{Error, ErrorKind}, sequence::terminated};
+use nom::{
+    error::{Error, ErrorKind},
+    sequence::terminated,
+    IResult,
+};
 
-use crate::ast::{Spanned, primary::Primary};
-use crate::parser::{TokenSlice, token::PyToken};
+use crate::ast::{primary::Primary, Spanned};
+use crate::parser::{token::PyToken, TokenSlice};
 
-use super::{atom::atom, core::{expect, expect_, expect_many_n}};
+use super::{
+    atom::atom,
+    core::{expect, expect_, expect_many_n},
+};
 
 #[inline]
 fn primary_subscript<'a>(
@@ -116,4 +123,3 @@ pub fn await_primary<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Span
         primary(stream)
     }
 }
-

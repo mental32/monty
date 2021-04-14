@@ -1,16 +1,13 @@
+use nom::sequence::tuple;
 use nom::{branch::alt, IResult};
-use nom::{sequence::tuple};
 
-use crate::ast::{Spanned, atom::Atom};
-use crate::parser::{
-    token::PyToken,
-    TokenSlice,
-};
+use crate::ast::{atom::Atom, Spanned};
+use crate::parser::{token::PyToken, TokenSlice};
 
 use super::{
-    core::{expect_, expect_any_of}, expect_with,
+    core::{expect_, expect_any_of},
+    expect_with,
 };
-
 
 #[inline]
 fn expect_digits<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {

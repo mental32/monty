@@ -1,6 +1,11 @@
 use std::{marker::PhantomData, rc::Rc};
 
-use crate::{ast::{AstObject, Spanned, funcdef::FunctionDef, retrn::Return}, context::LocalContext, scope::{downcast_ref, LocalScope, Scope, ScopeRoot}, typing::{FunctionType, TaggedType, TypeMap, TypedObject}};
+use crate::{
+    ast::{funcdef::FunctionDef, retrn::Return, AstObject, Spanned},
+    context::LocalContext,
+    scope::{downcast_ref, LocalScope, Scope, ScopeRoot},
+    typing::{FunctionType, TaggedType, TypeMap, TypedObject},
+};
 
 #[derive(Debug)]
 pub struct Function {
@@ -10,10 +15,7 @@ pub struct Function {
 }
 
 impl TypedObject for Function {
-    fn infer_type<'a>(
-        &self,
-        ctx: &LocalContext<'a>
-    ) -> Option<crate::typing::LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
         Some(self.kind.type_id)
     }
 
@@ -21,7 +23,9 @@ impl TypedObject for Function {
         let mut implicit_return = true;
 
         for node in self.scope.inner.nodes.iter() {
-            if downcast_ref::<Spanned<Return>>(node.as_ref()).is_some() || downcast_ref::<Return>(node.as_ref()).is_some() {
+            if downcast_ref::<Spanned<Return>>(node.as_ref()).is_some()
+                || downcast_ref::<Return>(node.as_ref()).is_some()
+            {
                 implicit_return = false;
             }
 

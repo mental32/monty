@@ -176,18 +176,17 @@ pub enum PyToken {
     Dissapointment,
 
     // -- Regex rules
-
     #[regex(r"\t| ")]
     Whitespace,
 
     #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]
     Ident(SpanEntry),
 
-    #[regex(r"\d+", |lex| str::parse::<isize>(lex.slice()).unwrap())]     // TODO(mental): try avoid panicking here...
+    #[regex(r"\d+", |lex| str::parse::<isize>(lex.slice()).unwrap())]
+    // TODO(mental): try avoid panicking here...
     Digits(isize),
 
     // -- Dynamic rules
-
     /// SpanRef tokens are generated lazily when lexing over the source.
     ///
     /// They are generated upon encountering:

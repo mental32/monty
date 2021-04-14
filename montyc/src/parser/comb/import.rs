@@ -1,15 +1,16 @@
 use std::rc::Rc;
 
-use nom::{IResult, branch::alt};
+use nom::{branch::alt, IResult};
 
-use crate::{ast::{Spanned, atom::Atom, import::Import}, parser::{TokenSlice, token::PyToken}};
+use crate::{
+    ast::{atom::Atom, import::Import, Spanned},
+    parser::{token::PyToken, TokenSlice},
+};
 
 use super::{expect, expect_many_n, primary};
 
 #[inline]
-fn import_from<'a>(
-    stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, Spanned<Import>> {
+fn import_from<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Import>> {
     let (stream, tok) = expect(stream, PyToken::Import)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
@@ -45,9 +46,7 @@ fn import_from<'a>(
 }
 
 #[inline]
-fn from_import<'a>(
-    stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, Spanned<Import>> {
+fn from_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Import>> {
     let (stream, tok) = expect(stream, PyToken::From)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
@@ -95,7 +94,6 @@ fn from_import<'a>(
             module: Rc::new(module),
             names,
             level,
-            
         },
     };
 
@@ -103,9 +101,6 @@ fn from_import<'a>(
 }
 
 #[inline]
-pub fn import<'a>(
-    stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, Spanned<Import>> {
+pub fn import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Import>> {
     alt((import_from, from_import))(stream)
 }
-
