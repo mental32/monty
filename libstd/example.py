@@ -1,2 +1,2 @@
-def main(a: str, b: int, c: float) -> int :
-    return 1 + 1
+def main(a: str, b: int) -> int:
+    return 1

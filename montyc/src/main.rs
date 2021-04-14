@@ -8,8 +8,15 @@ fn main() -> io::Result<()> {
     env_logger::init();
 
     let opts = CompilerOptions::from_args();
+    let file = opts.input.clone();
 
-    let _global_context = GlobalContext::from(opts);
+    let mut global_context = GlobalContext::from(opts);
+
+    global_context.preload_module(file.unwrap(), |ctx, mref| {
+        for (obj, ctx) in ctx.walk(mref.clone()) {
+            obj.typecheck(ctx);
+        }
+    });
 
     Ok(())
 }

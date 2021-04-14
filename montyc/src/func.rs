@@ -1,11 +1,6 @@
 use std::{marker::PhantomData, rc::Rc};
 
-use crate::{
-    ast::{funcdef::FunctionDef, retrn::Return, AstObject, Spanned},
-    context::LocalContext,
-    scope::{downcast_ref, LocalScope, Scope, ScopeRoot},
-    typing::{FunctionType, TaggedType, TypeMap, TypedObject},
-};
+use crate::{MontyError, ast::{AstObject, Spanned, funcdef::FunctionDef, retrn::Return, stmt::Statement}, context::LocalContext, scope::{downcast_ref, LocalScope, Scope, ScopeRoot}, typing::{FunctionType, TaggedType, TypeMap, TypedObject}};
 
 #[derive(Debug)]
 pub struct Function {
@@ -25,6 +20,7 @@ impl TypedObject for Function {
         for node in self.scope.inner.nodes.iter() {
             if downcast_ref::<Spanned<Return>>(node.as_ref()).is_some()
                 || downcast_ref::<Return>(node.as_ref()).is_some()
+                || downcast_ref::<Spanned<Statement>>(node.as_ref()).map(|Spanned { inner, .. }| matches!(inner, Statement::Ret(_))).unwrap_or(false)
             {
                 implicit_return = false;
             }
@@ -36,7 +32,17 @@ impl TypedObject for Function {
         }
 
         if implicit_return && self.kind.inner.ret != TypeMap::NONE_TYPE {
-            panic!("return error")
+            let def_node = match ctx.scope.root() {
+                ScopeRoot::Func(f) => f.def.clone(),
+                _ => unreachable!(),
+            };
+
+            ctx.error(MontyError::MissingReturn {
+                expected: TypeMap::NONE_TYPE,
+                actual: self.kind.inner.ret,
+                def_node,
+            });
+
         }
     }
 }

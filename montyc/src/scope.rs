@@ -8,20 +8,58 @@ use std::{
 
 use fmt::Debug;
 
-use crate::{
-    ast::{
+use crate::{ast::{
         assign::Assign, atom::Atom, class::ClassDef, funcdef::FunctionDef, import::Import,
         primary::Primary, stmt::Statement, AstObject,
-    },
-    context::{GlobalContext, LocalContext, ModuleRef},
-    func::Function,
-    parser::SpanEntry,
-    typing::{LocalTypeId, TypeMap},
-};
+    }, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, parser::SpanEntry, typing::{LocalTypeId, TypeMap, TypedObject}};
 
 pub trait LookupTarget {
     fn is_named(&self, target: SpanEntry) -> bool;
     fn name(&self) -> SpanEntry;
+    fn renamed_properties(&self) -> Option<ModuleRef> { None }
+}
+
+#[derive(Debug)]
+pub struct Renamed {
+    inner: Rc<dyn AstObject>,
+    name: SpanEntry,
+    mref: ModuleRef,
+}
+
+impl TypedObject for Renamed {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+        self.inner.infer_type(ctx)
+    }
+
+    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+        self.inner.typecheck(ctx)
+    }
+}
+
+impl LookupTarget for Renamed {
+    fn is_named(&self, target: SpanEntry) -> bool {
+        self.name == target
+    }
+
+    fn renamed_properties(&self) -> Option<ModuleRef> { Some(self.mref.clone()) }
+
+    fn name(&self) -> SpanEntry {
+        self.name.clone()
+    }
+}
+
+impl AstObject for Renamed {
+    fn span(&self) -> Option<logos::Span> {
+        self.inner.span()
+    }
+
+    fn unspanned(&self) -> Rc<dyn AstObject> {
+        self.inner.unspanned()
+    }
+
+    fn walk(&self) -> Option<crate::ast::ObjectIter> {
+        self.inner.walk()
+    }
 }
 
 fn collect_subnodes(object: &dyn AstObject) -> Vec<Rc<dyn AstObject>> {
@@ -85,7 +123,11 @@ pub trait Scope: core::fmt::Debug {
 
     fn lookup_with(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>>;
 
-    fn lookup_any(&self, target: SpanEntry) -> Vec<Rc<dyn AstObject>>;
+    fn lookup_any(
+        &self,
+        target: SpanEntry,
+        global_context: &GlobalContext,
+    ) -> Vec<Rc<dyn AstObject>>;
 }
 
 // -- OpaqueScope
@@ -139,7 +181,20 @@ impl Scope for OpaqueScope {
             .cloned()
     }
 
-    fn lookup_any(&self, target: SpanEntry) -> Vec<Rc<dyn AstObject>> {
+    fn lookup_any(
+        &self,
+        target: SpanEntry,
+        global_context: &GlobalContext,
+    ) -> Vec<Rc<dyn AstObject>> {
+        log::trace!(
+            "lookup: Performing generic lookup on target=({:?} -> {:?})",
+            target,
+            {
+                let mctx = global_context.modules.get(self.module_ref.as_ref().unwrap()).unwrap();
+                global_context.span_ref.borrow().resolve_ref(target, mctx.source.as_ref()).unwrap()
+            }
+        );
+
         let mut results = vec![];
 
         for object in self.nodes.iter().map(|o| o.unspanned()) {
@@ -147,6 +202,29 @@ impl Scope for OpaqueScope {
 
             if item.is_named(target) {
                 results.push(object.clone());
+            }
+        }
+
+        {
+            log::trace!("lookup: checking builtins for matches");
+
+            let mctx = global_context.modules.get(self.module_ref.as_ref().unwrap()).unwrap();
+            let st = global_context.span_ref.borrow().resolve_ref(target, mctx.source.as_ref()).unwrap();
+
+            for (type_id, (object, mref)) in global_context.builtins.iter() {
+                let item = object.as_ref();
+
+                let mctx = global_context.modules.get(mref).unwrap();
+                let lst = global_context.span_ref.borrow().resolve_ref(object.name(), mctx.source.as_ref()).unwrap();
+
+                if lst == st {
+                    log::trace!("lookup: renaming builtin object to={:?} from={:?}", target, object.name());
+
+                    let renamed = Renamed { inner: object.clone(), name: target.clone(), mref: self.module_ref.clone().unwrap() };
+                    let renamed = Rc::new(renamed) as Rc<dyn AstObject>;
+
+                    results.push(renamed);
+                }
             }
         }
 
@@ -223,8 +301,12 @@ impl<T: Debug> Scope for LocalScope<T> {
         self.inner.walk(global_context)
     }
 
-    fn lookup_any(&self, target: SpanEntry) -> Vec<Rc<dyn AstObject>> {
-        self.inner.lookup_any(target)
+    fn lookup_any(
+        &self,
+        target: SpanEntry,
+        global_context: &GlobalContext,
+    ) -> Vec<Rc<dyn AstObject>> {
+        self.inner.lookup_any(target, global_context)
     }
 
     fn module_ref(&self) -> ModuleRef {

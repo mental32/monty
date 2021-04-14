@@ -32,7 +32,9 @@ impl AstObject for ClassDef {
 
 impl TypedObject for ClassDef {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
-        if let Some(type_id) = ctx.global_context.is_builtin(self, &ctx.module_ref) {
+        let this = ctx.this.as_ref().unwrap();
+
+        if let Some(type_id) = ctx.global_context.is_builtin(this.as_ref(), &ctx.module_ref) {
             return Some(type_id);
         } else {
             todo!();

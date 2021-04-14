@@ -44,7 +44,7 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
 
 impl AstObject for FunctionDef {
     fn span(&self) -> Option<logos::Span> {
-        todo!()
+        None
     }
 
     fn unspanned(&self) -> Rc<dyn AstObject> {
@@ -66,14 +66,24 @@ impl TypedObject for FunctionDef {
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         let type_id = self.infer_type(&ctx).unwrap();
 
-        let this = ctx.this.unwrap().as_ref().unspanned();
-        let this = match downcast_ref::<Statement>(this.as_ref()) {
-            Some(Statement::FnDef(f)) => Spanned {
-                span: f.returns.span().unwrap().clone(),
+        let this = ctx.this.as_ref().unwrap().unspanned();
+
+        let this = if let Some(f) = downcast_ref::<FunctionDef>(this.as_ref()) {
+            Spanned {
+                span: f.name.span().unwrap(),
                 inner: f.clone(),
-            },
-            x => panic!("{:?}", x),
+            }
+        } else {
+            match downcast_ref::<Statement>(this.as_ref()) {
+                Some(Statement::FnDef(f)) => Spanned {
+                    span: f.returns.span().unwrap().clone(),
+                    inner: f.clone(),
+                },
+    
+                _ => panic!("{:?}", &ctx.this),
+            }
         };
+
 
         let scope = LocalScope::from(self.clone()).into();
 
@@ -111,6 +121,6 @@ impl LookupTarget for FunctionDef {
     }
 
     fn name(&self) -> SpanEntry {
-        todo!()
+        self.name.name()
     }
 }

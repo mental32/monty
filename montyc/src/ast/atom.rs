@@ -67,7 +67,7 @@ impl TypedObject for Atom {
             Atom::Name(target) => {
                 log::trace!("infer_type: performing name lookup on atom {:?}", self);
 
-                let results = ctx.scope.lookup_any(target.clone());
+                let results = ctx.scope.lookup_any(target.clone(), &ctx.global_context);
 
                 match results.as_slice() {
                     [] => None,
@@ -75,7 +75,10 @@ impl TypedObject for Atom {
                         if let Some(asn) = downcast_ref::<Assign>(top.as_ref()) {
                             asn.value.inner.infer_type(ctx)
                         } else {
-                            top.infer_type(ctx)
+                            log::info!("infer_type: lookup successfull! top={:?}", top.name());
+                            let mut ctx = ctx.clone();
+                            ctx.this = Some(top.clone());
+                            top.infer_type(&ctx)
                         }
                     }
                 }

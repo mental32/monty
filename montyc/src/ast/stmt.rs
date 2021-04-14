@@ -41,7 +41,16 @@ impl AstObject for Statement {
     }
 
     fn unspanned(&self) -> std::rc::Rc<dyn AstObject> {
-        todo!()
+        match self {
+            Statement::Expression(e) => e.unspanned(),
+            Statement::FnDef(f) => f.unspanned(),
+            Statement::Ret(r) => r.unspanned(),
+            Statement::Asn(a) => a.unspanned(),
+            Statement::Import(i) => i.unspanned(),
+            Statement::Class(c) => c.unspanned(),
+            Statement::SpanRef(s) => s.unspanned(),
+            Statement::Pass => Rc::new(Self::Pass),
+        }
     }
 
     fn walk(&self) -> Option<super::ObjectIter> {

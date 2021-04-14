@@ -44,6 +44,3 @@ class str:
     encoding defaults to sys.getdefaultencoding().
     errors defaults to 'strict'.
     """
-
-def f() -> str:
-    return

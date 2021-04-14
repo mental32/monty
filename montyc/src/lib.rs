@@ -28,6 +28,13 @@ pub enum MontyError {
         ret_node: Rc<Spanned<Return>>,
         def_node: Rc<Spanned<FunctionDef>>,
     },
+
+    #[error("Incompatible return type due to implicit return.")]
+    MissingReturn {
+        expected: LocalTypeId,
+        actual: LocalTypeId,
+        def_node: Rc<Spanned<FunctionDef>>,
+    }
 }
 
 impl From<MontyError> for codespan_reporting::diagnostic::Diagnostic<()> {
@@ -45,21 +52,37 @@ impl From<MontyError> for codespan_reporting::diagnostic::Diagnostic<()> {
 
                 let primary = match &ret_node.inner.value {
                     Some(value) => Label::primary((), value.span().unwrap_or(ret_span))
-                        .with_message("{type} is implicitly returned here."),
+                        .with_message("but value of this type is returned instead."),
+
                     None => Label::primary((), ret_span)
-                        .with_message("`None` is implicitly returned here."),
+                        .with_message("`None` is returned here."),
                 };
 
                 labels.push(primary);
 
-                let def = Label::secondary((), def_node.span().unwrap())
-                    .with_message("function defined here with different type.");
+                let def = Label::secondary((), def_node.span().unwrap().start..def_node.inner.returns.span().unwrap().end).with_message(
+                    if def_node.inner.returns.is_some() {
+                        "function defined here with a different return type."
+                    } else {
+                        "function defined here is expected to return `None`"
+                    },
+                );
 
                 labels.push(def);
 
                 Diagnostic::error()
                     .with_message("incomaptible return type for function.")
                     .with_labels(labels)
+            },
+
+            
+            MontyError::MissingReturn { expected, actual, def_node } => {
+                Diagnostic::error()
+                    .with_message("missing return for annotated function.")
+                    .with_labels(vec![
+                        Label::primary((), def_node.span().unwrap()).with_message("This function will implicitly return `None`"),
+                        Label::secondary((), def_node.inner.returns.span().unwrap()).with_message("But it has been annotated to return this instead."),
+                    ])
             }
         }
     }
@@ -70,8 +93,8 @@ use structopt::*;
 #[derive(Debug, StructOpt)]
 pub struct CompilerOptions {
     #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
-    libstd: std::path::PathBuf,
+    pub libstd: std::path::PathBuf,
 
     #[structopt(parse(from_os_str))]
-    input: Option<std::path::PathBuf>,
+    pub input: Option<std::path::PathBuf>,
 }

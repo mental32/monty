@@ -22,7 +22,7 @@ use crate::{
     },
     func::Function,
     parser::{Parseable, SpanEntry, SpanRef},
-    scope::{downcast_ref, LocalScope, OpaqueScope, Scope, ScopedObject},
+    scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopedObject},
     typing::{LocalTypeId, TypeMap},
     CompilerOptions, MontyError,
 };
@@ -176,20 +176,41 @@ impl Default for GlobalContext {
 }
 
 impl GlobalContext {
-    pub fn is_builtin<T>(&self, t: &T, t_mref: &ModuleRef) -> Option<LocalTypeId>
-    where
-        T: AstObject,
-    {
+    pub fn is_builtin(&self, t: &dyn AstObject, t_mref: &ModuleRef) -> Option<LocalTypeId> {
+        log::trace!("is_builtin: checking if T is a builtin ({:?})", t.name());
+
+        let t_mref = t.renamed_properties().unwrap_or(t_mref.clone());
+        let t_mref = &t_mref;
+
+        let t_mctx = self.modules.get(t_mref).unwrap();
+
+        let st = self
+            .span_ref
+            .borrow()
+            .resolve_ref(t.name(), t_mctx.source.as_ref())
+            .unwrap();
+
         for (type_id, (object, mref)) in self.builtins.iter() {
             if t_mref == mref && t.is_named(object.name()) {
                 return Some(type_id.clone());
+            } else if t_mref != mref {
+                let builtin_mctx = self.modules.get(mref).unwrap();
+                let builtin_st = self
+                    .span_ref
+                    .borrow()
+                    .resolve_ref(object.name(), builtin_mctx.source.as_ref())
+                    .unwrap();
+
+                if builtin_st == st {
+                    return Some(type_id.clone());
+                }
             }
         }
 
         None
     }
 
-    fn preload_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
+    pub fn preload_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
         let path = path.as_ref();
 
         debug!("Preloading module ({:?})", shorten(path));
@@ -338,7 +359,7 @@ impl GlobalContext {
         self.register_module(module, path, source)
     }
 
-    fn walk(
+    pub fn walk(
         &self,
         module_ref: ModuleRef,
     ) -> impl Iterator<Item = (Rc<dyn AstObject>, LocalContext)> {
