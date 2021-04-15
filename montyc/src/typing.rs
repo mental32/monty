@@ -45,9 +45,14 @@ impl std::fmt::Display for FunctionType {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let s_map = self.resolver.sources.borrow();;
+        let s_map = self.resolver.sources.borrow();
         let source = s_map.get(&self.module_ref).unwrap();
-        let name = self.resolver.span_ref.borrow().resolve_ref(self.name, source).unwrap();
+        let name = self
+            .resolver
+            .span_ref
+            .borrow()
+            .resolve_ref(self.name, source)
+            .unwrap();
 
         let ret = if let Some(inner) = self.resolver.type_map.borrow().get(self.ret) {
             format!("{}", inner)
@@ -55,11 +60,7 @@ impl std::fmt::Display for FunctionType {
             format!("{}", BuiltinTypeId::Unknown)
         };
 
-        write!(
-            f,
-            "<function {}({}) -> {}>",
-            name, args, ret
-        )
+        write!(f, "<function {}({}) -> {}>", name, args, ret)
     }
 }
 
@@ -126,7 +127,11 @@ impl TypeDescriptor {
     }
 }
 
-use crate::{ast::AstObject, context::{InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
+use crate::{
+    ast::AstObject,
+    context::{InternalResolver, LocalContext, ModuleRef},
+    parser::SpanEntry,
+};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;

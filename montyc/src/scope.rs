@@ -183,8 +183,6 @@ impl Scope for OpaqueScope {
         Box::new(it)
     }
 
-
-    
     fn root<'b>(&'b self) -> ScopeRoot {
         self.root.clone()
     }
@@ -383,7 +381,6 @@ pub struct WrappedScope {
     pub parent: Option<Rc<dyn Scope>>,
 }
 
-
 impl Scope for WrappedScope {
     fn iter<'b>(&'b self) -> Box<(dyn Iterator<Item = ScopedObject> + 'b)> {
         self.inner.iter()
@@ -426,11 +423,7 @@ pub struct ScopedObject {
 }
 
 impl ScopedObject {
-    pub fn with_context<F, T>(
-        &self,
-        global_context: &GlobalContext,
-        f: F,
-    ) -> T
+    pub fn with_context<F, T>(&self, global_context: &GlobalContext, f: F) -> T
     where
         F: Fn(LocalContext, Rc<dyn AstObject>) -> T,
     {

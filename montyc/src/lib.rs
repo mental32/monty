@@ -63,15 +63,12 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
 
                 labels.push(primary);
 
-                let def = Label::secondary(
-                    (),
-                    def_node.inner.returns.span().unwrap(),
-                )
-                .with_message(if def_node.inner.returns.is_some() {
-                    "function defined here supposedly returning a value of this type."
-                } else {
-                    "function defined here is expected to return `None`"
-                });
+                let def = Label::secondary((), def_node.inner.returns.span().unwrap())
+                    .with_message(if def_node.inner.returns.is_some() {
+                        "function defined here supposedly returning a value of this type."
+                    } else {
+                        "function defined here is expected to return `None`"
+                    });
 
                 labels.push(def);
 

@@ -81,11 +81,10 @@ impl TypedObject for FunctionDef {
                     span: f.returns.span().unwrap().clone(),
                     inner: f.clone(),
                 },
-    
+
                 _ => panic!("{:?}", &ctx.this),
             }
         };
-
 
         let mut scope: LocalScope<FunctionDef> = LocalScope::from(self.clone()).into();
 

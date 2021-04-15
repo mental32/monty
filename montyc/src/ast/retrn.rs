@@ -18,7 +18,7 @@ use crate::{
     MontyError,
 };
 
-use super::{AstObject, Spanned, expr::Expr, funcdef::FunctionDef, stmt::Statement};
+use super::{expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct Return {
@@ -60,7 +60,9 @@ impl TypedObject for Return {
         };
 
         let actual = match &self.value {
-            Some(value) => value.infer_type(&ctx).expect("failed to infer type for return value."),
+            Some(value) => value
+                .infer_type(&ctx)
+                .expect("failed to infer type for return value."),
             None => TypeMap::NONE_TYPE,
         };
 
@@ -85,12 +87,13 @@ impl TypedObject for Return {
                 ScopeRoot::AstObject(object) => {
                     let fndef = downcast_ref::<FunctionDef>(object.as_ref()).unwrap();
                     let fndef = Spanned {
-                        span: fndef.name.span.start..fndef.returns.span().unwrap_or(fndef.name.span.clone()).end,
+                        span: fndef.name.span.start
+                            ..fndef.returns.span().unwrap_or(fndef.name.span.clone()).end,
                         inner: fndef.clone(),
                     };
 
                     Rc::new(fndef)
-                }, 
+                }
                 _ => panic!("{:?}", ctx.scope.root()),
             };
 

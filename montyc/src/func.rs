@@ -1,6 +1,12 @@
 use std::{marker::PhantomData, rc::Rc};
 
-use crate::{MontyError, ast::{AstObject, Spanned, funcdef::FunctionDef, retrn::Return, stmt::Statement}, context::LocalContext, scope::{downcast_ref, LocalScope, Scope, ScopeRoot}, typing::{FunctionType, TaggedType, TypeMap, TypedObject}};
+use crate::{
+    ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement, AstObject, Spanned},
+    context::LocalContext,
+    scope::{downcast_ref, LocalScope, Scope, ScopeRoot},
+    typing::{FunctionType, TaggedType, TypeMap, TypedObject},
+    MontyError,
+};
 
 #[derive(Debug)]
 pub struct Function {
@@ -22,13 +28,14 @@ impl TypedObject for Function {
 
             if downcast_ref::<Spanned<Return>>(node.as_ref()).is_some()
                 || downcast_ref::<Return>(node.as_ref()).is_some()
-                || downcast_ref::<Spanned<Statement>>(node.as_ref()).map(|Spanned { inner, .. }| matches!(inner, Statement::Ret(_))).unwrap_or(false)
+                || downcast_ref::<Spanned<Statement>>(node.as_ref())
+                    .map(|Spanned { inner, .. }| matches!(inner, Statement::Ret(_)))
+                    .unwrap_or(false)
             {
                 implicit_return = false;
             }
 
             scoped_object.with_context(ctx.global_context, |local_context, object| {
-                
                 object.typecheck(local_context)
             });
         }
@@ -45,7 +52,6 @@ impl TypedObject for Function {
                 def_node,
                 ctx: &ctx,
             });
-
         }
     }
 }

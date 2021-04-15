@@ -1,4 +1,11 @@
-use std::{cell::{Ref, RefCell}, collections::HashMap, fs::DirEntry, hash::Hash, path::{Path, PathBuf}, rc::Rc};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    fs::DirEntry,
+    hash::Hash,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use codespan_reporting::diagnostic::Diagnostic;
 use log::*;
@@ -404,7 +411,10 @@ impl GlobalContext {
 
         let scope = Rc::new(scope) as Rc<dyn Scope>;
 
-        self.resolver.sources.borrow_mut().insert(key.clone(), source.clone());
+        self.resolver
+            .sources
+            .borrow_mut()
+            .insert(key.clone(), source.clone());
 
         if let Some(previous) = self.modules.insert(
             key.clone(),
@@ -453,7 +463,7 @@ pub struct LocalContext<'a> {
     pub module_ref: ModuleRef,
     pub scope: Rc<dyn Scope>,
     pub this: Option<Rc<dyn AstObject>>,
-    pub parent: Option<&'a LocalContext<'a>>
+    pub parent: Option<&'a LocalContext<'a>>,
 }
 
 impl<'a> LocalContext<'a> {

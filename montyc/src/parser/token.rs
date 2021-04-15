@@ -187,7 +187,6 @@ pub enum PyToken {
     Digits(isize),
 
     // -- SpanRef tokens
-
     StringRef(SpanEntry),
 
     CommentRef(SpanEntry),
@@ -196,9 +195,7 @@ pub enum PyToken {
 impl From<PyToken> for SpanEntry {
     fn from(token: PyToken) -> Self {
         match token {
-            PyToken::StringRef(n)
-            | PyToken::CommentRef(n)
-            | PyToken::Ident(n) => n,
+            PyToken::StringRef(n) | PyToken::CommentRef(n) | PyToken::Ident(n) => n,
             _ => unreachable!(),
         }
     }

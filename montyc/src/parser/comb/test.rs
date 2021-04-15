@@ -57,7 +57,12 @@ where
 #[test]
 fn test_parse_spanrefs() {
     assert_parses_exactly(vec![r"# Hello, There!", r#""Hello, There!""#], |stream| {
-        let (stream, o) = expect_with(stream, |(tok, _)| matches!(tok, PyToken::Ident(_) | PyToken::CommentRef(_) | PyToken::StringRef(_)))?;
+        let (stream, o) = expect_with(stream, |(tok, _)| {
+            matches!(
+                tok,
+                PyToken::Ident(_) | PyToken::CommentRef(_) | PyToken::StringRef(_)
+            )
+        })?;
         Ok((stream, o))
     });
 }
