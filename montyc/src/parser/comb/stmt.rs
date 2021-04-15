@@ -2,14 +2,7 @@ use std::rc::Rc;
 
 use nom::{branch::alt, IResult};
 
-use crate::{
-    ast::{
-        funcdef,
-        stmt::{self, Statement},
-        AstObject, Spanned,
-    },
-    parser::{token::PyToken, TokenSlice},
-};
+use crate::{ast::{AstObject, Spanned, atom::Atom, expr::Expr, funcdef, primary::Primary, stmt::{self, Statement}}, parser::{token::PyToken, TokenSlice}};
 
 use super::{
     assignment, expect, expect_many_n, expect_with, expression, funcdef::function_def, return_stmt,
@@ -56,40 +49,33 @@ fn dyn_funcdef<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<St
 
 #[inline]
 fn dyn_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    let (stream, Spanned { span, inner }) = super::import::import(stream)?;
-    let imprt = Spanned {
-        span,
-        inner: Statement::Import(inner),
-    };
+    let (stream, import) = super::import::import(stream)?;
 
-    Ok((stream, imprt))
+    Ok((stream, import.map(Statement::Import)))
 }
 
 #[inline]
 fn dyn_classdef<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    let (stream, Spanned { span, inner }) = super::class::class_def(stream)?;
-    let klass = Spanned {
-        span,
-        inner: Statement::Class(inner),
-    };
+    let (stream, klass) = super::class::class_def(stream)?;
 
-    Ok((stream, klass))
+    Ok((stream, klass.map(Statement::Class)))
 }
 
 #[inline]
 fn dyn_span_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    let (stream, Spanned { span, inner }) = expect_with(stream, |(t, _)| {
+    let (stream, tok) = expect_with(stream, |(t, _)| {
         matches!(
             t,
             PyToken::Ident(_) | PyToken::CommentRef(_) | PyToken::StringRef(_)
         )
     })?;
-    let span = Spanned {
-        span,
-        inner: Statement::SpanRef(inner),
-    };
 
-    Ok((stream, span))
+    let a = tok.map(Atom::from);
+    let a = a.transparent_with(Primary::Atomic);
+    let a = a.transparent_with(Expr::Primary);
+    let a = a.map(Statement::Expression);
+
+    Ok((stream, a))
 }
 
 #[inline]
@@ -101,12 +87,12 @@ fn dyn_pass<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<State
 #[inline]
 fn dyn_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, span) = expression(stream)?;
-    Ok((stream, span.map(|e| Statement::Expression(e))))
+    Ok((stream, span.map(Statement::Expression)))
 }
 
 #[inline]
 fn small_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    alt((dyn_expr, dyn_assign, dyn_return, dyn_span_ref, dyn_pass))(stream)
+    alt((dyn_expr, dyn_assign, dyn_return, dyn_pass, dyn_span_ref))(stream)
 }
 
 #[inline]

@@ -10,7 +10,7 @@ use super::{AstObject, ObjectIter, Spanned, atom::Atom, expr::Expr};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
-    Atomic(Atom),
+    Atomic(Spanned<Atom>),
 
     /// `<value:primary>[<index?>]`
     Subscript {
@@ -40,8 +40,8 @@ impl Primary {
         let mut names = vec![];
 
         match self {
-            Primary::Atomic(n) => {
-                names.push(n.clone());
+            Primary::Atomic(Spanned { inner, .. }) => {
+                names.push(inner.clone());
             }
 
             Primary::Attribute { left, attr } => {
@@ -130,10 +130,10 @@ impl TypedObject for Primary {
 
 impl LookupTarget for Primary {
     fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        matches!(self, Self::Atomic(Atom::Name((n))) if n.clone() == target)
+        matches!(self, Self::Atomic(Spanned { inner: Atom::Name((n)), .. }) if n.clone() == target)
     }
 
     fn name(&self) -> crate::parser::SpanEntry {
-        todo!()
+        None
     }
 }

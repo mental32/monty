@@ -75,7 +75,7 @@ fn decorator<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
     let (stream, dec) = super::primary(stream)?;
 
     match &dec.inner {
-        crate::ast::primary::Primary::Atomic(Atom::Name(_))
+        crate::ast::primary::Primary::Atomic(Spanned { inner: Atom::Name(_), .. })
         | crate::ast::primary::Primary::Attribute { .. } => {}
         _ => unreachable!(),
     }

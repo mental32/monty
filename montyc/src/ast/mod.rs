@@ -63,6 +63,27 @@ where
             inner: f(self.inner),
         }
     }
+
+    pub fn transparent<U>(&self, u: U) -> Spanned<U>
+    where
+        U: AstObject + Clone,
+    {
+        Spanned {
+            span: self.span.clone(),
+            inner: u,
+        }
+    }
+
+    pub fn transparent_with<U, F>(&self, f: F) -> Spanned<U>
+    where
+        F: FnOnce(Spanned<T>) -> U,
+        U: AstObject + Clone,
+    {
+        Spanned {
+            span: self.span.clone(),
+            inner: f(self.clone()),
+        }
+    }
 }
 
 pub trait AstObject: fmt::Debug + TypedObject + LookupTarget + Any {
@@ -111,11 +132,7 @@ impl TypedObject for PyToken {
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
-        log::warn!(
-            "Skipping typecheck: {:?} => {:?}",
-            self,
-            ctx.resolve(self.clone())
-        );
+        unreachable!()
     }
 }
 

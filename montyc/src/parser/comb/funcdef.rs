@@ -96,15 +96,10 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
         let (stream, ret) = expect_ident(stream)?;
 
-        let inner = Primary::Atomic(Atom::Name(match ret.inner {
-            PyToken::Ident(n) => n,
+        let ret = ret.map(|t| match t {
+            PyToken::Ident(n) => Atom::Name(n),
             _ => unreachable!(),
-        }));
-
-        let ret = Spanned {
-            span: ret.span,
-            inner,
-        };
+        }).transparent_with(Primary::Atomic);
 
         (stream, Some(ret))
     } else {

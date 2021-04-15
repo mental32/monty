@@ -22,7 +22,6 @@ pub enum Statement {
     Asn(Assign),
     Import(Import),
     Class(ClassDef),
-    SpanRef(PyToken),
     Pass,
 }
 
@@ -35,7 +34,6 @@ impl AstObject for Statement {
             Statement::Asn(a) => a.span(),
             Statement::Import(i) => i.span(),
             Statement::Class(c) => c.span(),
-            Statement::SpanRef(s) => s.span(),
             Statement::Pass => None,
         }
     }
@@ -48,7 +46,6 @@ impl AstObject for Statement {
             Statement::Asn(a) => a.unspanned(),
             Statement::Import(i) => i.unspanned(),
             Statement::Class(c) => c.unspanned(),
-            Statement::SpanRef(s) => s.unspanned(),
             Statement::Pass => Rc::new(Self::Pass),
         }
     }
@@ -61,7 +58,6 @@ impl AstObject for Statement {
             Statement::Asn(a) => a.walk(),
             Statement::Import(i) => i.walk(),
             Statement::Class(c) => c.walk(),
-            Statement::SpanRef(s) => Some(Box::new(std::iter::once(Rc::new(s.clone()) as Rc<_>))),
             Statement::Pass => None,
         }
     }
@@ -76,9 +72,6 @@ impl TypedObject for Statement {
             Statement::Asn(a) => a.infer_type(ctx),
             Statement::Import(i) => i.infer_type(ctx),
             Statement::Class(c) => c.infer_type(ctx),
-            Statement::SpanRef(_) => {
-                todo!()
-            }
             Statement::Pass => Some(TypeMap::NONE_TYPE),
         }
     }
@@ -91,7 +84,6 @@ impl TypedObject for Statement {
             Statement::Asn(a) => a.typecheck(ctx),
             Statement::Import(i) => i.typecheck(ctx),
             Statement::Class(c) => c.typecheck(ctx),
-            Statement::SpanRef(_) => {}
             Statement::Pass => {}
         }
     }
@@ -117,7 +109,6 @@ impl LookupTarget for Statement {
             Statement::Asn(e) => e.is_named(target),
             Statement::Import(e) => e.is_named(target),
             Statement::Class(e) => e.is_named(target),
-            Statement::SpanRef(e) => e.is_named(target),
             Statement::Pass => false,
         }
     }
@@ -130,7 +121,6 @@ impl LookupTarget for Statement {
             Statement::Asn(e) => e.name(),
             Statement::Import(e) => e.name(),
             Statement::Class(e) => e.name(),
-            Statement::SpanRef(e) => e.name(),
             Statement::Pass => None,
         }
     }

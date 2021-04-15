@@ -60,7 +60,7 @@ pub enum Expr {
         value: Rc<Spanned<Expr>>,
     },
 
-    Primary(Primary),
+    Primary(Spanned<Primary>),
 }
 
 impl Parseable for Expr {
@@ -69,7 +69,11 @@ impl Parseable for Expr {
 
 impl AstObject for Expr {
     fn span(&self) -> Option<Span> {
-        None
+        if let Self::Primary(p) = self {
+            p.span()
+        } else {
+            None
+        }
     }
 
     fn walk<'a>(&'a self) -> Option<ObjectIter> {

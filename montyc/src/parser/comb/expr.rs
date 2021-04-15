@@ -17,7 +17,7 @@ use super::primary::await_primary;
 #[inline]
 fn power<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
     let (stream, left) = await_primary(stream)?;
-    let left = left.map(Expr::Primary);
+    let left = left.transparent_with(Expr::Primary);
 
     if let Ok((stream, _)) = expect_wrapped_values([PyToken::Star; 2], PyToken::Whitespace)(stream)
     {

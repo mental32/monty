@@ -24,7 +24,7 @@ fn import_from<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Im
         remaining = r;
 
         match &thing.inner {
-            crate::ast::primary::Primary::Atomic(Atom::Name(_))
+            crate::ast::primary::Primary::Atomic(Spanned { inner: Atom::Name(_), ..})
             | crate::ast::primary::Primary::Attribute { .. } => {}
             _ => unreachable!(),
         }
@@ -56,7 +56,7 @@ fn from_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Im
     let level = dots.len();
 
     match &module.inner {
-        crate::ast::primary::Primary::Atomic(Atom::Name(_))
+        crate::ast::primary::Primary::Atomic(Spanned { inner: Atom::Name(_), ..})
         | crate::ast::primary::Primary::Attribute { .. } => {}
         _ => unreachable!(),
     }
@@ -75,7 +75,7 @@ fn from_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Im
         remaining = r;
 
         match &thing.inner {
-            crate::ast::primary::Primary::Atomic(Atom::Name(_))
+            crate::ast::primary::Primary::Atomic(Spanned { inner: Atom::Name(_), ..})
             | crate::ast::primary::Primary::Attribute { .. } => {}
             _ => unreachable!(),
         }

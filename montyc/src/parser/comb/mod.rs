@@ -3,7 +3,10 @@ use std::rc::Rc;
 use nom::{sequence::tuple, IResult};
 
 use crate::ast::{
+    atom::Atom,
+    expr::Expr,
     module::{self, Module},
+    primary::Primary,
     retrn::Return,
     stmt::Statement,
     Spanned,
@@ -80,7 +83,15 @@ pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
 
     let mut body: Vec<_> = head
         .drain(..)
-        .map(|sr| Rc::new(sr.map(|t| Statement::SpanRef(t))))
+        .map(|tok| {
+
+            let a = tok.transparent_with(|_| Atom::from(tok.inner));
+            let b = a.transparent_with(|_| Primary::Atomic(a.clone()));
+            let c = b.transparent_with(|_| Expr::Primary(b.clone()));
+            let d = c.map(|c| Statement::Expression(c));
+
+            Rc::new(d)
+        })
         .collect();
 
     loop {
@@ -95,10 +106,15 @@ pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
 
     let (stream, mut tail) = chomp(stream)?;
 
-    body.extend(
-        tail.drain(..)
-            .map(|sr| Rc::new(sr.map(|t| Statement::SpanRef(t)))),
-    );
+    body.extend(tail.drain(..).map(|tok| {
+        let a = tok.transparent_with(|_| Atom::from(tok.inner));
+        let b = a.transparent_with(|_| Primary::Atomic(a.clone()));
+        let c = b.transparent_with(|_| Expr::Primary(b.clone()));
+        let d = c.map(|c| Statement::Expression(c));
+
+
+        Rc::new(d)
+    }));
 
     let module = Module { body };
 
