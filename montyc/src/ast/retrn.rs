@@ -99,6 +99,7 @@ impl TypedObject for Return {
                 actual,
                 ret_node,
                 def_node,
+                ctx: &ctx,
             })
         }
     }

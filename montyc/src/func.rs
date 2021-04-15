@@ -43,6 +43,7 @@ impl TypedObject for Function {
                 expected: TypeMap::NONE_TYPE,
                 actual: self.kind.inner.ret,
                 def_node,
+                ctx: &ctx,
             });
 
         }
