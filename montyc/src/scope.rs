@@ -144,6 +144,23 @@ pub trait Scope: core::fmt::Debug {
         target: SpanEntry,
         global_context: &GlobalContext,
     ) -> Vec<Rc<dyn AstObject>>;
+
+    fn lookup_def(
+        &self,
+        target: SpanEntry,
+        global_context: &GlobalContext,
+    ) -> Vec<Rc<dyn AstObject>> {
+        let mut results = self.lookup_any(target, global_context);
+
+        let _ = results.drain_filter(|o| {
+            crate::isinstance!(o.as_ref(), Assign).is_some()
+                || crate::isinstance!(o.as_ref(), FunctionDef).is_some()
+                || downcast_ref::<Function>(o.as_ref()).is_some()
+                || crate::isinstance!(o.as_ref(), ClassDef).is_some()
+        });
+
+        results
+    }
 }
 
 // -- OpaqueScope
@@ -231,7 +248,7 @@ impl Scope for OpaqueScope {
                 } else {
                     vec![]
                 }
-            },
+            }
 
             ScopeRoot::Func(f) => f.def.inner.args.clone().unwrap_or_default(),
             _ => vec![],

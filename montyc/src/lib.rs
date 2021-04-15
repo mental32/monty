@@ -1,4 +1,4 @@
-#![feature(variant_count, bool_to_option)]
+#![feature(variant_count, bool_to_option, drain_filter)]
 #![allow(warnings)]
 
 use std::rc::Rc;
@@ -19,6 +19,19 @@ pub mod typing;
 use thiserror::Error;
 
 pub type Result<'a, T> = std::result::Result<T, MontyError<'a>>;
+
+
+#[macro_use]
+#[macro_export]
+macro_rules! isinstance {
+    ($e:expr, $t:ident) => ({
+        if let Some($crate::ast::Spanned { inner, .. }) = $crate::scope::downcast_ref::<$crate::ast::Spanned<$t>>($e) {
+            Some(inner)
+        } else {
+            $crate::scope::downcast_ref::<$t>($e)
+        }
+    });
+}
 
 #[derive(Debug, Error)]
 pub enum MontyError<'a> {
@@ -75,7 +88,7 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
 
                 labels.push(primary);
 
-                let def = Label::secondary((), def_node.inner.returns.span().unwrap())
+                let def = Label::secondary((), def_node.inner.returns.span().unwrap_or(def_node.span.clone()))
                     .with_message(if def_node.inner.returns.is_some() {
                         "function defined here supposedly returning a value of this type."
                     } else {
@@ -112,7 +125,7 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
             MontyError::UnknownType { node, ctx } => Diagnostic::error()
                 .with_message("unable to infer type for value.")
                 .with_labels(vec![
-                    Label::primary((), node.span().unwrap()).with_message("annotate this type")
+                    Label::primary((), node.span().unwrap()).with_message("annotate this name with a type")
                 ]),
 
             MontyError::UndefinedVariable { node, ctx } => Diagnostic::error()

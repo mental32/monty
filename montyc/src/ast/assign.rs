@@ -7,12 +7,12 @@ use crate::{
     typing::{TypeMap, TypedObject},
 };
 
-use super::{atom::Atom, AstObject, ObjectIter, Spanned};
+use super::{AstObject, ObjectIter, Spanned, atom::Atom, expr::Expr};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assign {
     pub name: Spanned<Atom>,
-    pub value: Spanned<Atom>,
+    pub value: Spanned<Expr>,
     pub kind: Option<Spanned<Atom>>,
 }
 
@@ -31,7 +31,7 @@ impl AstObject for Assign {
 
     fn walk<'a>(&'a self) -> Option<ObjectIter> {
         let mut it = vec![
-            Rc::new(self.name.clone()) as Rc<dyn AstObject>,
+            // Rc::new(self.name.clone()) as Rc<dyn AstObject>,
             Rc::new(self.value.clone()) as Rc<dyn AstObject>,
         ];
 
@@ -45,20 +45,28 @@ impl AstObject for Assign {
 
 impl TypedObject for Assign {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
-        None
+        None  // assignments do not have types, their values do however.
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
-        todo!()
+        let expected = self.kind.as_ref().and_then(|at| at.infer_type(&ctx));
+        let actual = self.value.infer_type(&ctx);
+
+        if let Some(exptected) = expected {
+            if expected != actual {
+                todo!("assignment type error");
+            }
+        }
+
     }
 }
 
 impl LookupTarget for Assign {
     fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        todo!()
+        self.name.is_named(target)
     }
 
     fn name(&self) -> crate::parser::SpanEntry {
-        todo!()
+        self.name.name()
     }
 }

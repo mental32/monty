@@ -3,10 +3,7 @@ use nom::{sequence::terminated, IResult};
 use crate::ast::{assign::Assign, Spanned};
 use crate::parser::{token::PyToken, TokenSlice};
 
-use super::{
-    atom::{atom, name},
-    core::{expect_, expect_many_n},
-};
+use super::{atom::{atom, name}, core::{expect_, expect_many_n}, expression};
 
 #[inline]
 #[inline]
@@ -37,7 +34,7 @@ pub fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
         expect_many_n::<0>(PyToken::Whitespace),
     )(stream)?;
 
-    let (stream, value) = atom(stream)?;
+    let (stream, value) = expression(stream)?;
 
     let span = ident.span.start..value.span.end;
 

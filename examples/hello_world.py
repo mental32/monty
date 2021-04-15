@@ -1,2 +1,3 @@
-def identity(x: int) -> int:
-    return "x"
+def main() -> str:
+    return "foo"
+

@@ -81,7 +81,7 @@ impl From<CompilerOptions> for GlobalContext {
             }
         };
 
-        info!("libstd path is set to => {:?}", libstd);
+        debug!("libstd path is set to => {:?}", libstd);
 
         let mut ctx = Self::default();
 
