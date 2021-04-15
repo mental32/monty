@@ -30,6 +30,39 @@ pub struct FunctionType {
     pub module_ref: ModuleRef,
 }
 
+impl std::fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let args = self
+            .args
+            .iter()
+            .map(|arg| {
+                if let Some(inner) = self.resolver.type_map.borrow().get(*arg) {
+                    format!("{}", inner)
+                } else {
+                    format!("{}", BuiltinTypeId::Unknown)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let s_map = self.resolver.sources.borrow();;
+        let source = s_map.get(&self.module_ref).unwrap();
+        let name = self.resolver.span_ref.borrow().resolve_ref(self.name, source).unwrap();
+
+        let ret = if let Some(inner) = self.resolver.type_map.borrow().get(self.ret) {
+            format!("{}", inner)
+        } else {
+            format!("{}", BuiltinTypeId::Unknown)
+        };
+
+        write!(
+            f,
+            "<function {}({}) -> {}>",
+            name, args, ret
+        )
+    }
+}
+
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
 pub enum BuiltinTypeId {
@@ -45,10 +78,36 @@ pub enum BuiltinTypeId {
     Never = 255,
 }
 
+impl std::fmt::Display for BuiltinTypeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuiltinTypeId::Invalid => write!(f, "{{error: invalid type}}"),
+            BuiltinTypeId::Int => write!(f, "{{integer}}"),
+            BuiltinTypeId::Float => write!(f, "{{float}}"),
+            BuiltinTypeId::Str => write!(f, "{{str}}"),
+            BuiltinTypeId::Bool => write!(f, "{{bool}}"),
+            BuiltinTypeId::None => write!(f, "{{None}}"),
+            BuiltinTypeId::Ellipsis => write!(f, "... (ellipsis)"),
+            BuiltinTypeId::Module => write!(f, "{{module}}"),
+            BuiltinTypeId::Unknown => write!(f, "{{unknown}}"),
+            BuiltinTypeId::Never => write!(f, "{{never}}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, derive_more::From)]
 pub enum TypeDescriptor {
     Simple(BuiltinTypeId),
     Function(FunctionType),
+}
+
+impl std::fmt::Display for TypeDescriptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeDescriptor::Simple(s) => write!(f, "{}", s),
+            TypeDescriptor::Function(ft) => write!(f, "{}", ft),
+        }
+    }
 }
 
 impl TypeDescriptor {
@@ -67,7 +126,7 @@ impl TypeDescriptor {
     }
 }
 
-use crate::{ast::AstObject, context::LocalContext, parser::SpanEntry};
+use crate::{ast::AstObject, context::{InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;
