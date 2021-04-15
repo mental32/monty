@@ -25,6 +25,9 @@ pub struct FunctionType {
     pub args: Vec<LocalTypeId>,
     pub ret: LocalTypeId,
     pub decl: Option<Rc<dyn AstObject>>,
+
+    pub resolver: Rc<InternalResolver>,
+    pub module_ref: ModuleRef,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]

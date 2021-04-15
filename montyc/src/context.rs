@@ -1,11 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    fs::DirEntry,
-    hash::Hash,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{cell::{Ref, RefCell}, collections::HashMap, fs::DirEntry, hash::Hash, path::{Path, PathBuf}, rc::Rc};
 
 use codespan_reporting::diagnostic::Diagnostic;
 use log::*;
@@ -48,15 +41,23 @@ impl ModuleRef {
     }
 }
 
+#[derive(Debug)]
+pub struct InternalResolver {
+    pub span_ref: Rc<RefCell<SpanRef>>,
+    pub sources: RefCell<HashMap<ModuleRef, Rc<str>>>,
+    pub type_map: Rc<RefCell<TypeMap>>,
+}
+
 /// Used to track global compilation state per-compilation.
 #[derive(Debug)]
 pub struct GlobalContext {
     pub modules: HashMap<ModuleRef, ModuleContext>,
     pub functions: Vec<Function>,
     pub span_ref: Rc<RefCell<SpanRef>>,
-    pub type_map: RefCell<TypeMap>,
+    pub type_map: Rc<RefCell<TypeMap>>,
     pub builtins: HashMap<LocalTypeId, (Rc<dyn AstObject>, ModuleRef)>,
     pub libstd: PathBuf,
+    pub resolver: Rc<InternalResolver>,
 }
 
 impl From<CompilerOptions> for GlobalContext {
@@ -164,13 +165,23 @@ impl From<CompilerOptions> for GlobalContext {
 
 impl Default for GlobalContext {
     fn default() -> Self {
+        let span_ref: Rc<RefCell<SpanRef>> = Default::default();
+        let type_map: Rc<RefCell<TypeMap>> = Rc::new(RefCell::new(TypeMap::new()));
+
+        let resolver = Rc::new(InternalResolver {
+            span_ref: span_ref.clone(),
+            sources: Default::default(),
+            type_map: type_map.clone(),
+        });
+
         Self {
             modules: HashMap::new(),
             functions: Vec::new(),
-            span_ref: Default::default(),
-            type_map: RefCell::new(TypeMap::new()),
+            span_ref,
+            type_map,
             builtins: HashMap::new(),
             libstd: PathBuf::default(),
+            resolver,
         }
     }
 }
@@ -385,12 +396,14 @@ impl GlobalContext {
         let module = Rc::new(module);
         let key = ModuleRef::from(path.clone());
 
-        let source = source.into_boxed_str().into();
+        let source: Rc<str> = source.into_boxed_str().into();
 
         let mut scope = OpaqueScope::from(module.clone() as Rc<dyn AstObject>);
         let _ = scope.module_ref.replace(key.clone());
 
         let scope = Rc::new(scope) as Rc<dyn Scope>;
+
+        self.resolver.sources.borrow_mut().insert(key.clone(), source.clone());
 
         if let Some(previous) = self.modules.insert(
             key.clone(),

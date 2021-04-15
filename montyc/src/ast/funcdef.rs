@@ -37,7 +37,9 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
             name,
             args: vec![],
             ret,
-            decl: None,
+            decl: Some(Rc::new(def.clone())),
+            resolver: ctx.global_context.resolver.clone(),
+            module_ref: ctx.module_ref.clone(),
         }
     }
 }
