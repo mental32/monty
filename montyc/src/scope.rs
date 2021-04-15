@@ -85,6 +85,10 @@ fn collect_subnodes(object: &dyn AstObject) -> Vec<Rc<dyn AstObject>> {
 
         if let Some(Statement::FnDef(_)) = downcast_ref::<Statement>(object.unspanned().as_ref()) {
             return;
+        } else if let Some(Statement::Import(_)) =
+            downcast_ref::<Statement>(object.unspanned().as_ref())
+        {
+            return;
         }
 
         for subnode in collect_subnodes(object.as_ref()) {
