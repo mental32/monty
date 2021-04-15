@@ -224,6 +224,25 @@ impl Scope for OpaqueScope {
 
         // inspect immediate scope
 
+        let extra = match &self.root {
+            ScopeRoot::AstObject(o) => {
+                if let Some(f) = downcast_ref::<FunctionDef>(o.as_ref()) {
+                    f.args.clone().unwrap_or_default()
+                } else {
+                    vec![]
+                }
+            },
+
+            ScopeRoot::Func(f) => f.def.inner.args.clone().unwrap_or_default(),
+            _ => vec![],
+        };
+
+        for (name, object) in extra {
+            if name == target {
+                results.push(object.clone() as Rc<dyn AstObject>);
+            }
+        }
+
         for object in self.nodes.iter().map(|o| o.unspanned()) {
             let item = object.as_ref();
 

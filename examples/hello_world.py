@@ -1,2 +1,2 @@
-def main():
-    print("Hello, World!")
+def identity(x: int) -> int:
+    return "x"

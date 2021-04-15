@@ -75,7 +75,7 @@ impl TypedObject for Atom {
                         for top in results {
                             if let Some(asn) = downcast_ref::<Assign>(top.as_ref()) {
                                 return asn.value.inner.infer_type(ctx)
-                            } else if let Some(atom) = downcast_ref::<Atom>(dbg!(top).as_ref()).cloned().or(
+                            } else if let Some(atom) = downcast_ref::<Atom>(top.as_ref()).cloned().or(
                                 downcast_ref::<Primary>(top.as_ref()).and_then(|p| {
                                     if let Primary::Atomic(atom) = p {
                                         Some(atom.inner.clone())

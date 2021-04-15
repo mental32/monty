@@ -119,7 +119,7 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                 .with_message("use of undefined variable.")
                 .with_labels(vec![Label::primary((), node.span().unwrap()).with_message(
                     format!(
-                        "\"{}\" is not defined.",
+                        "\"{}\" is not defined anywhere.",
                         ctx.global_context
                             .resolver
                             .sources

@@ -24,7 +24,10 @@ pub struct FunctionDef {
 impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
     fn from((def, ctx): (&'b FunctionDef, &'a LocalContext)) -> Self {
         let ret = match def.returns.as_ref() {
-            Some(node) => node.infer_type(&ctx).unwrap(),
+            Some(node) => match node.infer_type(&ctx) {
+                Some(tid) => tid,
+                None => ctx.error(MontyError::UndefinedVariable { node: Rc::new(def.returns.clone().unwrap()), ctx})
+            },
             None => TypeMap::NONE_TYPE,
         };
 

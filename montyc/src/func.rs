@@ -21,6 +21,8 @@ impl TypedObject for Function {
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+        log::trace!("typecheck: {}", &self.kind.inner);
+
         let mut implicit_return = true;
 
         for scoped_object in self.scope.iter() {

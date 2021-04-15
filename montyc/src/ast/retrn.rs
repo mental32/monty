@@ -9,14 +9,7 @@ use codespan_reporting::{
 
 use nom::IResult;
 
-use crate::{
-    context::LocalContext,
-    func::Function,
-    parser::{comb::return_stmt, Parseable, ParserT, TokenSlice},
-    scope::{downcast_ref, LookupTarget, Scope, ScopeRoot},
-    typing::{LocalTypeId, TypeMap, TypedObject},
-    MontyError,
-};
+use crate::{MontyError, context::LocalContext, func::Function, parser::{comb::return_stmt, Parseable, ParserT, TokenSlice}, scope::{downcast_ref, LookupTarget, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TypeMap, TypedObject}};
 
 use super::{expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, Spanned};
 
@@ -47,15 +40,14 @@ impl TypedObject for Return {
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+        log::trace!("typecheck: {:?}", self);
+
         let expected = match ctx.scope.root() {
             ScopeRoot::AstObject(object) => {
                 match downcast_ref::<FunctionDef>(object.unspanned().as_ref()) {
-                    Some(func) => match func.infer_type(&ctx) {
-                        Some(type_id) => type_id,
-                        None => ctx.error(MontyError::UnknownType {
-                            node: object.clone(),
-                            ctx: &ctx,
-                        })
+                    Some(func) => {
+                        let kind: FunctionType = (func, &ctx).into();
+                        kind.ret
                     },
 
                     None => return unreachable!("{:?}", ctx.scope.root()),
@@ -67,9 +59,10 @@ impl TypedObject for Return {
         };
 
         let actual = match &self.value {
-            Some(value) => value
-                .infer_type(&ctx)
-                .expect("failed to infer type for return value."),
+            Some(value) => match value.infer_type(&ctx) {
+                Some(tid) => tid,
+                None => ctx.error(MontyError::UndefinedVariable { ctx: &ctx, node: Rc::new(self.value.clone().unwrap()) }),
+            },
             None => TypeMap::NONE_TYPE,
         };
 
