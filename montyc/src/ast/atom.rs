@@ -70,15 +70,34 @@ impl TypedObject for Atom {
 
                 match results.as_slice() {
                     [] => None,
-                    [top, ..] => {
-                        if let Some(asn) = downcast_ref::<Assign>(top.as_ref()) {
-                            asn.value.inner.infer_type(ctx)
-                        } else {
-                            log::info!("infer_type: lookup successfull! top={:?}", top.name());
-                            let mut ctx = ctx.clone();
-                            ctx.this = Some(top.clone());
-                            top.infer_type(&ctx)
+                    results => {
+
+                        for top in results {
+                            if let Some(asn) = downcast_ref::<Assign>(top.as_ref()) {
+                                return asn.value.inner.infer_type(ctx)
+                            } else if let Some(atom) = downcast_ref::<Atom>(dbg!(top).as_ref()).cloned().or(
+                                downcast_ref::<Primary>(top.as_ref()).and_then(|p| {
+                                    if let Primary::Atomic(atom) = p {
+                                        Some(atom.inner.clone())
+                                    } else {
+                                        None
+                                    }
+                                }),
+                            ) {
+                                if atom == *self {
+                                    continue;
+                                } else {
+                                    todo!()
+                                }
+                            } else {
+                                log::info!("infer_type: lookup successfull! top={:?}", top.name());
+                                let mut ctx = ctx.clone();
+                                ctx.this = Some(top.clone());
+                                return top.infer_type(&ctx)
+                            }
                         }
+
+                        None
                     }
                 }
             }
@@ -86,7 +105,27 @@ impl TypedObject for Atom {
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
-        // always okay
+        log::trace!("typecheck: {:?}", self);
+
+        if let Self::Name(target) = self {
+            let result = ctx.scope.lookup_any(*target, ctx.global_context);
+
+            match result.as_slice() {
+                [] => ctx.error(MontyError::UndefinedVariable {
+                    node: ctx.this.clone().unwrap(),
+                    ctx: &ctx,
+                }),
+                [top, ..] => match top.infer_type(&ctx) {
+                    Some(_) => {}
+                    None => ctx.error(MontyError::UnknownType {
+                        node: ctx.this.clone().unwrap(),
+                        ctx: &ctx,
+                    }),
+                },
+            }
+        } else {
+            log::trace!("Skipping typecheck: {:?}", self);
+        }
     }
 }
 
