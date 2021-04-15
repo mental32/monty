@@ -6,7 +6,7 @@ use crate::{
     typing::{TypeMap, TypedObject},
 };
 
-use super::{atom::Atom, AstObject, ObjectIter, Spanned};
+use super::{AstObject, ObjectIter, Spanned, atom::Atom, expr::Expr};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -21,7 +21,7 @@ pub enum Primary {
     /// `<func:primary>(<args?>)`
     Call {
         func: Rc<Spanned<Primary>>,
-        args: Option<Rc<Spanned<Primary>>>,
+        args: Option<Vec<Rc<Spanned<Expr>>>>,
     },
 
     /// `<primary> DOT(.) <atom>`
@@ -75,8 +75,8 @@ impl AstObject for Primary {
             Primary::Call { func, args } => {
                 let mut v = vec![func.clone() as Rc<dyn AstObject>];
 
-                if args.is_some() {
-                    v.push(Rc::new(args.clone()) as Rc<dyn AstObject>);
+                if let Some(args) = args {
+                    v.extend(args.iter().map(|arg| arg.clone() as Rc<dyn AstObject>));
                 }
 
                 v
@@ -116,12 +116,14 @@ impl TypedObject for Primary {
     }
 
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+        log::trace!("typecheck: {:?}", self);
+
         match self {
             Primary::Atomic(at) => at.typecheck(ctx),
-            Primary::Subscript { value, index } => {}
-            Primary::Call { func, args } => {}
-            Primary::Attribute { left, attr } => {}
-            Primary::Await(_) => {}
+            Primary::Subscript { value, index } => todo!(),
+            Primary::Call { func, args } => todo!(),
+            Primary::Attribute { left, attr } => todo!(),
+            Primary::Await(_) => todo!(),
         }
     }
 }

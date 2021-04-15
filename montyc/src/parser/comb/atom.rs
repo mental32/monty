@@ -72,6 +72,22 @@ fn float<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
 }
 
 #[inline]
+fn string_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+    let (stream, ident) = expect_with(stream, |(t, _)| matches!(t, PyToken::StringRef(_)))?;
+
+    let name = if let PyToken::StringRef(name) = ident.inner {
+        Spanned {
+            span: ident.span,
+            inner: Atom::Str(name),
+        }
+    } else {
+        unreachable!();
+    };
+
+    Ok((stream, name))
+}
+
+#[inline]
 pub fn atom_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Atom> {
     let (stream, Spanned { inner, .. }) = atom(stream)?;
     Ok((stream, inner))
@@ -93,7 +109,7 @@ pub fn atom<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>
         Ok((stream, atom))
     };
 
-    let (stream, atom) = alt((name, float, integer, fallback))(stream)?;
+    let (stream, atom) = alt((name, float, string_ref, integer, fallback))(stream)?;
 
     Ok((stream, atom))
 }

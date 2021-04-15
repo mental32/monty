@@ -106,7 +106,7 @@ fn dyn_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<State
 
 #[inline]
 fn small_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    alt((dyn_assign, dyn_return, dyn_span_ref, dyn_pass, dyn_expr))(stream)
+    alt((dyn_expr, dyn_assign, dyn_return, dyn_span_ref, dyn_pass))(stream)
 }
 
 #[inline]

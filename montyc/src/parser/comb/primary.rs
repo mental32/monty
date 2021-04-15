@@ -40,14 +40,40 @@ fn primary_call<'a>(
     base: &Spanned<Primary>,
 ) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
     let (stream, _) = expect(stream, PyToken::LParen)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, rparen) = expect(stream, PyToken::RParen)?;
+    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap();
+
+    let mut args = vec![];
+    let rparen;
+
+    loop {
+        let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap();
+
+        if let Ok((s, arg)) = super::expr::expression(s) {
+            args.push(Rc::new(arg));
+            let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(s).unwrap();
+
+            if let Ok((s, _)) = expect(s, PyToken::Comma) {
+                stream = s;
+                continue;
+
+            } else if let Ok((s, r)) = expect(s, PyToken::RParen) {
+                rparen = r;
+                stream = s;
+                break;
+
+            } else {
+                unreachable!("{:?}", s);
+            }
+        } else {
+            unreachable!()
+        }
+    }
 
     let obj = Spanned {
         span: base.span.start..rparen.span.end,
         inner: Primary::Call {
             func: Rc::new(base.clone()),
-            args: None,
+            args: if args.is_empty() { None } else { Some(args) },
         },
     };
 
