@@ -17,7 +17,9 @@ impl TypedObject for Function {
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         let mut implicit_return = true;
 
-        for node in self.scope.inner.nodes.iter() {
+        for scoped_object in self.scope.iter() {
+            let node = scoped_object.object.clone();
+
             if downcast_ref::<Spanned<Return>>(node.as_ref()).is_some()
                 || downcast_ref::<Return>(node.as_ref()).is_some()
                 || downcast_ref::<Spanned<Statement>>(node.as_ref()).map(|Spanned { inner, .. }| matches!(inner, Statement::Ret(_))).unwrap_or(false)
@@ -25,10 +27,10 @@ impl TypedObject for Function {
                 implicit_return = false;
             }
 
-            let mut ctx = ctx.clone();
-            ctx.this = Some(node.clone());
-
-            node.typecheck(ctx)
+            scoped_object.with_context(ctx.global_context, |local_context, object| {
+                
+                object.typecheck(local_context)
+            });
         }
 
         if implicit_return && self.kind.inner.ret != TypeMap::NONE_TYPE {

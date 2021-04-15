@@ -8,15 +8,23 @@ use std::{
 
 use fmt::Debug;
 
-use crate::{ast::{
+use crate::{
+    ast::{
         assign::Assign, atom::Atom, class::ClassDef, funcdef::FunctionDef, import::Import,
         primary::Primary, stmt::Statement, AstObject,
-    }, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, parser::SpanEntry, typing::{LocalTypeId, TypeMap, TypedObject}};
+    },
+    context::{GlobalContext, LocalContext, ModuleRef},
+    func::Function,
+    parser::SpanEntry,
+    typing::{LocalTypeId, TypeMap, TypedObject},
+};
 
 pub trait LookupTarget {
     fn is_named(&self, target: SpanEntry) -> bool;
     fn name(&self) -> SpanEntry;
-    fn renamed_properties(&self) -> Option<ModuleRef> { None }
+    fn renamed_properties(&self) -> Option<ModuleRef> {
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -41,7 +49,9 @@ impl LookupTarget for Renamed {
         self.name == target
     }
 
-    fn renamed_properties(&self) -> Option<ModuleRef> { Some(self.mref.clone()) }
+    fn renamed_properties(&self) -> Option<ModuleRef> {
+        Some(self.mref.clone())
+    }
 
     fn name(&self) -> SpanEntry {
         self.name.clone()
@@ -117,6 +127,8 @@ pub trait Scope: core::fmt::Debug {
 
     fn root(&self) -> ScopeRoot;
 
+    fn parent(&self) -> Option<Rc<dyn Scope>>;
+
     fn module_ref(&self) -> ModuleRef;
 
     fn walk<'a, 'b>(&'b self, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b>;
@@ -137,6 +149,7 @@ pub struct OpaqueScope {
     pub root: ScopeRoot,
     pub module_ref: Option<ModuleRef>,
     pub nodes: Vec<Rc<dyn AstObject>>,
+    pub parent: Option<Rc<dyn Scope>>,
 }
 
 impl<T> From<LocalScope<T>> for OpaqueScope {
@@ -155,6 +168,7 @@ impl From<Rc<dyn AstObject>> for OpaqueScope {
             root: ScopeRoot::AstObject(root),
             nodes,
             module_ref: None,
+            parent: None,
         }
     }
 }
@@ -169,6 +183,8 @@ impl Scope for OpaqueScope {
         Box::new(it)
     }
 
+
+    
     fn root<'b>(&'b self) -> ScopeRoot {
         self.root.clone()
     }
@@ -190,12 +206,21 @@ impl Scope for OpaqueScope {
             "lookup: Performing generic lookup on target=({:?} -> {:?})",
             target,
             {
-                let mctx = global_context.modules.get(self.module_ref.as_ref().unwrap()).unwrap();
-                global_context.span_ref.borrow().resolve_ref(target, mctx.source.as_ref()).unwrap()
+                let mctx = global_context
+                    .modules
+                    .get(self.module_ref.as_ref().expect("no module ref"))
+                    .unwrap();
+                global_context
+                    .span_ref
+                    .borrow()
+                    .resolve_ref(target, mctx.source.as_ref())
+                    .unwrap()
             }
         );
 
         let mut results = vec![];
+
+        // inspect immediate scope
 
         for object in self.nodes.iter().map(|o| o.unspanned()) {
             let item = object.as_ref();
@@ -205,25 +230,51 @@ impl Scope for OpaqueScope {
             }
         }
 
-        {
+        // inspect parent scope or the builtins
+
+        if let Some(parent_scope) = self.parent.as_ref() {
+            results.extend(parent_scope.lookup_any(target, global_context))
+        } else {
             log::trace!("lookup: checking builtins for matches");
 
-            let mctx = global_context.modules.get(self.module_ref.as_ref().unwrap()).unwrap();
-            let st = global_context.span_ref.borrow().resolve_ref(target, mctx.source.as_ref()).unwrap();
+            let local_mref = self.module_ref.as_ref().unwrap();
+
+            let mctx = global_context.modules.get(local_mref).unwrap();
+            let st = global_context
+                .span_ref
+                .borrow()
+                .resolve_ref(target, mctx.source.as_ref())
+                .unwrap();
 
             for (type_id, (object, mref)) in global_context.builtins.iter() {
                 let item = object.as_ref();
 
-                let mctx = global_context.modules.get(mref).unwrap();
-                let lst = global_context.span_ref.borrow().resolve_ref(object.name(), mctx.source.as_ref()).unwrap();
+                if local_mref != mref {
+                    let mctx = global_context.modules.get(mref).unwrap();
+                    let lst = global_context
+                        .span_ref
+                        .borrow()
+                        .resolve_ref(object.name(), mctx.source.as_ref())
+                        .unwrap();
 
-                if lst == st {
-                    log::trace!("lookup: renaming builtin object to={:?} from={:?}", target, object.name());
+                    if lst == st {
+                        log::trace!(
+                            "lookup: renaming builtin object to={:?} from={:?}",
+                            target,
+                            object.name()
+                        );
 
-                    let renamed = Renamed { inner: object.clone(), name: target.clone(), mref: self.module_ref.clone().unwrap() };
-                    let renamed = Rc::new(renamed) as Rc<dyn AstObject>;
+                        let renamed = Renamed {
+                            inner: object.clone(),
+                            name: target.clone(),
+                            mref: self.module_ref.clone().unwrap(),
+                        };
+                        let renamed = Rc::new(renamed) as Rc<dyn AstObject>;
 
-                    results.push(renamed);
+                        results.push(renamed);
+                    }
+                } else if local_mref == mref && object.is_named(target) {
+                    results.push(object.clone())
                 }
             }
         }
@@ -244,6 +295,7 @@ impl Scope for OpaqueScope {
                 module_ref: scoped.scope.module_ref(),
                 scope: scoped.scope,
                 this: Some(object.clone()),
+                parent: None,
             };
 
             Some((object, ctx))
@@ -254,6 +306,10 @@ impl Scope for OpaqueScope {
 
     fn module_ref(&self) -> ModuleRef {
         self.module_ref.clone().unwrap()
+    }
+
+    fn parent(&self) -> Option<Rc<dyn Scope>> {
+        self.parent.clone()
     }
 }
 
@@ -278,6 +334,7 @@ where
                 root: ScopeRoot::AstObject(root as Rc<dyn AstObject>),
                 nodes,
                 module_ref: None,
+                parent: None,
             },
             _t: PhantomData,
         }
@@ -312,6 +369,53 @@ impl<T: Debug> Scope for LocalScope<T> {
     fn module_ref(&self) -> ModuleRef {
         self.inner.module_ref.clone().unwrap()
     }
+
+    fn parent(&self) -> Option<Rc<dyn Scope>> {
+        self.inner.parent()
+    }
+}
+
+// -- WrappedScope
+
+#[derive(Debug)]
+pub struct WrappedScope {
+    pub inner: Rc<dyn Scope>,
+    pub parent: Option<Rc<dyn Scope>>,
+}
+
+
+impl Scope for WrappedScope {
+    fn iter<'b>(&'b self) -> Box<(dyn Iterator<Item = ScopedObject> + 'b)> {
+        self.inner.iter()
+    }
+
+    fn root(&self) -> ScopeRoot {
+        self.inner.root()
+    }
+
+    fn module_ref(&self) -> ModuleRef {
+        self.inner.module_ref()
+    }
+
+    fn walk<'a, 'b>(&'b self, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b> {
+        self.inner.walk(global_context)
+    }
+
+    fn lookup_with(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>> {
+        self.inner.lookup_with(key)
+    }
+
+    fn lookup_any(
+        &self,
+        target: SpanEntry,
+        global_context: &GlobalContext,
+    ) -> Vec<Rc<dyn AstObject>> {
+        self.inner.lookup_any(target, global_context)
+    }
+
+    fn parent(&self) -> Option<Rc<dyn Scope>> {
+        self.parent.clone()
+    }
 }
 
 // -- ScopeObject
@@ -322,15 +426,25 @@ pub struct ScopedObject {
 }
 
 impl ScopedObject {
-    pub fn with_context<F, T>(&self, global_context: &GlobalContext, f: F) -> T
+    pub fn with_context<F, T>(
+        &self,
+        global_context: &GlobalContext,
+        f: F,
+    ) -> T
     where
         F: Fn(LocalContext, Rc<dyn AstObject>) -> T,
     {
+        let scope = Rc::new(WrappedScope {
+            inner: self.scope.clone(),
+            parent: self.scope.parent(),
+        });
+
         let ctx = LocalContext {
-            scope: self.scope.clone(),
+            scope,
             this: Some(self.object.clone()),
             global_context,
             module_ref: self.scope.module_ref(),
+            parent: None,
         };
 
         f(ctx, self.object.clone())

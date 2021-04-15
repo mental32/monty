@@ -18,7 +18,7 @@ use crate::{
     MontyError,
 };
 
-use super::{expr::Expr, stmt::Statement, AstObject, Spanned};
+use super::{AstObject, Spanned, expr::Expr, funcdef::FunctionDef, stmt::Statement};
 
 #[derive(Debug, Clone)]
 pub struct Return {
@@ -49,8 +49,8 @@ impl TypedObject for Return {
     fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
         let expected = match ctx.scope.root() {
             ScopeRoot::AstObject(object) => {
-                match downcast_ref::<Function>(object.unspanned().as_ref()) {
-                    Some(func) => func.kind.inner.ret,
+                match downcast_ref::<FunctionDef>(object.unspanned().as_ref()) {
+                    Some(func) => func.infer_type(&ctx).expect("oof"),
                     None => return unreachable!("{:?}", ctx.scope.root()),
                 }
             }
@@ -60,7 +60,7 @@ impl TypedObject for Return {
         };
 
         let actual = match &self.value {
-            Some(value) => value.infer_type(&ctx).unwrap(),
+            Some(value) => value.infer_type(&ctx).expect("failed to infer type for return value."),
             None => TypeMap::NONE_TYPE,
         };
 
@@ -82,7 +82,16 @@ impl TypedObject for Return {
 
             let def_node = match ctx.scope.root() {
                 ScopeRoot::Func(f) => f.def.clone(),
-                _ => unreachable!(),
+                ScopeRoot::AstObject(object) => {
+                    let fndef = downcast_ref::<FunctionDef>(object.as_ref()).unwrap();
+                    let fndef = Spanned {
+                        span: fndef.name.span.start..fndef.returns.span().unwrap_or(fndef.name.span.clone()).end,
+                        inner: fndef.clone(),
+                    };
+
+                    Rc::new(fndef)
+                }, 
+                _ => panic!("{:?}", ctx.scope.root()),
             };
 
             ctx.error(MontyError::BadReturnType {

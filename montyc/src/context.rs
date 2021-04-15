@@ -386,6 +386,7 @@ impl GlobalContext {
                 module_ref: module_ref.clone(),
                 scope: scoped.scope,
                 this: Some(object.clone()),
+                parent: None,
             };
 
             Some((object, ctx))
@@ -441,6 +442,7 @@ impl ModuleContext {
             module_ref: ModuleRef::from(self.path.clone()),
             scope: self.scope.clone(),
             this: None,
+            parent: None,
         }
     }
 }
@@ -451,6 +453,7 @@ pub struct LocalContext<'a> {
     pub module_ref: ModuleRef,
     pub scope: Rc<dyn Scope>,
     pub this: Option<Rc<dyn AstObject>>,
+    pub parent: Option<&'a LocalContext<'a>>
 }
 
 impl<'a> LocalContext<'a> {

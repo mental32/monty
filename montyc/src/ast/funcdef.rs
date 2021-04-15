@@ -87,7 +87,10 @@ impl TypedObject for FunctionDef {
         };
 
 
-        let scope = LocalScope::from(self.clone()).into();
+        let mut scope: LocalScope<FunctionDef> = LocalScope::from(self.clone()).into();
+
+        scope.inner.module_ref.replace(ctx.module_ref.clone());
+        scope.inner.parent = Some(ctx.scope.clone());
 
         let kind = ctx
             .global_context
@@ -111,6 +114,7 @@ impl TypedObject for FunctionDef {
             module_ref: ctx.module_ref,
             scope: Rc::new(scope) as Rc<_>,
             this: None,
+            parent: ctx.parent.clone(),
         };
 
         func.typecheck(ctx)
