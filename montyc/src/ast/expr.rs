@@ -142,10 +142,10 @@ impl TypedObject for Expr {
 
 impl LookupTarget for Expr {
     fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        todo!()
+        false
     }
 
     fn name(&self) -> crate::parser::SpanEntry {
-        todo!()
+        None
     }
 }
