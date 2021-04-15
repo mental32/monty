@@ -50,7 +50,14 @@ impl TypedObject for Return {
         let expected = match ctx.scope.root() {
             ScopeRoot::AstObject(object) => {
                 match downcast_ref::<FunctionDef>(object.unspanned().as_ref()) {
-                    Some(func) => func.infer_type(&ctx).expect("oof"),
+                    Some(func) => match func.infer_type(&ctx) {
+                        Some(type_id) => type_id,
+                        None => ctx.error(MontyError::UnknownType {
+                            node: object.clone(),
+                            ctx: &ctx,
+                        })
+                    },
+
                     None => return unreachable!("{:?}", ctx.scope.root()),
                 }
             }

@@ -38,6 +38,18 @@ pub enum MontyError<'a> {
         def_node: Rc<Spanned<FunctionDef>>,
         ctx: &'a LocalContext<'a>,
     },
+
+    #[error("Failed to infer the type of a value.")]
+    UnknownType {
+        node: Rc<dyn AstObject>,
+        ctx: &'a LocalContext<'a>,
+    },
+
+    #[error("Could not find the definition of this variable.")]
+    UndefinedVariable {
+        node: Rc<dyn AstObject>,
+        ctx: &'a LocalContext<'a>,
+    },
 }
 
 impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()> {
@@ -96,6 +108,29 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                     Label::secondary((), def_node.inner.returns.span().unwrap())
                         .with_message("But it has been annotated to return this instead."),
                 ]),
+
+            MontyError::UnknownType { node, ctx } => Diagnostic::error()
+                .with_message("unable to infer type for value.")
+                .with_labels(vec![
+                    Label::primary((), node.span().unwrap()).with_message("annotate this type")
+                ]),
+
+            MontyError::UndefinedVariable { node, ctx } => Diagnostic::error()
+                .with_message("use of undefined variable.")
+                .with_labels(vec![Label::primary((), node.span().unwrap()).with_message(
+                    format!(
+                        "\"{}\" is not defined.",
+                        ctx.global_context
+                            .resolver
+                            .sources
+                            .borrow()
+                            .get(&ctx.module_ref)
+                            .unwrap()
+                            .get(node.span().unwrap())
+                            .unwrap()
+                            .to_string()
+                    ),
+                )]),
         }
     }
 }

@@ -6,6 +6,7 @@ use crate::{
     parser::SpanEntry,
     scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot},
     typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject},
+    MontyError,
 };
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
@@ -33,9 +34,22 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
             unreachable!();
         };
 
+        let mut args = vec![];
+
+        if let Some(def_args) = &def.args {
+            for (arg_name, arg_ann) in def_args {
+                let type_id = match arg_ann.infer_type(ctx) {
+                    Some(tyid) => tyid,
+                    None => ctx.error(MontyError::UndefinedVariable { node: arg_ann.clone(), ctx }),
+                };
+
+                args.push(type_id);
+            }
+        }
+
         Self {
             name,
-            args: vec![],
+            args,
             ret,
             decl: Some(Rc::new(def.clone())),
             resolver: ctx.global_context.resolver.clone(),

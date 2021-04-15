@@ -2,14 +2,9 @@ use std::rc::Rc;
 
 use typing::TypedObject;
 
-use crate::{
-    context::LocalContext,
-    parser::{token::PyToken, Parseable, ParserT, SpanEntry},
-    scope::{downcast_ref, LookupTarget, Scope},
-    typing::{self, LocalTypeId, TypeMap},
-};
+use crate::{MontyError, context::LocalContext, parser::{token::PyToken, Parseable, ParserT, SpanEntry}, scope::{downcast_ref, LookupTarget, Scope}, typing::{self, LocalTypeId, TypeMap}};
 
-use super::{assign::Assign, AstObject};
+use super::{assign::Assign, primary::Primary, AstObject};
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Atom {
@@ -19,6 +14,7 @@ pub enum Atom {
     Str(SpanEntry),
     Bool(bool),
     Float(f64),
+    Comment(SpanEntry),
     Name(SpanEntry),
 }
 
@@ -34,7 +30,9 @@ impl From<PyToken> for Atom {
             PyToken::True => Self::Bool(true),
             PyToken::False => Self::Bool(false),
             PyToken::Digits(n) => Self::Int(n),
+            PyToken::CommentRef(n) => Self::Comment(n),
             PyToken::StringRef(n) => Self::Str(n),
+            PyToken::Ident(n) => Self::Name(n),
             _ => unreachable!("{:?}", value),
         }
     }
@@ -63,6 +61,7 @@ impl TypedObject for Atom {
             Atom::Str(_) => Some(TypeMap::STRING),
             Atom::Bool(_) => Some(TypeMap::BOOL),
             Atom::Float(_) => Some(TypeMap::FLOAT),
+            Atom::Comment(_) => None,
             Atom::Name(None) => unreachable!(),
             Atom::Name(target) => {
                 log::trace!("infer_type: performing name lookup on atom {:?}", self);
