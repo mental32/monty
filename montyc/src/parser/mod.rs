@@ -31,7 +31,6 @@ mod span_ref {
     pub struct SpanRef {
         ptr: usize,
         pub(crate) seq: Vec<Range<usize>>,
-        seq_types: Vec<SpanType>,
     }
 
     impl Default for SpanRef {
@@ -39,7 +38,6 @@ mod span_ref {
             Self {
                 ptr: 1,
                 seq: vec![0..0],
-                seq_types: vec![SpanType::Unknown],
             }
         }
     }
@@ -67,7 +65,7 @@ mod span_ref {
         }
 
         #[inline]
-        pub fn push(&mut self, value: Range<usize>, kind: SpanType) -> SpanEntry {
+        pub fn push(&mut self, value: Range<usize>) -> SpanEntry {
             self.ptr += 1;
             let key = self.ptr;
             self.seq.push(value);
@@ -222,12 +220,17 @@ impl Parser {
                         span_range = range.start..(range.start + capture.0.end);
 
                         let (n, offset) = {
-                            let n = span_ref.borrow_mut().push(span_range.clone(), span_type);
+                            let n = span_ref.borrow_mut().push(span_range.clone());
                             let bump = capture.1.len();
                             (n, bump)
                         };
 
-                        token = PyToken::SpanRef(n);
+                        token = match span_type {
+                            SpanType::Comment => PyToken::CommentRef(n),
+                            SpanType::String => PyToken::StringRef(n),
+                            _ => unreachable!(),
+                        };
+
                         lexer.bump(offset - 1);
                     }
 

@@ -79,7 +79,7 @@ fn dyn_classdef<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<S
 #[inline]
 fn dyn_span_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, Spanned { span, inner }) =
-        expect_with(stream, |(t, _)| matches!(t, PyToken::SpanRef(_)))?;
+        expect_with(stream, |(t, _)| matches!(t, PyToken::Ident(_) | PyToken::CommentRef(_) | PyToken::StringRef(_)))?;
     let span = Spanned {
         span,
         inner: Statement::SpanRef(inner),

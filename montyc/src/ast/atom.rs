@@ -34,7 +34,7 @@ impl From<PyToken> for Atom {
             PyToken::True => Self::Bool(true),
             PyToken::False => Self::Bool(false),
             PyToken::Digits(n) => Self::Int(n),
-            PyToken::SpanRef(n) => Self::Str(n),
+            PyToken::StringRef(n) => Self::Str(n),
             _ => unreachable!("{:?}", value),
         }
     }

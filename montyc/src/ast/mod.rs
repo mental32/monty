@@ -92,7 +92,7 @@ impl AstObject for PyToken {
 impl LookupTarget for PyToken {
     fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
         match self {
-            Self::SpanRef(n) | Self::Ident(n) => n.clone() == target,
+            Self::Ident(n) => n.clone() == target,
             _ => false,
         }
     }

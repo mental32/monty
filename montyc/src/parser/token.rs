@@ -1,6 +1,6 @@
 //! Tokenizer & lexer interface.
 
-use logos::{Logos, Span};
+use logos::Logos;
 
 use super::SpanEntry;
 
@@ -186,22 +186,19 @@ pub enum PyToken {
     // TODO(mental): try avoid panicking here...
     Digits(isize),
 
-    // -- Dynamic rules
-    /// SpanRef tokens are generated lazily when lexing over the source.
-    ///
-    /// They are generated upon encountering:
-    ///
-    ///   * comments
-    ///   * string literals (including multiline literals)
-    ///   * identifier literals
-    ///
-    SpanRef(SpanEntry),
+    // -- SpanRef tokens
+
+    StringRef(SpanEntry),
+
+    CommentRef(SpanEntry),
 }
 
 impl From<PyToken> for SpanEntry {
     fn from(token: PyToken) -> Self {
         match token {
-            PyToken::SpanRef(n) => n,
+            PyToken::StringRef(n)
+            | PyToken::CommentRef(n)
+            | PyToken::Ident(n) => n,
             _ => unreachable!(),
         }
     }

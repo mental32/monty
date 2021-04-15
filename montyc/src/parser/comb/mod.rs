@@ -57,7 +57,12 @@ fn chomp<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Spanned<
         } else if let Ok((s, _)) = expect(stream, PyToken::Newline) {
             stream = s;
             continue;
-        } else if let Ok((s, sr)) = expect_with(stream, |(t, _)| matches!(t, PyToken::SpanRef(_))) {
+        } else if let Ok((s, sr)) = expect_with(stream, |(t, _)| {
+            matches!(
+                t,
+                PyToken::StringRef(_) | PyToken::CommentRef(_) | PyToken::Ident(_)
+            )
+        }) {
             refs.push(sr);
             stream = s;
             continue;
