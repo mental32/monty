@@ -20,7 +20,7 @@ impl TypedObject for Function {
         Some(self.kind.type_id)
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         log::trace!("typecheck: {}", &self.kind.inner);
 
         let mut implicit_return = true;
@@ -38,7 +38,7 @@ impl TypedObject for Function {
             }
 
             scoped_object.with_context(ctx.global_context, |local_context, object| {
-                object.typecheck(local_context)
+                object.typecheck(&local_context)
             });
         }
 

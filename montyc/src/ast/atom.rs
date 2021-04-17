@@ -112,7 +112,7 @@ impl TypedObject for Atom {
         }
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         log::trace!("typecheck: {:?}", self);
 
         if let Self::Name(target) = self {

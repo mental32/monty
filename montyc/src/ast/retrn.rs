@@ -39,14 +39,14 @@ impl TypedObject for Return {
         None
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         log::trace!("typecheck: {:?}", self);
 
         let expected = match ctx.scope.root() {
             ScopeRoot::AstObject(object) => {
                 match downcast_ref::<FunctionDef>(object.unspanned().as_ref()) {
                     Some(func) => {
-                        let kind: FunctionType = (func, &ctx).into();
+                        let kind: FunctionType = (func, ctx).into();
                         kind.ret
                     },
 

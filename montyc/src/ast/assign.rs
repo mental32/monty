@@ -48,7 +48,7 @@ impl TypedObject for Assign {
         None  // assignments do not have types, their values do however.
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         let expected = self.kind.as_ref().and_then(|at| at.infer_type(&ctx));
         let actual = self.value.infer_type(&ctx);
 

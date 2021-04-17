@@ -44,11 +44,11 @@ impl TypedObject for ClassDef {
         }
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         let scope = LocalScope::from(self.clone());
 
         for node in scope.inner.nodes.iter().map(|n| n.unspanned()) {
-            node.typecheck(ctx.clone())
+            node.typecheck(&ctx)
         }
     }
 }

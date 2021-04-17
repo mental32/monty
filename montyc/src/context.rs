@@ -161,7 +161,7 @@ impl From<CompilerOptions> for GlobalContext {
                 }
 
                 item.with_context(ctx, |local, object| {
-                    object.typecheck(local);
+                    object.typecheck(&local);
                 })
             }
         });

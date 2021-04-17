@@ -39,7 +39,7 @@ impl TypedObject for Renamed {
         self.inner.infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         self.inner.typecheck(ctx)
     }
 }

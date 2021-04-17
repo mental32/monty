@@ -76,7 +76,7 @@ impl TypedObject for Statement {
         }
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         match self {
             Statement::Expression(e) => e.typecheck(ctx),
             Statement::FnDef(f) => f.typecheck(ctx),

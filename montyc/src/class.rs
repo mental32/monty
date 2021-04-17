@@ -1,8 +1,4 @@
-use crate::{
-    ast::class::ClassDef,
-    scope::LocalScope,
-    typing::{LocalTypeId, TypedObject},
-};
+use crate::{ast::class::ClassDef, context::LocalContext, scope::LocalScope, typing::{LocalTypeId, TypedObject}};
 
 #[derive(Debug)]
 pub struct Class {
@@ -15,7 +11,7 @@ impl TypedObject for Class {
         todo!()
     }
 
-    fn typecheck<'a>(&self, ctx: crate::context::LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         todo!()
     }
 }

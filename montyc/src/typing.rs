@@ -136,7 +136,7 @@ use crate::{
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>);
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>);
 }
 
 #[derive(Debug)]

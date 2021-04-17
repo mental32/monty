@@ -44,7 +44,7 @@ impl TypedObject for Module {
         None
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         todo!();
     }
 }

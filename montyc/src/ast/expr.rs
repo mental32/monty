@@ -133,7 +133,7 @@ impl TypedObject for Expr {
         }
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         match self {
             Expr::If { test, body, orelse } => {}
             Expr::BinOp { left, op, right } => {}

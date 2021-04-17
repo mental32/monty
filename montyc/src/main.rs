@@ -14,7 +14,7 @@ fn main() -> io::Result<()> {
 
     global_context.preload_module(file.unwrap(), |ctx, mref| {
         for (obj, ctx) in ctx.walk(mref.clone()) {
-            obj.typecheck(ctx);
+            obj.typecheck(&ctx);
         }
     });
 

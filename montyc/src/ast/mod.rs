@@ -131,7 +131,7 @@ impl TypedObject for PyToken {
         unreachable!()
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         unreachable!()
     }
 }
@@ -163,7 +163,7 @@ where
         self.inner.infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         self.inner.typecheck(ctx)
     }
 }
@@ -208,7 +208,7 @@ where
         self.as_ref().infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         self.as_ref().typecheck(ctx)
     }
 }
@@ -253,7 +253,7 @@ where
         self.as_ref().infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         self.as_ref().typecheck(ctx)
     }
 }
@@ -298,7 +298,7 @@ where
         self.as_ref()?.infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         self.as_ref().unwrap().typecheck(ctx)
     }
 }

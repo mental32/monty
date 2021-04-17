@@ -82,7 +82,7 @@ impl TypedObject for FunctionDef {
         Some(ctx.global_context.type_map.borrow_mut().insert(func_type))
     }
 
-    fn typecheck<'a>(&self, ctx: LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         let type_id = self.infer_type(&ctx).unwrap();
 
         let this = ctx.this.as_ref().unwrap().unspanned();
@@ -127,13 +127,13 @@ impl TypedObject for FunctionDef {
 
         let ctx = LocalContext {
             global_context: ctx.global_context,
-            module_ref: ctx.module_ref,
+            module_ref: ctx.module_ref.clone(),
             scope: Rc::new(scope) as Rc<_>,
             this: None,
             parent: ctx.parent.clone(),
         };
 
-        func.typecheck(ctx)
+        func.typecheck(&ctx)
     }
 }
 
