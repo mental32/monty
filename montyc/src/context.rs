@@ -55,6 +55,15 @@ pub struct InternalResolver {
     pub type_map: Rc<RefCell<TypeMap>>,
 }
 
+impl InternalResolver {
+    pub fn resolve_type(&self, type_id: LocalTypeId) -> Option<String> {
+        let type_map = self.type_map.borrow();
+        let type_desc = type_map.get(type_id)?;
+
+        Some(format!("{}", type_desc))
+    }
+}
+
 /// Used to track global compilation state per-compilation.
 #[derive(Debug)]
 pub struct GlobalContext {

@@ -3,7 +3,12 @@
 
 use std::rc::Rc;
 
-use ast::{funcdef::FunctionDef, retrn::Return, AstObject, Spanned};
+use ast::{
+    expr::Expr,
+    funcdef::{self, FunctionDef},
+    retrn::Return,
+    AstObject, Spanned,
+};
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use context::LocalContext;
 use typing::LocalTypeId;
@@ -20,17 +25,18 @@ use thiserror::Error;
 
 pub type Result<'a, T> = std::result::Result<T, MontyError<'a>>;
 
-
 #[macro_use]
 #[macro_export]
 macro_rules! isinstance {
-    ($e:expr, $t:ident) => ({
-        if let Some($crate::ast::Spanned { inner, .. }) = $crate::scope::downcast_ref::<$crate::ast::Spanned<$t>>($e) {
+    ($e:expr, $t:ident) => {{
+        if let Some($crate::ast::Spanned { inner, .. }) =
+            $crate::scope::downcast_ref::<$crate::ast::Spanned<$t>>($e)
+        {
             Some(inner)
         } else {
             $crate::scope::downcast_ref::<$t>($e)
         }
-    });
+    }};
 }
 
 #[derive(Debug, Error)]
@@ -63,6 +69,16 @@ pub enum MontyError<'a> {
         node: Rc<dyn AstObject>,
         ctx: &'a LocalContext<'a>,
     },
+
+    #[error("Incompatible argument type.")]
+    BadArgumentType {
+        expected: LocalTypeId,
+        actual: LocalTypeId,
+        arg_node: Rc<Spanned<Expr>>,
+        def_node: Rc<Spanned<FunctionDef>>,
+        ctx: &'a LocalContext<'a>,
+        // def_node_file: ()  TODO: cross-file func calls.
+    },
 }
 
 impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()> {
@@ -88,12 +104,19 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
 
                 labels.push(primary);
 
-                let def = Label::secondary((), def_node.inner.returns.span().unwrap_or(def_node.span.clone()))
-                    .with_message(if def_node.inner.returns.is_some() {
-                        "function defined here supposedly returning a value of this type."
-                    } else {
-                        "function defined here is expected to return `None`"
-                    });
+                let def = Label::secondary(
+                    (),
+                    def_node
+                        .inner
+                        .returns
+                        .span()
+                        .unwrap_or(def_node.span.clone()),
+                )
+                .with_message(if def_node.inner.returns.is_some() {
+                    "function defined here supposedly returning a value of this type."
+                } else {
+                    "function defined here is expected to return `None`"
+                });
 
                 labels.push(def);
 
@@ -124,9 +147,8 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
 
             MontyError::UnknownType { node, ctx } => Diagnostic::error()
                 .with_message("unable to infer type for value.")
-                .with_labels(vec![
-                    Label::primary((), node.span().unwrap()).with_message("annotate this name with a type")
-                ]),
+                .with_labels(vec![Label::primary((), node.span().unwrap())
+                    .with_message("annotate this name with a type")]),
 
             MontyError::UndefinedVariable { node, ctx } => Diagnostic::error()
                 .with_message("use of undefined variable.")
@@ -144,6 +166,25 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                             .to_string()
                     ),
                 )]),
+
+            MontyError::BadArgumentType {
+                expected,
+                actual,
+                arg_node,
+                def_node,
+                ctx,
+            } => Diagnostic::error()
+                .with_message("incompatible argument type in function call.")
+                .with_labels(vec![
+                    Label::primary((), arg_node.span.clone()).with_message(format!(
+                        "The argument here evaluates to \"{}\"",
+                        ctx.global_context.resolver.resolve_type(actual).unwrap()
+                    )),
+                    Label::secondary((), def_node.inner.name.span.clone()).with_message(format!(
+                        "Function defined here expected \"{}\"",
+                        ctx.global_context.resolver.resolve_type(expected).unwrap(),
+                    )),
+                ]),
         }
     }
 }

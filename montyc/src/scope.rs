@@ -221,6 +221,8 @@ impl Scope for OpaqueScope {
         target: SpanEntry,
         global_context: &GlobalContext,
     ) -> Vec<Rc<dyn AstObject>> {
+        assert!(target.is_some());
+
         log::trace!(
             "lookup: Performing generic lookup on target=({:?} -> {:?})",
             target,
@@ -233,7 +235,6 @@ impl Scope for OpaqueScope {
                     .span_ref
                     .borrow()
                     .resolve_ref(target, mctx.source.as_ref())
-                    .unwrap()
             }
         );
 

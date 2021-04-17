@@ -24,7 +24,7 @@ pub struct FunctionType {
     pub name: SpanEntry,
     pub args: Vec<LocalTypeId>,
     pub ret: LocalTypeId,
-    pub decl: Option<Rc<dyn AstObject>>,
+    pub decl: Option<Rc<FunctionDef>>,
 
     pub resolver: Rc<InternalResolver>,
     pub module_ref: ModuleRef,
@@ -127,11 +127,7 @@ impl TypeDescriptor {
     }
 }
 
-use crate::{
-    ast::AstObject,
-    context::{InternalResolver, LocalContext, ModuleRef},
-    parser::SpanEntry,
-};
+use crate::{ast::{AstObject, funcdef::FunctionDef}, context::{InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;
@@ -193,6 +189,25 @@ impl TypeMap {
     }
 
     #[inline]
+    pub fn unify_call<'a>(
+        &self,
+        func_t: LocalTypeId,
+        callsite: impl Iterator<Item = &'a LocalTypeId>,
+    ) -> Result<LocalTypeId, (LocalTypeId, LocalTypeId, usize)> {
+        let func = self.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
+
+        for (idx, (actual, expected)) in callsite.cloned().zip(func.inner.args).enumerate() {
+            if actual == Self::UNKNOWN {
+                continue;
+            } else if expected != actual {
+                return Err((expected, actual, idx));
+            }
+        }
+
+        Ok(func_t)
+    }
+
+    #[inline]
     pub fn insert_tagged<T>(&mut self, t: T) -> TaggedType<T>
     where
         T: Into<TypeDescriptor> + Clone,
@@ -228,5 +243,24 @@ impl TypeMap {
         let result = TaggedType { type_id, inner };
 
         Some(Ok(result))
+    }
+}
+
+pub trait CompilerError {
+    type Success;
+
+    fn unwrap_or_compiler_error<'a>(self, ctx: &LocalContext<'a>) -> Self::Success;
+}
+
+impl CompilerError for Option<LocalTypeId> {
+    type Success = LocalTypeId;
+
+    fn unwrap_or_compiler_error<'a>(self, ctx: &LocalContext<'a>) -> Self::Success {
+        match self {
+            Some(t) => t,
+            None => {
+                todo!();
+            }
+        }
     }
 }

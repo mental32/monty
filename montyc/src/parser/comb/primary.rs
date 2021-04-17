@@ -40,13 +40,13 @@ fn primary_call<'a>(
     base: &Spanned<Primary>,
 ) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
     let (stream, _) = expect(stream, PyToken::LParen)?;
-    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap();
+    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
     let mut args = vec![];
     let rparen;
 
     loop {
-        let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap();
+        let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
         if let Ok((s, arg)) = super::expr::expression(s) {
             args.push(Rc::new(arg));
@@ -55,17 +55,20 @@ fn primary_call<'a>(
             if let Ok((s, _)) = expect(s, PyToken::Comma) {
                 stream = s;
                 continue;
-
             } else if let Ok((s, r)) = expect(s, PyToken::RParen) {
                 rparen = r;
                 stream = s;
                 break;
-
             } else {
                 unreachable!("{:?}", s);
             }
-        } else {
-            unreachable!()
+        } else if let Ok((s, r)) = expect(s, PyToken::RParen) {
+            rparen = r;
+            stream = s;
+            break;
+        } else
+        {
+            unreachable!("{:?}", stream);
         }
     }
 
