@@ -21,6 +21,8 @@ use crate::{CompilerOptions, MontyError, ast::{
         AstObject, Spanned,
     }, class::Class, func::Function, parser::{Parseable, SpanEntry, SpanRef}, scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, ScopedObject}, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap}};
 
+use super::{ModuleRef, local::LocalContext, module::ModuleContext, resolver::InternalResolver};
+
 fn shorten(path: &Path) -> String {
     let mut c = path
         .components()
@@ -31,41 +33,6 @@ fn shorten(path: &Path) -> String {
 
     c.reverse();
     c.join("/")
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::From)]
-pub struct ModuleRef(pub PathBuf);
-
-impl ModuleRef {
-    pub fn into_pathbuf(&self) -> PathBuf {
-        self.0.clone()
-    }
-}
-
-#[derive(Debug)]
-pub struct InternalResolver {
-    pub span_ref: Rc<RefCell<SpanRef>>,
-    pub sources: RefCell<HashMap<ModuleRef, Rc<str>>>,
-    pub type_map: Rc<RefCell<TypeMap>>,
-}
-
-impl InternalResolver {
-    pub fn resolve_type(&self, type_id: LocalTypeId) -> Option<String> {
-        let type_map = self.type_map.borrow();
-        let type_desc = type_map.get(type_id)?;
-
-        Some(format!("{}", type_desc))
-    }
-
-    pub fn resolve(&self, mref: ModuleRef, name: impl Into<SpanEntry>) -> Option<String> {
-        let reference = name.into();
-        let source = self.sources.borrow().get(&mref).clone().unwrap().clone();
-
-        self.span_ref
-            .borrow()
-            .resolve_ref(reference, source.as_ref())
-            .map(ToString::to_string)
-    }
 }
 
 /// Used to track global compilation state per-compilation.
@@ -80,7 +47,7 @@ pub struct GlobalContext {
     pub resolver: Rc<InternalResolver>,
 }
 
-const MAGICAL_NAMES: &str = include_str!("magical_names.py");
+const MAGICAL_NAMES: &str = include_str!("../magical_names.py");
 
 impl From<CompilerOptions> for GlobalContext {
     fn from(opts: CompilerOptions) -> Self {
@@ -159,30 +126,43 @@ impl From<CompilerOptions> for GlobalContext {
                     let mut klass: Class =
                         item.with_context(ctx, |local, _| (&local, class_def).into());
 
-                    let props = match type_id {
+
+                        macro_rules! const_prop {
+                            ($prop:ident($reciever:expr) := ($($arg:expr),* $(,)?) -> $ret:expr) => ({
+                                let span_ref = ctx.span_ref.borrow();
+                                let $prop = span_ref.find(stringify!($prop), MAGICAL_NAMES);
+
+                                let mut type_map = ctx.type_map.borrow_mut();
+
+                                let func = FunctionType {
+                                    reciever: Some($reciever),
+                                    name: $prop.clone(),
+                                    ret: $ret,
+                                    args: vec![$($arg,)*],
+                                    decl: None,
+                                    resolver: ctx.resolver.clone(),
+                                    module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
+                                };
+
+                                klass.properties.insert($prop.unwrap(), type_map.insert(TypeDescriptor::Function(func)));
+                            });
+                        }
+
+                    match type_id {
                         TypeMap::INTEGER => {
-                            let __add__ = ctx.span_ref.borrow().find("__add__", MAGICAL_NAMES);
-                            let int = ctx.span_ref.borrow().find("int", MAGICAL_NAMES);
-
-                            let int_add_method = ctx.type_map.borrow_mut().insert(TypeDescriptor::Function(FunctionType {
-                                reciever: Some(TypeMap::INTEGER),
-                                name: __add__.clone(),
-                                args: vec![TypeMap::INTEGER],
-                                ret: TypeMap::INTEGER,
-                                decl: None,
-                                resolver: ctx.resolver.clone(),
-                                module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
-                            }));
-
-                            Some((__add__, int_add_method)).into_iter()
+                            const_prop!(__add__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
+                            const_prop!(__sub__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
+                            const_prop!(__mul__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
                         },
 
-                        _ => None.into_iter(),
+                        TypeMap::STRING => {
+                            const_prop!(__add__(TypeMap::STRING) := (TypeMap::STRING) -> TypeMap::STRING);
+                            const_prop!(__mul__(TypeMap::STRING) := (TypeMap::INTEGER) -> TypeMap::STRING);
+                        }
+
+                        _ => (),
                     };
 
-                    for (n, t) in props {
-                        klass.properties.insert(n.unwrap(), t);
-                    }
 
                     let _ = ctx.builtins.insert(type_id, (Rc::new(klass), mref.clone()));
 
@@ -518,77 +498,4 @@ impl GlobalContext {
     }
 
     pub fn compile<I>(&mut self, i: I) {}
-}
-
-#[derive(Debug, Clone)]
-pub struct ModuleContext {
-    path: PathBuf,
-    module: Rc<Module>,
-    scope: Rc<dyn Scope>,
-    pub source: Rc<str>,
-}
-
-impl ModuleContext {
-    pub fn local_context<'a>(&'a self, global_context: &'a GlobalContext) -> LocalContext {
-        LocalContext {
-            global_context,
-            module_ref: ModuleRef::from(self.path.clone()),
-            scope: self.scope.clone(),
-            this: None,
-            parent: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct LocalContext<'a> {
-    pub global_context: &'a GlobalContext,
-    pub module_ref: ModuleRef,
-    pub scope: Rc<dyn Scope>,
-    pub this: Option<Rc<dyn AstObject>>,
-    pub parent: Option<&'a LocalContext<'a>>,
-}
-
-impl<'a> LocalContext<'a> {
-    pub fn error(&self, err: MontyError) -> ! {
-        let mut writer = codespan_reporting::term::termcolor::StandardStream::stderr(
-            codespan_reporting::term::termcolor::ColorChoice::Auto,
-        );
-        let config = codespan_reporting::term::Config::default();
-
-        let module_path = self.module_ref.into_pathbuf();
-        let file_name = module_path.file_name().unwrap().to_string_lossy();
-        let file_source = self
-            .global_context
-            .modules
-            .get(&self.module_ref)
-            .expect("missing source!")
-            .source
-            .as_ref();
-
-        let file = codespan_reporting::files::SimpleFile::new(file_name, file_source);
-
-        let diagnostic: Diagnostic<()> = err.into();
-
-        codespan_reporting::term::emit(&mut writer, &config, &file, &diagnostic);
-
-        std::process::exit(1);
-    }
-
-    pub fn resolve(&self, name: impl Into<SpanEntry>) -> Option<String> {
-        let reference = name.into();
-        let source = self
-            .global_context
-            .modules
-            .get(&self.module_ref)
-            .unwrap()
-            .source
-            .clone();
-
-        self.global_context
-            .span_ref
-            .borrow()
-            .resolve_ref(reference, source.as_ref())
-            .map(ToString::to_string)
-    }
 }

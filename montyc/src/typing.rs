@@ -150,7 +150,7 @@ impl TypeDescriptor {
     }
 }
 
-use crate::{MontyError, ast::{funcdef::FunctionDef, AstObject}, context::{InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
+use crate::{MontyError, ast::{funcdef::FunctionDef, AstObject}, context::{resolver::InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;
