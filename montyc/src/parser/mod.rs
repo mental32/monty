@@ -18,7 +18,7 @@ use token::PyToken;
 
 // -- Parser
 
-pub(crate) type Span = Range<usize>;
+pub type Span = Range<usize>;
 
 pub(crate) type Token = (PyToken, Span);
 

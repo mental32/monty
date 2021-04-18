@@ -108,3 +108,11 @@ pub fn statement<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
 
     alt((small_stmt, compound_stmt))(stream)
 }
+
+
+#[inline]
+pub fn statement_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Statement> {
+    let (stream, Spanned { inner, .. }) = statement(stream)?;
+
+    Ok((stream, inner))
+}

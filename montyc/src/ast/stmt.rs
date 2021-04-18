@@ -1,9 +1,6 @@
 use std::rc::Rc;
 
-use nom::IResult;
-
-use crate::{context::LocalContext, parser::{comb::stmt::statement, token::PyToken, Parseable, ParserT, TokenSlice}, scope::{downcast_ref, LookupTarget}, typing::{LocalTypeId, TypeMap, TypedObject}};
-
+use crate::{parser::comb::stmt::statement_unspanned, prelude::*};
 use super::{
     assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, import::Import,
     retrn::Return, AstObject, Spanned,
@@ -84,12 +81,6 @@ impl TypedObject for Statement {
     }
 }
 
-#[inline]
-pub fn statement_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Statement> {
-    let (stream, Spanned { inner, .. }) = statement(stream)?;
-
-    Ok((stream, inner))
-}
 
 impl Parseable for Statement {
     const PARSER: ParserT<Self> = statement_unspanned;

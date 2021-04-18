@@ -1,15 +1,6 @@
 use std::rc::Rc;
 
-use codespan_reporting::term::termcolor::{Color, ColorSpec, WriteColor};
-use codespan_reporting::{
-    diagnostic::{Diagnostic, Label},
-    files::SimpleFile,
-    term::{termcolor::StandardStream, ColorArg},
-};
-
-use nom::IResult;
-
-use crate::{MontyError, context::LocalContext, func::Function, parser::{comb::return_stmt, Parseable, ParserT, TokenSlice}, scope::{downcast_ref, LookupTarget, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TypeMap, TypedObject}};
+use crate::{parser::comb::return_unspanned, prelude::*, scope::ScopeRoot};
 
 use super::{expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, Spanned};
 
@@ -106,12 +97,6 @@ impl TypedObject for Return {
     }
 }
 
-#[inline]
-pub fn return_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Return> {
-    let (stream, Spanned { inner, .. }) = return_stmt(stream)?;
-
-    Ok((stream, inner))
-}
 
 impl Parseable for Return {
     const PARSER: ParserT<Self> = return_unspanned;

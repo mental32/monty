@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
-use crate::{MontyError, context::LocalContext, scope::{downcast_ref, LookupTarget}, typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject}};
-
+use crate::prelude::*;
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };

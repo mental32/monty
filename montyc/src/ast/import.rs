@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, parser::SpanEntry, scope::LookupTarget, typing::{LocalTypeId, TypedObject}};
-
+use crate::prelude::*;
 use super::{atom::Atom, primary::Primary, AstObject, Spanned};
 
 #[derive(Debug, Clone)]

@@ -1,14 +1,6 @@
 use std::rc::Rc;
 
-use typing::TypedObject;
-
-use crate::{
-    context::LocalContext,
-    parser::{token::PyToken, Parseable, ParserT, SpanEntry},
-    scope::{downcast_ref, LookupTarget, Scope},
-    typing::{self, LocalTypeId, TypeMap},
-    MontyError,
-};
+use crate::prelude::*;
 
 use super::{assign::Assign, primary::Primary, stmt::Statement, AstObject};
 

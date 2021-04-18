@@ -1,12 +1,6 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{
-    context::{LocalContext, ModuleRef},
-    parser::{Parseable, ParserT, Span},
-    scope::LookupTarget,
-    typing::{CompilerError, FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject},
-    MontyError,
-};
+use crate::prelude::*;
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -247,7 +241,7 @@ impl TypedObject for Expr {
                     if *name == ltr.name.unwrap() {
                         if type_map.unify_func(kind.clone(), &ltr) {
                             let ret = match type_map.get(kind.clone()) {
-                                Some(TypeDescriptor::Function(f)) => f.ret,
+                                Some(crate::typing::TypeDescriptor::Function(f)) => f.ret,
                                 _ => todo!(),
                             };
 
@@ -262,7 +256,7 @@ impl TypedObject for Expr {
                     if *name == rtl.name.unwrap() {
                         if type_map.unify_func(kind.clone(), &rtl) {
                             let ret = match type_map.get(kind.clone()) {
-                                Some(TypeDescriptor::Function(f)) => f.ret,
+                                Some(crate::typing::TypeDescriptor::Function(f)) => f.ret,
                                 _ => todo!(),
                             };
 

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{MontyError, context::LocalContext, func::Function, parser::{SpanEntry, token::PyToken}, scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot}, typing::{CompilerError, FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
+use crate::prelude::*;
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
@@ -117,14 +117,14 @@ impl TypedObject for FunctionDef {
             .unwrap()
             .unwrap();
 
-        let func = Rc::new(Function {
+        let func = Rc::new(crate::func::Function {
             scope,
             kind,
             def: Rc::new(this),
         });
 
         let mut scope = func.scope.clone();
-        scope.inner.root = ScopeRoot::Func(func.clone());
+        scope.inner.root = crate::scope::ScopeRoot::Func(func.clone());
 
         let ctx = LocalContext {
             global_context: ctx.global_context,

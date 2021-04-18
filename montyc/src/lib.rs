@@ -67,14 +67,10 @@ pub enum MontyError {
     },
 
     #[error("Failed to infer the type of a value.")]
-    UnknownType {
-        node: Rc<dyn AstObject>,
-    },
+    UnknownType { node: Rc<dyn AstObject> },
 
     #[error("Could not find the definition of this variable.")]
-    UndefinedVariable {
-        node: Rc<dyn AstObject>,
-    },
+    UndefinedVariable { node: Rc<dyn AstObject> },
 
     #[error("Incompatible argument type.")]
     BadArgumentType {
@@ -94,7 +90,10 @@ pub enum MontyError {
 }
 
 impl MontyError {
-    pub fn into_diagnostic(self, ctx: &LocalContext<'_>) -> codespan_reporting::diagnostic::Diagnostic<()> {
+    pub fn into_diagnostic(
+        self,
+        ctx: &LocalContext<'_>,
+    ) -> codespan_reporting::diagnostic::Diagnostic<()> {
         match self {
             MontyError::InferenceFailure => unreachable!(),
 
@@ -102,7 +101,7 @@ impl MontyError {
                 expected,
                 actual,
                 ret_node,
-                def_node
+                def_node,
             } => {
                 let mut labels = vec![];
                 let type_map = ctx.global_context.type_map.borrow();
@@ -159,7 +158,7 @@ impl MontyError {
                         .with_message("But it has been annotated to return this instead."),
                 ]),
 
-            MontyError::UnknownType { node, } => Diagnostic::error()
+            MontyError::UnknownType { node } => Diagnostic::error()
                 .with_message("unable to infer type for value.")
                 .with_labels(vec![Label::primary((), node.span().unwrap())
                     .with_message("annotate this name with a type")]),
@@ -225,7 +224,6 @@ impl MontyError {
     }
 }
 
-
 use structopt::*;
 
 #[derive(Debug, StructOpt)]
@@ -235,4 +233,20 @@ pub struct CompilerOptions {
 
     #[structopt(parse(from_os_str))]
     pub input: Option<std::path::PathBuf>,
+}
+
+pub mod prelude {
+    pub use crate::{
+        ast::AstObject,
+        scope::{LocalScope, OpaqueScope, LookupTarget, Scope},
+        typing::{TypedObject, TypeMap, LocalTypeId},
+        context::{LocalContext, ModuleContext, GlobalContext},
+        ast::*,
+        parser::{Parseable, token::PyToken, SpanEntry, ParserT, Span, SpanRef},
+        scope::downcast_ref,
+        MontyError,
+        typing::CompilerError,
+        context::ModuleRef,
+        typing::FunctionType,
+    };
 }

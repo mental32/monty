@@ -31,6 +31,14 @@ pub mod stmt;
 
 pub use {self::core::*, assign::*, atom::*, expr::*, ifelse::*, primary::*};
 
+
+#[inline]
+pub fn return_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Return> {
+    let (stream, Spanned { inner, .. }) = return_stmt(stream)?;
+
+    Ok((stream, inner))
+}
+
 #[inline]
 pub fn return_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Return>> {
     let (stream, ret) = expect(stream, PyToken::Return)?;
