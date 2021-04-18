@@ -183,7 +183,7 @@ impl TypeMap {
     pub const NEVER: LocalTypeId = LocalTypeId(255);
 
     #[inline]
-    pub fn new() -> Self {
+    pub fn correctly_initialized() -> Self {
         let mut mapping = DashMap::with_capacity(std::mem::variant_count::<BuiltinTypeId>());
 
         mapping.insert(Self::INTEGER, TypeDescriptor::Simple(BuiltinTypeId::Int));
@@ -322,7 +322,7 @@ impl<T> CompilerError for Result<T, MontyError> {
     fn unwrap_or_compiler_error<'b>(self, ctx: &LocalContext<'b>) -> Self::Success {
         match self {
             Ok(t) => t,
-            Err(err) => ctx.error(err),
+            Err(err) => ctx.exit_with_error(err),
         }
     }
 }

@@ -16,15 +16,12 @@ pub struct InternalResolver {
 
 impl InternalResolver {
     pub fn resolve_type(&self, type_id: LocalTypeId) -> Option<String> {
-        let type_map = &self.type_map;
-        let type_desc = type_map.get(type_id)?.value().clone();
-
-        Some(format!("{}", type_desc))
+        Some(format!("{}", self.type_map.get(type_id)?.value()))
     }
 
     pub fn resolve(&self, mref: ModuleRef, name: impl Into<SpanEntry>) -> Option<String> {
         let reference = name.into();
-        let source = self.sources.get(&mref).unwrap().clone();
+        let source = self.sources.get(&mref).expect("module does not exist!").clone();
 
         self.span_ref
             .borrow()

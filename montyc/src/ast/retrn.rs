@@ -31,7 +31,7 @@ impl TypedObject for Return {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        log::trace!("typecheck: {:?}", self);
+        log::trace!("typecheck:return {:?}", self);
 
         let expected = match ctx.scope.root() {
             ScopeRoot::AstObject(object) => {
@@ -85,15 +85,15 @@ impl TypedObject for Return {
                 _ => panic!("{:?}", ctx.scope.root()),
             };
 
-            ctx.error(MontyError::BadReturnType {
+            ctx.exit_with_error(MontyError::BadReturnType {
                 expected,
                 actual,
                 ret_node,
                 def_node,
             })
-        } else {
-            Ok(())
         }
+
+        Ok(())
     }
 }
 

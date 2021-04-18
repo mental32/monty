@@ -67,7 +67,7 @@ impl TypedObject for Atom {
                 let results = ctx.scope.lookup_def(target.clone(), &ctx.global_context);
 
                 if results.is_empty() {
-                    ctx.error(MontyError::UndefinedVariable {
+                    ctx.exit_with_error(MontyError::UndefinedVariable {
                         node: ctx.this.clone().unwrap(),
                     });
                 }
@@ -78,7 +78,7 @@ impl TypedObject for Atom {
                     if let Some(asn) = downcast_ref::<Assign>(top_u.as_ref()) {
                         match asn.value.inner.infer_type(ctx) {
                             Ok(i) => return Ok(i),
-                            Err(err) => ctx.error(err),
+                            Err(err) => ctx.exit_with_error(err),
                         }
                     } else if let Some(atom) =
                         downcast_ref::<Atom>(top.as_ref())
@@ -102,13 +102,13 @@ impl TypedObject for Atom {
                         ctx.this = Some(top.clone());
 
                         match top.infer_type(&ctx) {
-                            Err(err) => ctx.error(err),
+                            Err(err) => ctx.exit_with_error(err),
                             Ok(i) => return Ok(i),
                         }
                     }
                 }
 
-                ctx.error(MontyError::UndefinedVariable {
+                ctx.exit_with_error(MontyError::UndefinedVariable {
                     node: ctx.this.clone().unwrap(),
                 });
             }

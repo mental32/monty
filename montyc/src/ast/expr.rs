@@ -262,7 +262,7 @@ impl TypedObject for Expr {
                     }
                 }
 
-                ctx.error(MontyError::BadBinaryOp {
+                ctx.exit_with_error(MontyError::BadBinaryOp {
                     span: ctx.this.as_ref().unwrap().span().unwrap(),
                     left: left_ty,
                     right: right_ty,

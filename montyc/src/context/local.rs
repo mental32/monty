@@ -17,7 +17,7 @@ pub struct LocalContext<'a> {
 }
 
 impl<'a> LocalContext<'a> {
-    pub fn error(&self, err: MontyError) -> ! {
+    pub fn exit_with_error(&self, err: MontyError) -> ! {
         let mut writer = codespan_reporting::term::termcolor::StandardStream::stderr(
             codespan_reporting::term::termcolor::ColorChoice::Auto,
         );
@@ -40,22 +40,5 @@ impl<'a> LocalContext<'a> {
         codespan_reporting::term::emit(&mut writer, &config, &file, &diagnostic);
 
         std::process::exit(1);
-    }
-
-    pub fn resolve(&self, name: impl Into<SpanEntry>) -> Option<String> {
-        let reference = name.into();
-        let source = self
-            .global_context
-            .modules
-            .get(&self.module_ref)
-            .unwrap()
-            .source
-            .clone();
-
-        self.global_context
-            .span_ref
-            .borrow()
-            .resolve_ref(reference, source.as_ref())
-            .map(ToString::to_string)
     }
 }

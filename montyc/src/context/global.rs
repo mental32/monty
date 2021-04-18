@@ -197,7 +197,7 @@ impl From<CompilerOptions> for GlobalContext {
 impl Default for GlobalContext {
     fn default() -> Self {
         let span_ref: Rc<RefCell<SpanRef>> = Default::default();
-        let type_map: Rc<TypeMap> = Rc::new(TypeMap::new());
+        let type_map: Rc<TypeMap> = Rc::new(TypeMap::correctly_initialized());
 
         let resolver = Rc::new(InternalResolver {
             span_ref: span_ref.clone(),

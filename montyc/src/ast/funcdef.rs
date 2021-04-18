@@ -20,7 +20,7 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         let ret = match def.returns.as_ref() {
             Some(node) => match node.infer_type(&ctx) {
                 Ok(tid) => tid,
-                Err(_) => ctx.error(MontyError::UndefinedVariable {
+                Err(_) => ctx.exit_with_error(MontyError::UndefinedVariable {
                     node: Rc::new(def.returns.clone().unwrap()),
                 }),
             },
@@ -39,7 +39,7 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
             for (arg_name, arg_ann) in def_args {
                 let type_id = match arg_ann.infer_type(ctx) {
                     Ok(tyid) => tyid,
-                    Err(err) => ctx.error(err),
+                    Err(err) => ctx.exit_with_error(err),
                 };
 
                 args.push(type_id);

@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, rc::Rc};
 
-use crate::{MontyError, ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement, AstObject, Spanned}, context::LocalContext, scope::{downcast_ref, LocalScope, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
+use crate::{ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement}, prelude::*, scope::ScopeRoot, typing::TaggedType};
 
 #[derive(Debug)]
 pub struct Function {
@@ -42,7 +42,7 @@ impl TypedObject for Function {
                 _ => unreachable!(),
             };
 
-            ctx.error(MontyError::MissingReturn {
+            ctx.exit_with_error(MontyError::MissingReturn {
                 expected: TypeMap::NONE_TYPE,
                 actual: self.kind.inner.ret,
                 def_node,

@@ -238,12 +238,11 @@ pub struct CompilerOptions {
 pub mod prelude {
     pub use crate::{
         ast::AstObject,
-        scope::{LocalScope, OpaqueScope, LookupTarget, Scope},
+        scope::{LocalScope, OpaqueScope, LookupTarget, WrappedScope, Scope, downcast_ref},
         typing::{TypedObject, TypeMap, LocalTypeId},
         context::{LocalContext, ModuleContext, GlobalContext},
         ast::*,
         parser::{Parseable, token::PyToken, SpanEntry, ParserT, Span, SpanRef},
-        scope::downcast_ref,
         MontyError,
         typing::CompilerError,
         context::ModuleRef,

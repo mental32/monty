@@ -119,7 +119,7 @@ impl TypedObject for Primary {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        log::trace!("typecheck: {:?}", self);
+        log::trace!("typecheck:primary {:?}", self);
 
         match self {
             Primary::Atomic(at) => at.typecheck(ctx),
@@ -168,7 +168,7 @@ impl TypedObject for Primary {
 
                     let def_node = Rc::new(def_node);
 
-                    ctx.error(MontyError::BadArgumentType {
+                    ctx.exit_with_error(MontyError::BadArgumentType {
                         expected,
                         actual,
                         arg_node: args.as_ref().unwrap().get(idx).cloned().unwrap(),
