@@ -22,9 +22,9 @@ impl TypedObject for Function {
         for scoped_object in self.scope.iter() {
             let node = scoped_object.object.clone();
 
-            if downcast_ref::<Spanned<Return>>(node.as_ref()).is_some()
-                || downcast_ref::<Return>(node.as_ref()).is_some()
-                || downcast_ref::<Spanned<Statement>>(node.as_ref())
+            if node.as_ref().downcast_ref::<Spanned<Return>>().is_some()
+                || node.as_ref().downcast_ref::<Return>().is_some()
+                || node.as_ref().downcast_ref::<Spanned<Statement>>()
                     .map(|Spanned { inner, .. }| matches!(inner, Statement::Ret(_)))
                     .unwrap_or(false)
             {

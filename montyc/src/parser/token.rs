@@ -179,14 +179,15 @@ pub enum PyToken {
     #[regex(r"\t| ")]
     Whitespace,
 
-    #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]
-    Ident(SpanEntry),
-
     #[regex(r"\d+", |lex| str::parse::<isize>(lex.slice()).unwrap())]
     // TODO(mental): try avoid panicking here...
     Digits(isize),
 
     // -- SpanRef tokens
+
+    #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]  // the inner identifier is lazily generated.
+    Ident(SpanEntry),
+
     StringRef(SpanEntry),
 
     CommentRef(SpanEntry),

@@ -85,7 +85,7 @@ impl Scope for OpaqueScope {
 
         let extra = match &self.root {
             ScopeRoot::AstObject(o) => {
-                if let Some(f) = downcast_ref::<FunctionDef>(o.as_ref()) {
+                if let Some(f) = o.as_ref().downcast_ref::<FunctionDef>() {
                     f.args.clone().unwrap_or_default()
                 } else {
                     vec![]
@@ -135,7 +135,7 @@ impl Scope for OpaqueScope {
                         ScopeRoot::AstObject(obj) => Some(obj),
                         _ => None,
                     })
-                    .and_then(|obj| if downcast_ref::<ClassDef>(obj.as_ref()).is_some() { Some(obj) } else { None })
+                    .and_then(|obj| if obj.as_ref().downcast_ref::<ClassDef>().is_some() { Some(obj) } else { None })
                     .unwrap();
 
                 if local_mref != mref {

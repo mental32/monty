@@ -19,7 +19,7 @@ use crate::{CompilerOptions, MontyError, ast::{
         primary::Primary,
         stmt::Statement,
         AstObject, Spanned,
-    }, class::Class, func::Function, parser::{Parseable, SpanEntry, SpanRef}, scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, ScopedObject}, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap}};
+    }, class::Class, func::Function, parser::{Parseable, SpanEntry, SpanRef}, scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, ScopedObject}, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap}};
 
 use super::{ModuleRef, local::LocalContext, module::ModuleContext, resolver::InternalResolver};
 
@@ -101,7 +101,7 @@ impl From<CompilerOptions> for GlobalContext {
                 let object_unspanned = item.object.unspanned();
 
                 // associate opaque class definitions of builtin types...
-                if let Some(Statement::Class(class_def)) = downcast_ref(object_unspanned.as_ref()) {
+                if let Some(Statement::Class(class_def)) = object_unspanned.as_ref().downcast_ref() {
                     let dec_name = match class_def.decorator_list.as_slice() {
                         [] => continue,
                         [dec] => dec.reveal(&module_context.source).unwrap(),
@@ -173,7 +173,7 @@ impl From<CompilerOptions> for GlobalContext {
                 }
                 // run regular import machinery...
                 else if let Some(Statement::Import(import)) =
-                    downcast_ref(object_unspanned.as_ref())
+                    (object_unspanned.as_ref()).downcast_ref()
                 {
                     let this = Rc::new(import.clone());
 
@@ -239,7 +239,7 @@ impl GlobalContext {
                     ScopeRoot::AstObject(obj) => Some(obj),
                     _ => None,
                 })
-                .and_then(|obj| downcast_ref::<ClassDef>(obj.as_ref()))
+                .and_then(|obj| obj.as_ref().downcast_ref::<ClassDef>())
                 .and_then(|class_def| class_def.name());
 
             if t_mref == mref && t.is_named(object_name) {
@@ -267,7 +267,7 @@ impl GlobalContext {
         for obj in mctx.scope.iter() {
             let o = obj.object.unspanned();
 
-            if let Some(Statement::Class(class_def)) = downcast_ref(o.as_ref()) {
+            if let Some(Statement::Class(class_def)) = (o.as_ref()).downcast_ref() {
                 if class_def.is_named(name) {
                     let klass = obj.with_context(self, |local, this| {
                         Class::from((&local, class_def))

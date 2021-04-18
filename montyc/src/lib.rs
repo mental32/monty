@@ -37,11 +37,11 @@ pub type Result<T> = std::result::Result<T, MontyError>;
 macro_rules! isinstance {
     ($e:expr, $t:ident) => {{
         if let Some($crate::ast::Spanned { inner, .. }) =
-            $crate::scope::downcast_ref::<$crate::ast::Spanned<$t>>($e)
+            $crate::scope::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
         {
             Some(inner)
         } else {
-            $crate::scope::downcast_ref::<$t>($e)
+            $crate::scope::_downcast_ref::<$t>($e)
         }
     }};
 }
@@ -238,7 +238,7 @@ pub struct CompilerOptions {
 pub mod prelude {
     pub use crate::{
         ast::AstObject,
-        scope::{LocalScope, OpaqueScope, LookupTarget, WrappedScope, Scope, downcast_ref},
+        scope::{LocalScope, OpaqueScope, LookupTarget, WrappedScope, Scope},
         typing::{TypedObject, TypeMap, LocalTypeId},
         context::{LocalContext, ModuleContext, GlobalContext},
         ast::*,

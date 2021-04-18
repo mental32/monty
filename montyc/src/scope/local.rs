@@ -18,7 +18,7 @@ where
     T: AstObject,
 {
     fn from(scope: OpaqueScope) -> Self {
-        assert_matches!(&scope.root, ScopeRoot::AstObject(o) if downcast_ref::<T>(o.as_ref()).is_some());
+        assert_matches!(&scope.root, ScopeRoot::AstObject(o) if o.as_ref().downcast_ref::<T>().is_some());
 
         Self {
             inner: scope,

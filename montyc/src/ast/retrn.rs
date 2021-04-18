@@ -35,7 +35,7 @@ impl TypedObject for Return {
 
         let expected = match ctx.scope.root() {
             ScopeRoot::AstObject(object) => {
-                match downcast_ref::<FunctionDef>(object.unspanned().as_ref()) {
+                match object.unspanned().as_ref().downcast_ref::<FunctionDef>() {
                     Some(func) => {
                         let kind: FunctionType = (func, ctx).into();
                         kind.ret
@@ -60,7 +60,7 @@ impl TypedObject for Return {
             let ret_node = ctx
                 .this
                 .as_ref()
-                .and_then(|n| downcast_ref::<Spanned<Statement>>(n.as_ref()).cloned())
+                .and_then(|n| n.as_ref().downcast_ref::<Spanned<Statement>>().cloned())
                 .and_then(|n| {
                     Some(n.map(|st| match st {
                         Statement::Ret(r) => r,
@@ -73,7 +73,7 @@ impl TypedObject for Return {
             let def_node = match ctx.scope.root() {
                 ScopeRoot::Func(f) => f.def.clone(),
                 ScopeRoot::AstObject(object) => {
-                    let fndef = downcast_ref::<FunctionDef>(object.as_ref()).unwrap();
+                    let fndef = object.as_ref().downcast_ref::<FunctionDef>().unwrap();
                     let fndef = Spanned {
                         span: fndef.name.span.start
                             ..fndef.returns.span().unwrap_or(fndef.name.span.clone()).end,

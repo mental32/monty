@@ -75,15 +75,15 @@ impl TypedObject for Atom {
                 for top in results {
                     let top_u = top.unspanned();
 
-                    if let Some(asn) = downcast_ref::<Assign>(top_u.as_ref()) {
+                    if let Some(asn) = top_u.as_ref().downcast_ref::<Assign>() {
                         match asn.value.inner.infer_type(ctx) {
                             Ok(i) => return Ok(i),
                             Err(err) => ctx.exit_with_error(err),
                         }
                     } else if let Some(atom) =
-                        downcast_ref::<Atom>(top.as_ref())
+                        top.as_ref().downcast_ref::<Atom>()
                             .cloned()
-                            .or(downcast_ref::<Primary>(top.as_ref()).and_then(|p| {
+                            .or(top.as_ref().downcast_ref::<Primary>().and_then(|p| {
                                 if let Primary::Atomic(atom) = p {
                                     Some(atom.inner.clone())
                                 } else {

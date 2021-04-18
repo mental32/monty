@@ -46,11 +46,9 @@ fn collect_subnodes(object: &dyn AstObject) -> Vec<Rc<dyn AstObject>> {
     stream.for_each(|object| {
         nodes.push(object.clone());
 
-        if let Some(Statement::FnDef(_)) = downcast_ref::<Statement>(object.unspanned().as_ref()) {
+        if let Some(Statement::FnDef(_)) = object.unspanned().as_ref().downcast_ref() {
             return;
-        } else if let Some(Statement::Import(_)) =
-            downcast_ref::<Statement>(object.unspanned().as_ref())
-        {
+        } else if let Some(Statement::Import(_)) = object.unspanned().as_ref().downcast_ref() {
             return;
         }
 
@@ -62,17 +60,25 @@ fn collect_subnodes(object: &dyn AstObject) -> Vec<Rc<dyn AstObject>> {
     nodes
 }
 
-pub fn downcast_ref<T: Any>(o: &dyn AstObject) -> Option<&T> {
-    if o.type_id() == TypeId::of::<T>() {
-        // SAFETY: This is the exact same logic present in
-        //         `std::any::Any::downcast_ref` minus the
-        //         'static lifetime bound on the trait.
-        //
-        //         If this is unsound then that one probably is too.
-        unsafe { Some(&*(o as *const _ as *const T)) }
-    } else {
-        None
+impl dyn AstObject {
+    pub fn downcast_ref<'a, T: Any>(&'a self) -> Option<&'a T> {
+        if self.type_id() == TypeId::of::<T>() {
+            // SAFETY: This is the exact same logic present in
+            //         `std::any::Any::downcast_ref` minus the
+            //         'static lifetime bound on the trait.
+            //
+            //         If this is unsound then that one probably is too.
+            unsafe { Some(&*(self as *const _ as *const T)) }
+        } else {
+            None
+        }
     }
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub(in crate) fn _downcast_ref<T: Any>(o: &dyn AstObject) -> Option<&T> {
+    o.downcast_ref::<T>()
 }
 
 // -- enum ScopeRoot
@@ -118,7 +124,7 @@ pub trait Scope: core::fmt::Debug {
         let _ = results.drain_filter(|o| {
             crate::isinstance!(o.as_ref(), Assign).is_some()
                 || crate::isinstance!(o.as_ref(), FunctionDef).is_some()
-                || downcast_ref::<Function>(o.as_ref()).is_some()
+                || o.as_ref().downcast_ref::<Function>().is_some()
                 || crate::isinstance!(o.as_ref(), ClassDef).is_some()
         });
 

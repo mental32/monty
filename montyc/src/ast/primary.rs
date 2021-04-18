@@ -145,11 +145,11 @@ impl TypedObject for Primary {
 
                         for obj in results {
                             if let Some(f) =
-                                downcast_ref::<Spanned<FunctionDef>>(obj.as_ref())
+                                obj.as_ref().downcast_ref::<Spanned<FunctionDef>>()
                             {
                                 break 'outer f.clone();
                             } else if let Some(Statement::FnDef(f)) =
-                                downcast_ref::<Statement>(obj.as_ref())
+                                obj.as_ref().downcast_ref::<Statement>()
                             {
                                 break 'outer Spanned {
                                     span: f.name.span.start

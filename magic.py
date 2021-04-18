@@ -11,7 +11,7 @@ for builtin in TYPES:
     print(f"{builtin.__name__!s}")
 
 for dunder in DUNDERS:
-    print(f"__{dunder}__")
+    print(f"__{dunder}__  # type: ignore")
 
     if dunder != "eq":
-        print(f"__r{dunder}__")
+        print(f"__r{dunder}__  # type: ignore")

@@ -94,13 +94,13 @@ impl TypedObject for FunctionDef {
 
         let this = ctx.this.as_ref().unwrap().unspanned();
 
-        let this = if let Some(f) = downcast_ref::<FunctionDef>(this.as_ref()) {
+        let this = if let Some(f) = this.as_ref().downcast_ref::<FunctionDef>() {
             Spanned {
                 span: f.name.span().unwrap(),
                 inner: f.clone(),
             }
         } else {
-            match downcast_ref::<Statement>(this.as_ref()) {
+            match this.as_ref().downcast_ref::<Statement>() {
                 Some(Statement::FnDef(f)) => Spanned {
                     span: f.returns.span().unwrap().clone(),
                     inner: f.clone(),
