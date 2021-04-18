@@ -231,6 +231,24 @@ impl TypeMap {
     }
 
     #[inline]
+    pub fn unify_func(&self, func_t: LocalTypeId, mold: &FunctionType) -> bool {
+        let func = self.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
+
+        if (func.inner.name != mold.name)
+            || (func.inner.args.len() != mold.args.len())
+            || (mold.ret != Self::UNKNOWN && mold.ret != func.inner.ret)
+        {
+            return false;
+        }
+
+        func.inner
+            .args
+            .iter()
+            .zip(mold.args.iter())
+            .all(|(l, r)| (*l == Self::UNKNOWN) || (l == r))
+    }
+
+    #[inline]
     pub fn insert_tagged<T>(&mut self, t: T) -> TaggedType<T>
     where
         T: Into<TypeDescriptor> + Clone,
@@ -284,6 +302,17 @@ impl CompilerError for Option<LocalTypeId> {
             None => {
                 todo!();
             }
+        }
+    }
+}
+
+impl<'a, T> CompilerError for Result<T, MontyError<'a>> {
+    type Success = T;
+
+    fn unwrap_or_compiler_error<'b>(self, ctx: &LocalContext<'b>) -> Self::Success {
+        match self {
+            Ok(t) => t,
+            Err(err) => ctx.error(err),
         }
     }
 }

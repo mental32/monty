@@ -56,6 +56,16 @@ impl InternalResolver {
 
         Some(format!("{}", type_desc))
     }
+
+    pub fn resolve(&self, mref: ModuleRef, name: impl Into<SpanEntry>) -> Option<String> {
+        let reference = name.into();
+        let source = self.sources.borrow().get(&mref).clone().unwrap().clone();
+
+        self.span_ref
+            .borrow()
+            .resolve_ref(reference, source.as_ref())
+            .map(ToString::to_string)
+    }
 }
 
 /// Used to track global compilation state per-compilation.

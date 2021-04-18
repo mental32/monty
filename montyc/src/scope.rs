@@ -264,6 +264,8 @@ impl Scope for OpaqueScope {
         for object in self.nodes.iter().map(|o| o.unspanned()) {
             let item = object.as_ref();
 
+            log::trace!("lookup: immediate -> {:?}", item);
+
             if item.is_named(target) {
                 results.push(object.clone());
             }
@@ -287,6 +289,13 @@ impl Scope for OpaqueScope {
 
             for (type_id, (object, mref)) in global_context.builtins.iter() {
                 let item = object.as_ref();
+                let object = Some(object.scope.root())
+                    .and_then(|root| match root {
+                        ScopeRoot::AstObject(obj) => Some(obj),
+                        _ => None,
+                    })
+                    .and_then(|obj| if downcast_ref::<ClassDef>(obj.as_ref()).is_some() { Some(obj) } else { None })
+                    .unwrap();
 
                 if local_mref != mref {
                     let mctx = global_context.modules.get(mref).unwrap();
@@ -358,6 +367,20 @@ impl Scope for OpaqueScope {
 pub struct LocalScope<T> {
     pub _t: PhantomData<Rc<T>>,
     pub inner: OpaqueScope,
+}
+
+impl<T> From<OpaqueScope> for LocalScope<T>
+where
+    T: AstObject,
+{
+    fn from(scope: OpaqueScope) -> Self {
+        assert_matches!(&scope.root, ScopeRoot::AstObject(o) if downcast_ref::<T>(o.as_ref()).is_some());
+
+        Self {
+            inner: scope,
+            _t: PhantomData,
+        }
+    }
 }
 
 impl<T> From<T> for LocalScope<T>

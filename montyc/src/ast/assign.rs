@@ -50,7 +50,12 @@ impl TypedObject for Assign {
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
         let expected = self.kind.as_ref().and_then(|at| at.infer_type(&ctx));
-        let actual = self.value.infer_type(&ctx);
+
+        let actual = {
+            let mut ctx = ctx.clone();
+            ctx.this = Some((Rc::new(self.value.clone()) as Rc<dyn AstObject>));
+            self.value.infer_type(&ctx)
+        };
 
         if let Some(exptected) = expected {
             if expected != actual {

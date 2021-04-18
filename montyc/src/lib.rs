@@ -1,17 +1,24 @@
-#![feature(variant_count, bool_to_option, drain_filter)]
+#![feature(
+    variant_count,
+    bool_to_option,
+    drain_filter,
+    assert_matches,
+    type_ascription
+)]
 #![allow(warnings)]
 
 use std::rc::Rc;
 
 use ast::{
-    expr::Expr,
+    expr::{Expr, InfixOp},
     funcdef::{self, FunctionDef},
     retrn::Return,
     AstObject, Spanned,
 };
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use context::LocalContext;
-use typing::LocalTypeId;
+use parser::Span;
+use typing::{LocalTypeId, TypedObject};
 
 pub mod ast;
 pub mod class;
@@ -77,7 +84,15 @@ pub enum MontyError<'a> {
         arg_node: Rc<Spanned<Expr>>,
         def_node: Rc<Spanned<FunctionDef>>,
         ctx: &'a LocalContext<'a>,
-        // def_node_file: ()  TODO: cross-file func calls.
+    },
+
+    #[error("foo")]
+    BadBinaryOp {
+        span: Span,
+        left: LocalTypeId,
+        right: LocalTypeId,
+        op: InfixOp,
+        ctx: &'a LocalContext<'a>,
     },
 }
 
@@ -92,6 +107,7 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                 ctx,
             } => {
                 let mut labels = vec![];
+                let type_map = ctx.global_context.type_map.borrow();
 
                 let ret_span = ret_node.span().unwrap();
 
@@ -113,14 +129,15 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                         .unwrap_or(def_node.span.clone()),
                 )
                 .with_message(if def_node.inner.returns.is_some() {
-                    "function defined here supposedly returning a value of this type."
+                    format!(
+                        "function defined here supposedly returning a value of {}.",
+                        type_map.get(expected).unwrap()
+                    )
                 } else {
-                    "function defined here is expected to return `None`"
+                    "function defined here is expected to return `None`".to_string()
                 });
 
                 labels.push(def);
-
-                let type_map = ctx.global_context.type_map.borrow();
 
                 Diagnostic::error()
                     .with_message("incomaptible return type for function.")
@@ -185,6 +202,30 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                         ctx.global_context.resolver.resolve_type(expected).unwrap(),
                     )),
                 ]),
+
+            MontyError::BadBinaryOp {
+                span,
+                left,
+                right,
+                op,
+                ctx,
+            } => {
+                let ty = ctx.global_context.type_map.borrow();
+
+                let left = ty.get(left).unwrap();
+                let right = ty.get(right).unwrap();
+
+                Diagnostic::error()
+                    .with_message("Unsupported binary expression.")
+                    .with_labels(vec![Label::primary((), span.clone()).with_message(
+                        format!(
+                            "Operator {:?} is not supported for types \"{}\" and \"{}\"",
+                            op.sigil(),
+                            left,
+                            right
+                        ),
+                    )])
+            }
         }
     }
 }

@@ -86,6 +86,20 @@ mod span_ref {
 
             source.get(range)
         }
+
+        #[inline]
+        pub fn find(&self, needle: &str, haystack: &str) -> SpanEntry {
+            let mut it = self.seq.iter().cloned().enumerate();
+            let _ = it.next()?;
+
+            for (idx, range) in it {
+                if haystack.get(range).map(|s| s == needle).unwrap_or(false) {
+                    return NonZeroUsize::new(idx + 1);
+                }
+            }
+
+            None
+        }
     }
 }
 
