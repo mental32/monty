@@ -81,6 +81,8 @@ where
     }
 }
 
+// -- trait AstObject
+
 pub trait AstObject: fmt::Debug + TypedObject + LookupTarget + Any {
     fn span(&self) -> Option<Span>;
 

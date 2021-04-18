@@ -284,7 +284,7 @@ impl GlobalContext {
     fn preload_module_literal(&mut self, source: &str, path: &str, f: impl Fn(&mut Self, ModuleRef)) {
         debug!("Preloading module ({:?})", path);
 
-        let module = self.parse_and_register_module(source, path);
+        let module = self.parse_and_register_module(source.to_string().into_boxed_str(), path);
 
         f(self, module);
 
@@ -297,7 +297,7 @@ impl GlobalContext {
         debug!("Preloading module ({:?})", shorten(path));
 
         let source = match std::fs::read_to_string(&path) {
-            Ok(st) => st,
+            Ok(st) => st.into_boxed_str(),
             Err(why) => {
                 error!("Failed to read module contents! why={:?}", why);
                 unreachable!();
@@ -406,7 +406,7 @@ impl GlobalContext {
             trace!("Importing module ({:?})", shorten(&path));
 
             let source = match std::fs::read_to_string(&path) {
-                Ok(st) => st,
+                Ok(st) => st.into_boxed_str(),
                 Err(why) => {
                     error!("Failed to read module contents! why={:?}", why);
                     unreachable!();
@@ -419,22 +419,21 @@ impl GlobalContext {
         Some(modules)
     }
 
-    fn parse<T, S>(&self, s: S) -> T
+    fn parse<T>(&self, s: Rc<str>) -> T
     where
-        S: AsRef<str>,
         T: Parseable + Clone,
     {
         let Spanned { inner, .. }: Spanned<T> = (s, self.span_ref.clone()).into();
         inner
     }
 
-    fn parse_and_register_module<S, P>(&mut self, source: S, path: P) -> ModuleRef
+    fn parse_and_register_module<P>(&mut self, input: Box<str>, path: P) -> ModuleRef
     where
-        S: AsRef<str>,
         P: Into<PathBuf>,
     {
-        let module: Module = self.parse(&source);
-        let source = source.as_ref().to_string();
+        let source: Rc<_> = input.into();
+        let module: Module = self.parse(Rc::clone(&source));
+
         let path = path.into();
 
         self.register_module(module, path, source)
@@ -463,11 +462,9 @@ impl GlobalContext {
         })
     }
 
-    fn register_module(&mut self, module: Module, path: PathBuf, source: String) -> ModuleRef {
+    fn register_module(&mut self, module: Module, path: PathBuf, source: Rc<str>) -> ModuleRef {
         let module = Rc::new(module);
         let key = ModuleRef::from(path.clone());
-
-        let source: Rc<str> = source.into_boxed_str().into();
 
         let mut scope = OpaqueScope::from(module.clone() as Rc<dyn AstObject>);
         let _ = scope.module_ref.replace(key.clone());

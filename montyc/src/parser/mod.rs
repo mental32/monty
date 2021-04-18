@@ -6,7 +6,7 @@ use logos::Logos;
 use nom::IResult;
 use regex::Regex;
 
-use crate::ast::{AstObject, Spanned};
+use crate::{ast::{AstObject, Spanned}, class::Class};
 
 pub mod comb;
 pub mod token;
@@ -24,36 +24,23 @@ pub(crate) type Token = (PyToken, Span);
 
 pub(crate) type TokenSlice<'a> = &'a [Token];
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Parser {
-    source: String,
+    source: Rc<str>,
     span_ref: Rc<RefCell<SpanRef>>,
 }
 
-impl<S> From<(S, Rc<RefCell<SpanRef>>)> for Parser
-where
-    S: ToString,
+impl From<(Rc<str>, Rc<RefCell<SpanRef>>)> for Parser
 {
-    fn from((source, span_ref): (S, Rc<RefCell<SpanRef>>)) -> Self {
+    fn from((source, span_ref): (Rc<str>, Rc<RefCell<SpanRef>>)) -> Self {
         Self {
-            source: source.to_string(),
+            source,
             span_ref,
         }
     }
 }
 
 impl Parser {
-    #[inline]
-    pub fn new<I>(input: I) -> Self
-    where
-        I: ToString,
-    {
-        Self {
-            source: input.to_string(),
-            span_ref: Default::default(),
-        }
-    }
-
     #[inline]
     pub fn resolve_ref(&self, reference: Option<NonZeroUsize>) -> Option<&str> {
         let span_ref = self.span_ref.borrow();
@@ -170,14 +157,14 @@ impl Parser {
     }
 }
 
-pub fn parse<P, R>(source: &str, func: P, span_ref: Option<Rc<RefCell<SpanRef>>>) -> R
+pub fn parse<P, R>(source: Rc<str>, func: P, span_ref: Option<Rc<RefCell<SpanRef>>>) -> R
 where
     P: for<'a> Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, R>,
     R: AstObject,
 {
     let parser = match span_ref {
         Some(span_ref) => Parser::from((source, span_ref)),
-        None => Parser::new(source),
+        None => Parser { source, span_ref: Default::default() },
     };
 
     let seq = parser.token_sequence();
@@ -194,32 +181,14 @@ pub trait Parseable: AstObject {
     const PARSER: ParserT<Self>;
 }
 
-impl<R> From<&str> for Spanned<R>
-where
-    R: Parseable + Clone,
-{
-    fn from(st: &str) -> Self {
-        let r = parse(st, R::PARSER, Default::default());
+impl<R> From<(Rc<str>, Rc<RefCell<SpanRef>>)> for Spanned<R> where R: Parseable + Clone {
+    fn from((st, sr): (Rc<str>, Rc<RefCell<SpanRef>>)) -> Self {
+        let output = parse(st.clone(), R::PARSER, Some(sr));
 
         Spanned {
             span: 0..st.len(),
-            inner: r,
+            inner: output,
         }
     }
 }
 
-impl<R, S> From<(S, Rc<RefCell<SpanRef>>)> for Spanned<R>
-where
-    R: Parseable + Clone,
-    S: AsRef<str>,
-{
-    fn from((s, sr): (S, Rc<RefCell<SpanRef>>)) -> Self {
-        let st = s.as_ref();
-        let r = parse(st, R::PARSER, Some(sr));
-
-        Spanned {
-            span: 0..st.len(),
-            inner: r,
-        }
-    }
-}

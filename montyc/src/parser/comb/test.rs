@@ -15,7 +15,11 @@ where
     let mut gathered = vec![];
 
     for string in st.into_iter() {
-        let parser = Parser::new(string);
+        let parser = Parser {
+            source: string.to_string().into_boxed_str().into(),
+            span_ref: Default::default(),
+        };
+
         let stream = parser
             .token_stream()
             .map(Result::unwrap)
