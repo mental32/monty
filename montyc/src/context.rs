@@ -7,11 +7,11 @@ use std::{
     rc::Rc,
 };
 
+use class::ClassDef;
 use codespan_reporting::diagnostic::Diagnostic;
 use log::*;
 
-use crate::{
-    ast::{
+use crate::{CompilerOptions, MontyError, ast::{
         atom::Atom,
         class,
         import::{Import, ImportDecl},
@@ -19,13 +19,7 @@ use crate::{
         primary::Primary,
         stmt::Statement,
         AstObject, Spanned,
-    },
-    func::Function,
-    parser::{Parseable, SpanEntry, SpanRef},
-    scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopedObject},
-    typing::{LocalTypeId, TypeMap},
-    CompilerOptions, MontyError,
-};
+    }, class::Class, func::Function, parser::{Parseable, SpanEntry, SpanRef}, scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, ScopedObject}, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap}};
 
 fn shorten(path: &Path) -> String {
     let mut c = path
@@ -40,7 +34,7 @@ fn shorten(path: &Path) -> String {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::From)]
-pub struct ModuleRef(PathBuf);
+pub struct ModuleRef(pub PathBuf);
 
 impl ModuleRef {
     pub fn into_pathbuf(&self) -> PathBuf {
@@ -71,10 +65,12 @@ pub struct GlobalContext {
     pub functions: Vec<Function>,
     pub span_ref: Rc<RefCell<SpanRef>>,
     pub type_map: Rc<RefCell<TypeMap>>,
-    pub builtins: HashMap<LocalTypeId, (Rc<dyn AstObject>, ModuleRef)>,
+    pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,
     pub libstd: PathBuf,
     pub resolver: Rc<InternalResolver>,
 }
+
+const MAGICAL_NAMES: &str = include_str!("magical_names.py");
 
 impl From<CompilerOptions> for GlobalContext {
     fn from(opts: CompilerOptions) -> Self {
@@ -102,6 +98,13 @@ impl From<CompilerOptions> for GlobalContext {
         //       have a `ModuleContext` that can represent magical builtin modules like `__monty`.
         //
         // ctx.modules.insert(ModuleRef("__monty".into()), SPECIAL_MONTY_MODULE);
+
+        // HACK: Synthesize a module so that our `SpanRef` string/ident/comment interner is aware of certain builtin
+        //       method names this is necessary when resolving binary expressions using builtin types (since they have)
+        //       no module, hence "builin", the name resolution logic fails.
+        ctx.preload_module_literal(MAGICAL_NAMES, "__monty:magical_names", |ctx, mref| {
+            // panic!("{:#?}", ctx);
+        });
 
         ctx.preload_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.
@@ -135,21 +138,43 @@ impl From<CompilerOptions> for GlobalContext {
 
                     let klass_name = class_def.name.reveal(&module_context.source).unwrap();
 
-                    match klass_name {
-                        "int" => ctx
-                            .builtins
-                            .insert(TypeMap::INTEGER, (object_original, mref.clone())),
-                        "float" => ctx
-                            .builtins
-                            .insert(TypeMap::FLOAT, (object_original, mref.clone())),
-                        "str" => ctx
-                            .builtins
-                            .insert(TypeMap::STRING, (object_original, mref.clone())),
-                        "bool" => ctx
-                            .builtins
-                            .insert(TypeMap::BOOL, (object_original, mref.clone())),
+                    let type_id = match klass_name {
+                        "int" => TypeMap::INTEGER,
+                        "float" => TypeMap::FLOAT,
+                        "str" => TypeMap::STRING,
+                        "bool" => TypeMap::BOOL,
                         st => panic!("unknown builtin {:?}", st),
                     };
+
+                    let mut klass: Class =
+                        item.with_context(ctx, |local, _| (&local, class_def).into());
+
+                    let props = match type_id {
+                        TypeMap::INTEGER => {
+                            let __add__ = ctx.span_ref.borrow().find("__add__", MAGICAL_NAMES);
+                            let int = ctx.span_ref.borrow().find("int", MAGICAL_NAMES);
+
+                            let int_add_method = ctx.type_map.borrow_mut().insert(TypeDescriptor::Function(FunctionType {
+                                reciever: Some(TypeMap::INTEGER),
+                                name: __add__.clone(),
+                                args: vec![TypeMap::INTEGER],
+                                ret: TypeMap::INTEGER,
+                                decl: None,
+                                resolver: ctx.resolver.clone(),
+                                module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
+                            }));
+
+                            Some((__add__, int_add_method)).into_iter()
+                        },
+
+                        _ => None.into_iter(),
+                    };
+
+                    for (n, t) in props {
+                        klass.properties.insert(n.unwrap(), t);
+                    }
+
+                    let _ = ctx.builtins.insert(type_id, (Rc::new(klass), mref.clone()));
 
                     trace!(
                         "\tAssociated builtin with class definition! {:?}",
@@ -204,7 +229,7 @@ impl Default for GlobalContext {
 
 impl GlobalContext {
     pub fn is_builtin(&self, t: &dyn AstObject, t_mref: &ModuleRef) -> Option<LocalTypeId> {
-        log::trace!("is_builtin: checking if T is a builtin ({:?})", t.name());
+        log::trace!("is_builtin: checking if object is a builtin ({:?})", t.name());
 
         let t_mref = t.renamed_properties().unwrap_or(t_mref.clone());
         let t_mref = &t_mref;
@@ -218,14 +243,23 @@ impl GlobalContext {
             .unwrap();
 
         for (type_id, (object, mref)) in self.builtins.iter() {
-            if t_mref == mref && t.is_named(object.name()) {
+            let object_name = Some(object.scope.root())
+                .as_ref()
+                .and_then(|root| match root {
+                    ScopeRoot::AstObject(obj) => Some(obj),
+                    _ => None,
+                })
+                .and_then(|obj| downcast_ref::<ClassDef>(obj.as_ref()))
+                .and_then(|class_def| class_def.name());
+
+            if t_mref == mref && t.is_named(object_name) {
                 return Some(type_id.clone());
             } else if t_mref != mref {
                 let builtin_mctx = self.modules.get(mref).unwrap();
                 let builtin_st = self
                     .span_ref
                     .borrow()
-                    .resolve_ref(object.name(), builtin_mctx.source.as_ref())
+                    .resolve_ref(object_name, builtin_mctx.source.as_ref())
                     .unwrap();
 
                 if builtin_st == st {
@@ -235,6 +269,36 @@ impl GlobalContext {
         }
 
         None
+    }
+
+    pub fn get_class_from_module(&self, mref: ModuleRef, name: SpanEntry) -> Option<Rc<Class>> {
+        let mctx = self.modules.get(&mref)?;
+
+        for obj in mctx.scope.iter() {
+            let o = obj.object.unspanned();
+
+            if let Some(Statement::Class(class_def)) = downcast_ref(o.as_ref()) {
+                if class_def.is_named(name) {
+                    let klass = obj.with_context(self, |local, this| {
+                        Class::from((&local, class_def))
+                    });
+
+                    return Some(Rc::new(klass))
+                }
+            }
+        }
+
+        None
+    }
+
+    fn preload_module_literal(&mut self, source: &str, path: &str, f: impl Fn(&mut Self, ModuleRef)) {
+        debug!("Preloading module ({:?})", path);
+
+        let module = self.parse_and_register_module(source, path);
+
+        f(self, module);
+
+        debug!("Finished preloading module ({:?})", path);
     }
 
     pub fn preload_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {

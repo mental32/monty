@@ -21,11 +21,12 @@ pub struct TaggedType<T> {
 
 #[derive(Debug, Clone)]
 pub struct FunctionType {
+    pub reciever: Option<LocalTypeId>,
     pub name: SpanEntry,
     pub args: Vec<LocalTypeId>,
     pub ret: LocalTypeId,
     pub decl: Option<Rc<FunctionDef>>,
-
+    // non type related stuff
     pub resolver: Rc<InternalResolver>,
     pub module_ref: ModuleRef,
 }
@@ -96,10 +97,29 @@ impl std::fmt::Display for BuiltinTypeId {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ClassType {
+    pub name: SpanEntry,
+    pub mref: ModuleRef,
+    pub resolver: Rc<InternalResolver>,
+}
+
+impl std::fmt::Display for ClassType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<type object @ name={:?}, module={:?}>",
+            self.resolver.resolve(self.mref.clone(), self.name),
+            self.mref,
+        )
+    }
+}
+
 #[derive(Debug, Clone, derive_more::From)]
 pub enum TypeDescriptor {
     Simple(BuiltinTypeId),
     Function(FunctionType),
+    Class(ClassType),
 }
 
 impl std::fmt::Display for TypeDescriptor {
@@ -107,6 +127,7 @@ impl std::fmt::Display for TypeDescriptor {
         match self {
             TypeDescriptor::Simple(s) => write!(f, "{}", s),
             TypeDescriptor::Function(ft) => write!(f, "{}", ft),
+            TypeDescriptor::Class(k) => write!(f, "{}", k),
         }
     }
 }
@@ -116,6 +137,7 @@ impl TypeDescriptor {
         match self {
             Self::Simple(_) => TypeId::of::<BuiltinTypeId>(),
             Self::Function(_) => TypeId::of::<FunctionType>(),
+            Self::Class(_) => TypeId::of::<ClassType>(),
         }
     }
 
@@ -123,11 +145,12 @@ impl TypeDescriptor {
         match self {
             Self::Simple(s) => s as *const _ as *const (),
             Self::Function(f) => f as *const _ as *const (),
+            Self::Class(c) => c as *const _ as *const (),
         }
     }
 }
 
-use crate::{ast::{AstObject, funcdef::FunctionDef}, context::{InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
+use crate::{MontyError, ast::{funcdef::FunctionDef, AstObject}, context::{InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;

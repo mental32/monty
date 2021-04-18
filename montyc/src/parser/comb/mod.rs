@@ -60,12 +60,9 @@ fn chomp<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Spanned<
         } else if let Ok((s, _)) = expect(stream, PyToken::Newline) {
             stream = s;
             continue;
-        } else if let Ok((s, sr)) = expect_with(stream, |(t, _)| {
-            matches!(
-                t,
-                PyToken::StringRef(_) | PyToken::CommentRef(_) | PyToken::Ident(_)
-            )
-        }) {
+        } else if let Ok((s, sr)) =
+            expect_with(stream, |(t, _)| matches!(t, PyToken::CommentRef(_)))
+        {
             refs.push(sr);
             stream = s;
             continue;
@@ -84,7 +81,6 @@ pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
     let mut body: Vec<_> = head
         .drain(..)
         .map(|tok| {
-
             let a = tok.transparent_with(|_| Atom::from(tok.inner));
             let b = a.transparent_with(|_| Primary::Atomic(a.clone()));
             let c = b.transparent_with(|_| Expr::Primary(b.clone()));
@@ -111,7 +107,6 @@ pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
         let b = a.transparent_with(|_| Primary::Atomic(a.clone()));
         let c = b.transparent_with(|_| Expr::Primary(b.clone()));
         let d = c.map(|c| Statement::Expression(c));
-
 
         Rc::new(d)
     }));

@@ -1,18 +1,12 @@
 use std::rc::Rc;
 
-use crate::{
-    context::LocalContext,
-    func::Function,
-    parser::SpanEntry,
-    scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot},
-    typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject},
-    MontyError,
-};
+use crate::{MontyError, context::LocalContext, func::Function, parser::{SpanEntry, token::PyToken}, scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
+    pub reciever: Option<Spanned<PyToken>>,
     pub name: Spanned<Atom>,
     pub args: Option<Vec<(SpanEntry, Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
@@ -50,7 +44,14 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
             }
         }
 
+        let reciever = if let Some(Spanned { inner: PyToken::Ident(r), .. }) = def.reciever {
+            Atom::Name(r).infer_type(ctx)
+        } else {
+            None
+        };
+
         Self {
+            reciever,
             name,
             args,
             ret,
