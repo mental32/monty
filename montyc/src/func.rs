@@ -1,12 +1,6 @@
 use std::{marker::PhantomData, rc::Rc};
 
-use crate::{
-    ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement, AstObject, Spanned},
-    context::LocalContext,
-    scope::{downcast_ref, LocalScope, Scope, ScopeRoot},
-    typing::{FunctionType, TaggedType, TypeMap, TypedObject},
-    MontyError,
-};
+use crate::{MontyError, ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement, AstObject, Spanned}, context::LocalContext, scope::{downcast_ref, LocalScope, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
 
 #[derive(Debug)]
 pub struct Function {
@@ -16,11 +10,11 @@ pub struct Function {
 }
 
 impl TypedObject for Function {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
-        Some(self.kind.type_id)
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        Ok(self.kind.type_id)
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         log::trace!("typecheck: {}", &self.kind.inner);
 
         let mut implicit_return = true;
@@ -52,8 +46,9 @@ impl TypedObject for Function {
                 expected: TypeMap::NONE_TYPE,
                 actual: self.kind.inner.ret,
                 def_node,
-                ctx: &ctx,
             });
         }
+
+        Ok(())
     }
 }

@@ -51,25 +51,27 @@ impl AstObject for ClassDef {
 }
 
 impl TypedObject for ClassDef {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         let this = ctx.this.as_ref().unwrap();
 
         if let Some(type_id) = ctx
             .global_context
             .is_builtin(this.as_ref(), &ctx.module_ref)
         {
-            return Some(type_id);
+            return Ok(type_id);
         } else {
             todo!();
         }
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         let scope = LocalScope::from(self.clone());
 
         for node in scope.inner.nodes.iter().map(|n| n.unspanned()) {
-            node.typecheck(&ctx)
+            node.typecheck(&ctx)?;
         }
+
+        Ok(())
     }
 }
 

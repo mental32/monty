@@ -10,11 +10,11 @@ pub struct Class {
 }
 
 impl TypedObject for Class {
-    fn infer_type<'a>(&self, ctx: &crate::context::LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &crate::context::LocalContext<'a>) -> crate::Result<LocalTypeId> {
         todo!()
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         todo!()
     }
 }

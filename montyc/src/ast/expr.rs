@@ -4,7 +4,7 @@ use crate::{
     context::{LocalContext, ModuleRef},
     parser::{Parseable, ParserT, Span},
     scope::LookupTarget,
-    typing::{CompilerError, FunctionType, TypeDescriptor, TypeMap, TypedObject},
+    typing::{CompilerError, FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject},
     MontyError,
 };
 
@@ -153,7 +153,7 @@ impl AstObject for Expr {
 }
 
 impl TypedObject for Expr {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
+    fn infer_type(&self, ctx: &LocalContext<'_>) -> crate::Result<LocalTypeId> {
         match self {
             Expr::If {
                 test: _,
@@ -251,7 +251,7 @@ impl TypedObject for Expr {
                                 _ => todo!(),
                             };
 
-                            return Some(ret);
+                            return Ok(ret);
                         }
                     }
                 }
@@ -266,7 +266,7 @@ impl TypedObject for Expr {
                                 _ => todo!(),
                             };
 
-                            return Some(ret);
+                            return Ok(ret);
                         }
                     }
                 }
@@ -276,7 +276,6 @@ impl TypedObject for Expr {
                     left: left_ty,
                     right: right_ty,
                     op: op.clone(),
-                    ctx,
                 });
             }
 
@@ -291,12 +290,17 @@ impl TypedObject for Expr {
         }
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         match self {
-            Expr::If { test, body, orelse } => {}
-            Expr::BinOp { left, op, right } => {}
-            Expr::Unary { op, value } => {}
-            Expr::Named { target, value } => {}
+            Expr::If { test, body, orelse } => todo!(),
+
+            Expr::BinOp { left, op, right } => {
+                let _ = self.infer_type(ctx)?;
+                Ok(())
+            },
+
+            Expr::Unary { op, value } => todo!(),
+            Expr::Named { target, value } => todo!(),
             Expr::Primary(p) => p.typecheck(ctx),
         }
     }

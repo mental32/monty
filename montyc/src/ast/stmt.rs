@@ -2,12 +2,7 @@ use std::rc::Rc;
 
 use nom::IResult;
 
-use crate::{
-    context::LocalContext,
-    parser::{comb::stmt::statement, token::PyToken, Parseable, ParserT, TokenSlice},
-    scope::{downcast_ref, LookupTarget},
-    typing::{TypeMap, TypedObject},
-};
+use crate::{context::LocalContext, parser::{comb::stmt::statement, token::PyToken, Parseable, ParserT, TokenSlice}, scope::{downcast_ref, LookupTarget}, typing::{LocalTypeId, TypeMap, TypedObject}};
 
 use super::{
     assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, import::Import,
@@ -64,7 +59,7 @@ impl AstObject for Statement {
 }
 
 impl TypedObject for Statement {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         match self {
             Statement::Expression(e) => e.infer_type(ctx),
             Statement::FnDef(f) => f.infer_type(ctx),
@@ -72,11 +67,11 @@ impl TypedObject for Statement {
             Statement::Asn(a) => a.infer_type(ctx),
             Statement::Import(i) => i.infer_type(ctx),
             Statement::Class(c) => c.infer_type(ctx),
-            Statement::Pass => Some(TypeMap::NONE_TYPE),
+            Statement::Pass => Ok(TypeMap::NONE_TYPE),
         }
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         match self {
             Statement::Expression(e) => e.typecheck(ctx),
             Statement::FnDef(f) => f.typecheck(ctx),
@@ -84,7 +79,7 @@ impl TypedObject for Statement {
             Statement::Asn(a) => a.typecheck(ctx),
             Statement::Import(i) => i.typecheck(ctx),
             Statement::Class(c) => c.typecheck(ctx),
-            Statement::Pass => {}
+            Statement::Pass => Ok(())
         }
     }
 }

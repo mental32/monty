@@ -1,11 +1,6 @@
 use std::rc::Rc;
 
-use crate::{
-    context::LocalContext,
-    scope::{downcast_ref, LookupTarget},
-    typing::{CompilerError, FunctionType, TypeMap, TypedObject},
-    MontyError,
-};
+use crate::{MontyError, context::LocalContext, scope::{downcast_ref, LookupTarget}, typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject}};
 
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
@@ -106,25 +101,25 @@ impl AstObject for Primary {
 }
 
 impl TypedObject for Primary {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         log::trace!("infer_type: {:?}", self);
 
         match self {
             Primary::Atomic(at) => at.infer_type(ctx),
-            Primary::Subscript { value: _, index: _ } => None,
+            Primary::Subscript { value: _, index: _ } => todo!(),
             Primary::Call { func, args: _ } => {
                 let func_t = func.infer_type(ctx).unwrap_or_compiler_error(ctx);
                 let func_t = ctx.global_context.type_map.borrow().get_tagged::<FunctionType>(func_t).unwrap().unwrap();
 
-                Some(func_t.inner.ret)
+                Ok(func_t.inner.ret)
             },
 
-            Primary::Attribute { left: _, attr: _ } => None,
+            Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!("`await` doesn't exist here."),
         }
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         log::trace!("typecheck: {:?}", self);
 
         match self {
@@ -179,8 +174,9 @@ impl TypedObject for Primary {
                         actual,
                         arg_node: args.as_ref().unwrap().get(idx).cloned().unwrap(),
                         def_node,
-                        ctx,
-                    })
+                    });
+                } else {
+                    Ok(())
                 }
             }
 

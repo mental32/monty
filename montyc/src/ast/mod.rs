@@ -8,12 +8,7 @@ use std::{fmt, sync::Arc};
 use logos::{source, Span};
 use typing::{TypeMap, TypedObject};
 
-use crate::{
-    context::LocalContext,
-    parser::token::PyToken,
-    scope::LookupTarget,
-    typing::{self, LocalTypeId},
-};
+use crate::{MontyError, context::LocalContext, parser::token::PyToken, scope::LookupTarget, typing::{self, LocalTypeId}};
 
 pub mod assign;
 pub mod atom;
@@ -127,11 +122,11 @@ impl LookupTarget for PyToken {
 }
 
 impl TypedObject for PyToken {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         unreachable!()
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         unreachable!()
     }
 }
@@ -159,11 +154,11 @@ impl<T> TypedObject for Spanned<T>
 where
     T: TypedObject + fmt::Debug + AstObject + Clone,
 {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         self.inner.infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         self.inner.typecheck(ctx)
     }
 }
@@ -204,11 +199,11 @@ impl<T> TypedObject for Rc<T>
 where
     T: TypedObject + fmt::Debug,
 {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         self.as_ref().infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         self.as_ref().typecheck(ctx)
     }
 }
@@ -249,11 +244,11 @@ impl<T> TypedObject for Arc<T>
 where
     T: TypedObject + fmt::Debug,
 {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         self.as_ref().infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         self.as_ref().typecheck(ctx)
     }
 }
@@ -294,12 +289,12 @@ impl<T> TypedObject for Option<T>
 where
     T: TypedObject + fmt::Debug,
 {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
-        self.as_ref()?.infer_type(ctx)
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        self.as_ref().ok_or(MontyError::InferenceFailure)?.infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
-        self.as_ref().unwrap().typecheck(ctx)
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+        self.as_ref().ok_or(MontyError::InferenceFailure)?.typecheck(ctx)
     }
 }
 

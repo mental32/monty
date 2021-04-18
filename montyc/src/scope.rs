@@ -35,11 +35,11 @@ pub struct Renamed {
 }
 
 impl TypedObject for Renamed {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         self.inner.infer_type(ctx)
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         self.inner.typecheck(ctx)
     }
 }

@@ -1,11 +1,6 @@
 use std::rc::Rc;
 
-use crate::{
-    context::LocalContext,
-    parser::{Parseable, ParserT},
-    scope::LookupTarget,
-    typing::{TypeMap, TypedObject},
-};
+use crate::{context::LocalContext, parser::{Parseable, ParserT}, scope::LookupTarget, typing::{LocalTypeId, TypeMap, TypedObject}};
 
 use super::{AstObject, ObjectIter, Spanned, atom::Atom, expr::Expr};
 
@@ -44,24 +39,24 @@ impl AstObject for Assign {
 }
 
 impl TypedObject for Assign {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<crate::typing::LocalTypeId> {
-        None  // assignments do not have types, their values do however.
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        Err(crate::MontyError::InferenceFailure)  // assignments do not have types, their values do however.
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
-        let expected = self.kind.as_ref().and_then(|at| at.infer_type(&ctx));
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+        let expected = self.kind.as_ref().ok_or(crate::MontyError::InferenceFailure).and_then(|at| at.infer_type(&ctx))?;
 
         let actual = {
             let mut ctx = ctx.clone();
             ctx.this = Some((Rc::new(self.value.clone()) as Rc<dyn AstObject>));
-            self.value.infer_type(&ctx)
+            self.value.infer_type(&ctx)?
         };
 
-        if let Some(exptected) = expected {
-            if expected != actual {
-                todo!("assignment type error");
-            }
+        if expected != actual {
+            todo!("assignment type error");
         }
+
+        Ok(())
 
     }
 }

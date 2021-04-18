@@ -1,6 +1,6 @@
 use std::io;
 
-use montyc::{context::GlobalContext, CompilerOptions};
+use montyc::{CompilerOptions, context::GlobalContext, typing::CompilerError};
 
 use structopt::StructOpt;
 
@@ -14,7 +14,7 @@ fn main() -> io::Result<()> {
 
     global_context.preload_module(file.unwrap(), |ctx, mref| {
         for (obj, ctx) in ctx.walk(mref.clone()) {
-            obj.typecheck(&ctx);
+            obj.typecheck(&ctx).unwrap_or_compiler_error(&ctx);
         }
     });
 

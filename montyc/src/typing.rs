@@ -153,9 +153,9 @@ impl TypeDescriptor {
 use crate::{MontyError, ast::{funcdef::FunctionDef, AstObject}, context::{resolver::InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
 
 pub trait TypedObject {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId>;
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId>;
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>);
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()>;
 }
 
 #[derive(Debug)]
@@ -306,7 +306,7 @@ impl CompilerError for Option<LocalTypeId> {
     }
 }
 
-impl<'a, T> CompilerError for Result<T, MontyError<'a>> {
+impl<T> CompilerError for Result<T, MontyError> {
     type Success = T;
 
     fn unwrap_or_compiler_error<'b>(self, ctx: &LocalContext<'b>) -> Self::Success {

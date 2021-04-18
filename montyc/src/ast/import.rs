@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{context::LocalContext, parser::SpanEntry, scope::LookupTarget, typing::TypedObject};
+use crate::{context::LocalContext, parser::SpanEntry, scope::LookupTarget, typing::{LocalTypeId, TypedObject}};
 
 use super::{atom::Atom, primary::Primary, AstObject, Spanned};
 
@@ -80,11 +80,13 @@ impl TypedObject for Import {
     fn infer_type<'a>(
         &self,
         ctx: &crate::context::LocalContext<'a>,
-    ) -> Option<crate::typing::LocalTypeId> {
+    ) -> crate::Result<LocalTypeId> {
         todo!()
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {}
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+        Ok(())
+    }
 }
 
 impl LookupTarget for Import {

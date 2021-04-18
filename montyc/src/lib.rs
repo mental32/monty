@@ -30,7 +30,7 @@ pub mod typing;
 
 use thiserror::Error;
 
-pub type Result<'a, T> = std::result::Result<T, MontyError<'a>>;
+pub type Result<T> = std::result::Result<T, MontyError>;
 
 #[macro_use]
 #[macro_export]
@@ -47,14 +47,16 @@ macro_rules! isinstance {
 }
 
 #[derive(Debug, Error)]
-pub enum MontyError<'a> {
+pub enum MontyError {
+    #[error("Failed to infer the type of a value (internal error.)")]
+    InferenceFailure,
+
     #[error("Incompatible return type.")]
     BadReturnType {
         expected: LocalTypeId,
         actual: LocalTypeId,
         ret_node: Rc<Spanned<Return>>,
         def_node: Rc<Spanned<FunctionDef>>,
-        ctx: &'a LocalContext<'a>,
     },
 
     #[error("Incompatible return type due to implicit return.")]
@@ -62,19 +64,16 @@ pub enum MontyError<'a> {
         expected: LocalTypeId,
         actual: LocalTypeId,
         def_node: Rc<Spanned<FunctionDef>>,
-        ctx: &'a LocalContext<'a>,
     },
 
     #[error("Failed to infer the type of a value.")]
     UnknownType {
         node: Rc<dyn AstObject>,
-        ctx: &'a LocalContext<'a>,
     },
 
     #[error("Could not find the definition of this variable.")]
     UndefinedVariable {
         node: Rc<dyn AstObject>,
-        ctx: &'a LocalContext<'a>,
     },
 
     #[error("Incompatible argument type.")]
@@ -83,7 +82,6 @@ pub enum MontyError<'a> {
         actual: LocalTypeId,
         arg_node: Rc<Spanned<Expr>>,
         def_node: Rc<Spanned<FunctionDef>>,
-        ctx: &'a LocalContext<'a>,
     },
 
     #[error("foo")]
@@ -92,19 +90,19 @@ pub enum MontyError<'a> {
         left: LocalTypeId,
         right: LocalTypeId,
         op: InfixOp,
-        ctx: &'a LocalContext<'a>,
     },
 }
 
-impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()> {
-    fn from(err: MontyError) -> Self {
-        match err {
+impl MontyError {
+    pub fn into_diagnostic(self, ctx: &LocalContext<'_>) -> codespan_reporting::diagnostic::Diagnostic<()> {
+        match self {
+            MontyError::InferenceFailure => unreachable!(),
+
             MontyError::BadReturnType {
                 expected,
                 actual,
                 ret_node,
-                def_node,
-                ctx,
+                def_node
             } => {
                 let mut labels = vec![];
                 let type_map = ctx.global_context.type_map.borrow();
@@ -152,7 +150,6 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                 expected,
                 actual,
                 def_node,
-                ctx,
             } => Diagnostic::error()
                 .with_message("missing return for annotated function.")
                 .with_labels(vec![
@@ -162,12 +159,12 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                         .with_message("But it has been annotated to return this instead."),
                 ]),
 
-            MontyError::UnknownType { node, ctx } => Diagnostic::error()
+            MontyError::UnknownType { node, } => Diagnostic::error()
                 .with_message("unable to infer type for value.")
                 .with_labels(vec![Label::primary((), node.span().unwrap())
                     .with_message("annotate this name with a type")]),
 
-            MontyError::UndefinedVariable { node, ctx } => Diagnostic::error()
+            MontyError::UndefinedVariable { node } => Diagnostic::error()
                 .with_message("use of undefined variable.")
                 .with_labels(vec![Label::primary((), node.span().unwrap()).with_message(
                     format!(
@@ -189,7 +186,6 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                 actual,
                 arg_node,
                 def_node,
-                ctx,
             } => Diagnostic::error()
                 .with_message("incompatible argument type in function call.")
                 .with_labels(vec![
@@ -208,7 +204,6 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
                 left,
                 right,
                 op,
-                ctx,
             } => {
                 let ty = ctx.global_context.type_map.borrow();
 
@@ -229,6 +224,7 @@ impl<'a> From<MontyError<'a>> for codespan_reporting::diagnostic::Diagnostic<()>
         }
     }
 }
+
 
 use structopt::*;
 

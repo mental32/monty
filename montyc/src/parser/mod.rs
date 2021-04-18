@@ -5,103 +5,13 @@ use lazy_static::lazy_static;
 use logos::Logos;
 use nom::IResult;
 use regex::Regex;
-use span_ref::SpanType;
 
 use crate::ast::{AstObject, Spanned};
 
 pub mod comb;
 pub mod token;
 
-mod span_ref {
-    use std::{num::NonZeroUsize, ops::Range};
-
-    pub type SpanEntry = Option<NonZeroUsize>;
-
-    // -- SpanRef
-
-    #[derive(Debug)]
-    pub enum SpanType {
-        Comment,
-        String,
-        Ident,
-        Unknown,
-    }
-
-    #[derive(Debug)]
-    pub struct SpanRef {
-        ptr: usize,
-        pub(crate) seq: Vec<Range<usize>>,
-    }
-
-    impl Default for SpanRef {
-        fn default() -> Self {
-            Self {
-                ptr: 1,
-                seq: vec![0..0],
-            }
-        }
-    }
-
-    impl SpanRef {
-        #[inline]
-        pub fn push_noclobber(&mut self, value: Range<usize>, source: &str) -> SpanEntry {
-            let expected = source.get(value.clone()).unwrap();
-
-            for (idx, range) in self.seq.iter().enumerate() {
-                if source
-                    .get(range.clone())
-                    .map(|sl| sl == expected)
-                    .unwrap_or(false)
-                {
-                    return NonZeroUsize::new(idx + 1);
-                }
-            }
-
-            self.ptr += 1;
-            let key = self.ptr;
-            self.seq.push(value);
-
-            NonZeroUsize::new(key)
-        }
-
-        #[inline]
-        pub fn push(&mut self, value: Range<usize>) -> SpanEntry {
-            self.ptr += 1;
-            let key = self.ptr;
-            self.seq.push(value);
-
-            NonZeroUsize::new(key)
-        }
-
-        #[inline]
-        pub fn resolve_ref<'a>(
-            &self,
-            reference: Option<NonZeroUsize>,
-            source: &'a str,
-        ) -> Option<&'a str> {
-            let range = self
-                .seq
-                .get(usize::from(reference?).saturating_sub(1))?
-                .clone();
-
-            source.get(range)
-        }
-
-        #[inline]
-        pub fn find(&self, needle: &str, haystack: &str) -> SpanEntry {
-            let mut it = self.seq.iter().cloned().enumerate();
-            let _ = it.next()?;
-
-            for (idx, range) in it {
-                if haystack.get(range).map(|s| s == needle).unwrap_or(false) {
-                    return NonZeroUsize::new(idx + 1);
-                }
-            }
-
-            None
-        }
-    }
-}
+mod span_ref;
 
 pub use span_ref::{SpanEntry, SpanRef};
 use token::PyToken;
@@ -211,17 +121,16 @@ impl Parser {
                         let ch = slice.chars().nth(0).unwrap();
                         let rest = &lexer.source().get(range.start..).unwrap();
 
-                        let (capture, span_type) = match ch {
+                        let (capture, is_comment) = match ch {
                             '\'' | '"' | 'r' => (
                                 MULTI_DQ_STRING
                                     .find(rest)
                                     .or_else(|| MULTI_SQ_STRING.find(rest))
                                     .or_else(|| SINGLE_SQ_STRING.find(rest))
-                                    .or_else(|| SINGLE_DQ_STRING.find(rest)),
-                                SpanType::String,
+                                    .or_else(|| SINGLE_DQ_STRING.find(rest)), false
                             ),
 
-                            '#' => (COMMENT.find(rest), SpanType::Comment),
+                            '#' => (COMMENT.find(rest), true),
 
                             _ => return Some(Err("fatal[0]: unrecoverable lexing error.")),
                         };
@@ -239,10 +148,10 @@ impl Parser {
                             (n, bump)
                         };
 
-                        token = match span_type {
-                            SpanType::Comment => PyToken::CommentRef(n),
-                            SpanType::String => PyToken::StringRef(n),
-                            _ => unreachable!(),
+                        token = if is_comment {
+                            PyToken::CommentRef(n)
+                        } else {
+                            PyToken::StringRef(n)
                         };
 
                         lexer.bump(offset - 1);

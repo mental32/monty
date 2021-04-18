@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{MontyError, context::LocalContext, func::Function, parser::{SpanEntry, token::PyToken}, scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot}, typing::{FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
+use crate::{MontyError, context::LocalContext, func::Function, parser::{SpanEntry, token::PyToken}, scope::{downcast_ref, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot}, typing::{CompilerError, FunctionType, LocalTypeId, TaggedType, TypeMap, TypedObject}};
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
@@ -19,8 +19,8 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
     fn from((def, ctx): (&'b FunctionDef, &'a LocalContext)) -> Self {
         let ret = match def.returns.as_ref() {
             Some(node) => match node.infer_type(&ctx) {
-                Some(tid) => tid,
-                None => ctx.error(MontyError::UndefinedVariable { node: Rc::new(def.returns.clone().unwrap()), ctx})
+                Ok(tid) => tid,
+                Err(_) => ctx.error(MontyError::UndefinedVariable { node: Rc::new(def.returns.clone().unwrap()) })
             },
             None => TypeMap::NONE_TYPE,
         };
@@ -36,8 +36,8 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         if let Some(def_args) = &def.args {
             for (arg_name, arg_ann) in def_args {
                 let type_id = match arg_ann.infer_type(ctx) {
-                    Some(tyid) => tyid,
-                    None => ctx.error(MontyError::UndefinedVariable { node: arg_ann.clone(), ctx }),
+                    Ok(tyid) => tyid,
+                    Err(err) => ctx.error(err),
                 };
 
                 args.push(type_id);
@@ -45,7 +45,7 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         }
 
         let reciever = if let Some(Spanned { inner: PyToken::Ident(r), .. }) = def.reciever {
-            Atom::Name(r).infer_type(ctx)
+            Some(Atom::Name(r).infer_type(ctx).unwrap_or_compiler_error(ctx))
         } else {
             None
         };
@@ -77,13 +77,13 @@ impl AstObject for FunctionDef {
 }
 
 impl TypedObject for FunctionDef {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         let func_type: FunctionType = (self, ctx).into();
 
-        Some(ctx.global_context.type_map.borrow_mut().insert(func_type))
+        Ok(ctx.global_context.type_map.borrow_mut().insert(func_type))
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         let type_id = self.infer_type(&ctx).unwrap();
 
         let this = ctx.this.as_ref().unwrap().unspanned();

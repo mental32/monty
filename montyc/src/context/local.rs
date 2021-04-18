@@ -35,7 +35,7 @@ impl<'a> LocalContext<'a> {
 
         let file = codespan_reporting::files::SimpleFile::new(file_name, file_source);
 
-        let diagnostic: Diagnostic<()> = err.into();
+        let diagnostic = err.into_diagnostic(self);
 
         codespan_reporting::term::emit(&mut writer, &config, &file, &diagnostic);
 

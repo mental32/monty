@@ -59,92 +59,80 @@ impl AstObject for Atom {
 }
 
 impl TypedObject for Atom {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'_>) -> crate::Result<LocalTypeId> {
         match self {
-            Atom::None => Some(TypeMap::NONE_TYPE),
-            Atom::Ellipsis => Some(TypeMap::ELLIPSIS),
-            Atom::Int(_) => Some(TypeMap::INTEGER),
-            Atom::Str(_) => Some(TypeMap::STRING),
-            Atom::Bool(_) => Some(TypeMap::BOOL),
-            Atom::Float(_) => Some(TypeMap::FLOAT),
-            Atom::Comment(_) => None,
+            Atom::None => Ok(TypeMap::NONE_TYPE),
+            Atom::Ellipsis => Ok(TypeMap::ELLIPSIS),
+            Atom::Int(_) => Ok(TypeMap::INTEGER),
+            Atom::Str(_) => Ok(TypeMap::STRING),
+            Atom::Bool(_) => Ok(TypeMap::BOOL),
+            Atom::Float(_) => Ok(TypeMap::FLOAT),
+            Atom::Comment(_) => todo!(),
             Atom::Name(None) => unreachable!(),
             Atom::Name(target) => {
                 log::trace!("infer_type: performing name lookup on atom {:?}", self);
 
                 let results = ctx.scope.lookup_def(target.clone(), &ctx.global_context);
 
-                match results.as_slice() {
-                    [] => None,
-                    results => {
-                        for top in results {
-                            let top_u = top.unspanned();
+                if results.is_empty() {
+                    ctx.error(MontyError::UndefinedVariable {
+                        node: ctx.this.clone().unwrap(),
+                    });
+                }
 
-                            if let Some(asn) = downcast_ref::<Assign>(top_u.as_ref()) {
-                                return asn.value.inner.infer_type(ctx);
-                            } else if let Some(atom) = downcast_ref::<Atom>(top.as_ref())
-                                .cloned()
-                                .or(downcast_ref::<Primary>(top.as_ref()).and_then(|p| {
-                                    if let Primary::Atomic(atom) = p {
-                                        Some(atom.inner.clone())
-                                    } else {
-                                        None
-                                    }
-                                }))
-                            {
-                                if atom == *self {
-                                    continue;
-                                } else {
-                                    todo!()
-                                }
-                            } else {
-                                log::trace!("infer_type: lookup successfull! top={:?}", top.name());
-                                let mut ctx = ctx.clone();
-                                ctx.this = Some(top.clone());
-                                return top.infer_type(&ctx);
-                            }
+                for top in results {
+                    let top_u = top.unspanned();
+
+                    if let Some(asn) = downcast_ref::<Assign>(top_u.as_ref()) {
+                        match asn.value.inner.infer_type(ctx) {
+                            Ok(i) => return Ok(i),
+                            Err(err) => ctx.error(err),
                         }
+                    } else if let Some(atom) =
+                        downcast_ref::<Atom>(top.as_ref())
+                            .cloned()
+                            .or(downcast_ref::<Primary>(top.as_ref()).and_then(|p| {
+                                if let Primary::Atomic(atom) = p {
+                                    Some(atom.inner.clone())
+                                } else {
+                                    None
+                                }
+                            }))
+                    {
+                        if atom == *self {
+                            continue;
+                        } else {
+                            todo!()
+                        }
+                    } else {
+                        log::trace!("infer_type: lookup successfull! top={:?}", top.name());
+                        let mut ctx = ctx.clone();
+                        ctx.this = Some(top.clone());
 
-                        None
+                        match top.infer_type(&ctx) {
+                            Err(err) => ctx.error(err),
+                            Ok(i) => return Ok(i),
+                        }
                     }
                 }
+
+                ctx.error(MontyError::UndefinedVariable {
+                    node: ctx.this.clone().unwrap(),
+                });
             }
         }
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         log::trace!("typecheck: {:?}", self);
 
         if let Self::Name(target) = self {
-            let result = ctx.scope.lookup_def(*target, ctx.global_context);
-
-            match result.as_slice() {
-                [] => ctx.error(MontyError::UndefinedVariable {
-                    node: ctx.this.clone().unwrap(),
-                    ctx: &ctx,
-                }),
-                [top, ..] => {
-                    if let Some(asn) = crate::isinstance!(top.as_ref(), Assign).or(
-                        crate::isinstance!(top.as_ref(), Statement).and_then(|s| match s {
-                            Statement::Asn(a) => Some(a),
-                            _ => None,
-                        }),
-                    ) {
-                        return asn.typecheck(ctx);
-                    }
-
-                    match top.infer_type(&ctx) {
-                        Some(_) => {}
-                        None => ctx.error(MontyError::UnknownType {
-                            node: ctx.this.clone().unwrap(),
-                            ctx: &ctx,
-                        }),
-                    }
-                }
-            }
+            let _ = self.infer_type(ctx)?;
         } else {
             log::trace!("Skipping typecheck: {:?}", self);
         }
+
+        Ok(())
     }
 }
 

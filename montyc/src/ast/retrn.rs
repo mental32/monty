@@ -35,11 +35,11 @@ impl AstObject for Return {
 }
 
 impl TypedObject for Return {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> Option<LocalTypeId> {
-        None
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        Err(MontyError::InferenceFailure)
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) {
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         log::trace!("typecheck: {:?}", self);
 
         let expected = match ctx.scope.root() {
@@ -59,10 +59,7 @@ impl TypedObject for Return {
         };
 
         let actual = match &self.value {
-            Some(value) => match value.infer_type(&ctx) {
-                Some(tid) => tid,
-                None => ctx.error(MontyError::UndefinedVariable { ctx: &ctx, node: Rc::new(self.value.clone().unwrap()) }),
-            },
+            Some(value) => value.infer_type(&ctx)?,
             None => TypeMap::NONE_TYPE,
         };
 
@@ -102,8 +99,9 @@ impl TypedObject for Return {
                 actual,
                 ret_node,
                 def_node,
-                ctx: &ctx,
             })
+        } else {
+            Ok(())
         }
     }
 }
@@ -125,6 +123,6 @@ impl LookupTarget for Return {
     }
 
     fn name(&self) -> crate::parser::SpanEntry {
-        todo!()
+        None
     }
 }
