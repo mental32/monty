@@ -162,17 +162,15 @@ impl TypedObject for Expr {
                 let left_name = ctx
                     .global_context
                     .type_map
-                    .borrow()
                     .get(left_ty)
-                    .clone()
+                    .map(|i| i.value().clone())
                     .unwrap()
                     .clone();
                 let right_name = ctx
                     .global_context
                     .type_map
-                    .borrow()
                     .get(right_ty)
-                    .clone()
+                    .map(|i| i.value().clone())
                     .unwrap()
                     .clone();
 
@@ -181,8 +179,7 @@ impl TypedObject for Expr {
 
                 let name_ref = ModuleRef(PathBuf::from(format!("__monty:magical_names")));
 
-                let s = ctx.global_context.resolver.sources.borrow();
-                let m = s.get(&name_ref).unwrap();
+                let m = ctx.global_context.resolver.sources.get(&name_ref).unwrap();
 
                 let ltr_name = ctx.global_context.span_ref.borrow().find(&ltr_name_str, &m);
                 let rtl_name = ctx.global_context.span_ref.borrow().find(&rtl_name_str, &m);
@@ -207,9 +204,9 @@ impl TypedObject for Expr {
                     module_ref: name_ref,
                 };
 
-                let type_map = ctx.global_context.type_map.borrow();
+                let type_map = &ctx.global_context.type_map;
 
-                let left_class = match type_map.get(left_ty).unwrap() {
+                let left_class = match type_map.get(left_ty).unwrap().value() {
                     crate::typing::TypeDescriptor::Simple(_) => {
                         ctx.global_context.builtins.get(&left_ty).unwrap().0.clone()
                     }
@@ -220,7 +217,7 @@ impl TypedObject for Expr {
                         .unwrap(),
                 };
 
-                let right_class = match type_map.get(right_ty).unwrap() {
+                let right_class = match type_map.get(right_ty).unwrap().value() {
                     crate::typing::TypeDescriptor::Simple(_) => ctx
                         .global_context
                         .builtins
@@ -240,7 +237,7 @@ impl TypedObject for Expr {
                 for (name, kind) in left_class.properties.iter() {
                     if *name == ltr.name.unwrap() {
                         if type_map.unify_func(kind.clone(), &ltr) {
-                            let ret = match type_map.get(kind.clone()) {
+                            let ret = match type_map.get(kind.clone()).map(|i| i.value().clone()) {
                                 Some(crate::typing::TypeDescriptor::Function(f)) => f.ret,
                                 _ => todo!(),
                             };
@@ -255,7 +252,7 @@ impl TypedObject for Expr {
                 for (name, kind) in right_class.properties.iter() {
                     if *name == rtl.name.unwrap() {
                         if type_map.unify_func(kind.clone(), &rtl) {
-                            let ret = match type_map.get(kind.clone()) {
+                            let ret = match type_map.get(kind.clone()).map(|i| i.value().clone()) {
                                 Some(crate::typing::TypeDescriptor::Function(f)) => f.ret,
                                 _ => todo!(),
                             };

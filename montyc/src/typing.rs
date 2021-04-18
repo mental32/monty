@@ -1,5 +1,6 @@
 use std::{
     any::{Any, TypeId},
+    cell::Cell,
     collections::HashMap,
     intrinsics::transmute,
     mem::transmute_copy,
@@ -37,8 +38,8 @@ impl std::fmt::Display for FunctionType {
             .args
             .iter()
             .map(|arg| {
-                if let Some(inner) = self.resolver.type_map.borrow().get(*arg) {
-                    format!("{}", inner)
+                if let Some(inner) = self.resolver.type_map.get(*arg) {
+                    format!("{}", inner.value())
                 } else {
                     format!("{}", BuiltinTypeId::Unknown)
                 }
@@ -46,17 +47,16 @@ impl std::fmt::Display for FunctionType {
             .collect::<Vec<_>>()
             .join(", ");
 
-        let s_map = self.resolver.sources.borrow();
-        let source = s_map.get(&self.module_ref).unwrap();
+        let source = self.resolver.sources.get(&self.module_ref).unwrap();
         let name = self
             .resolver
             .span_ref
             .borrow()
-            .resolve_ref(self.name, source)
+            .resolve_ref(self.name, source.value())
             .unwrap();
 
-        let ret = if let Some(inner) = self.resolver.type_map.borrow().get(self.ret) {
-            format!("{}", inner)
+        let ret = if let Some(inner) = self.resolver.type_map.get(self.ret) {
+            format!("{}", inner.value())
         } else {
             format!("{}", BuiltinTypeId::Unknown)
         };
@@ -150,7 +150,14 @@ impl TypeDescriptor {
     }
 }
 
-use crate::{MontyError, ast::{funcdef::FunctionDef, AstObject}, context::{resolver::InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry};
+use dashmap::DashMap;
+
+use crate::{
+    ast::{funcdef::FunctionDef, AstObject},
+    context::{resolver::InternalResolver, LocalContext, ModuleRef},
+    parser::SpanEntry,
+    MontyError,
+};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId>;
@@ -159,7 +166,10 @@ pub trait TypedObject {
 }
 
 #[derive(Debug)]
-pub struct TypeMap(HashMap<LocalTypeId, TypeDescriptor>);
+pub struct TypeMap {
+    last_id: Cell<usize>,
+    inner: DashMap<LocalTypeId, TypeDescriptor>,
+}
 
 impl TypeMap {
     pub const INTEGER: LocalTypeId = LocalTypeId(1);
@@ -174,7 +184,7 @@ impl TypeMap {
 
     #[inline]
     pub fn new() -> Self {
-        let mut mapping = HashMap::with_capacity(std::mem::variant_count::<BuiltinTypeId>());
+        let mut mapping = DashMap::with_capacity(std::mem::variant_count::<BuiltinTypeId>());
 
         mapping.insert(Self::INTEGER, TypeDescriptor::Simple(BuiltinTypeId::Int));
         mapping.insert(Self::FLOAT, TypeDescriptor::Simple(BuiltinTypeId::Float));
@@ -192,22 +202,22 @@ impl TypeMap {
         );
         mapping.insert(Self::NEVER, TypeDescriptor::Simple(BuiltinTypeId::Never));
 
-        Self(mapping)
+        Self {
+            inner: mapping,
+            last_id: Cell::new(255),
+        }
     }
 
     #[inline]
-    pub fn insert<T>(&mut self, t: T) -> LocalTypeId
+    pub fn insert<T>(&self, t: T) -> LocalTypeId
     where
         T: Into<TypeDescriptor>,
     {
-        let idx = self
-            .0
-            .keys()
-            .max()
-            .cloned()
-            .map(|n| LocalTypeId(n.0 + 1))
-            .unwrap_or(LocalTypeId(255));
-        self.0.insert(idx, t.into());
+        let idx = self.last_id.replace(self.last_id.get() + 1);
+        let idx = LocalTypeId(idx);
+
+        self.inner.insert(idx, t.into());
+
         idx
     }
 
@@ -249,7 +259,7 @@ impl TypeMap {
     }
 
     #[inline]
-    pub fn insert_tagged<T>(&mut self, t: T) -> TaggedType<T>
+    pub fn insert_tagged<T>(&self, t: T) -> TaggedType<T>
     where
         T: Into<TypeDescriptor> + Clone,
     {
@@ -259,8 +269,8 @@ impl TypeMap {
     }
 
     #[inline]
-    pub fn get(&self, type_id: LocalTypeId) -> Option<&TypeDescriptor> {
-        self.0.get(&type_id)
+    pub fn get(&self, type_id: LocalTypeId) -> Option<dashmap::mapref::one::Ref<'_, LocalTypeId, TypeDescriptor>> {
+        self.inner.get(&type_id)
     }
 
     #[inline]

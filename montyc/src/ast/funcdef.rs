@@ -20,7 +20,9 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         let ret = match def.returns.as_ref() {
             Some(node) => match node.infer_type(&ctx) {
                 Ok(tid) => tid,
-                Err(_) => ctx.error(MontyError::UndefinedVariable { node: Rc::new(def.returns.clone().unwrap()) })
+                Err(_) => ctx.error(MontyError::UndefinedVariable {
+                    node: Rc::new(def.returns.clone().unwrap()),
+                }),
             },
             None => TypeMap::NONE_TYPE,
         };
@@ -44,7 +46,11 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
             }
         }
 
-        let reciever = if let Some(Spanned { inner: PyToken::Ident(r), .. }) = def.reciever {
+        let reciever = if let Some(Spanned {
+            inner: PyToken::Ident(r),
+            ..
+        }) = def.reciever
+        {
             Some(Atom::Name(r).infer_type(ctx).unwrap_or_compiler_error(ctx))
         } else {
             None
@@ -80,7 +86,7 @@ impl TypedObject for FunctionDef {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         let func_type: FunctionType = (self, ctx).into();
 
-        Ok(ctx.global_context.type_map.borrow_mut().insert(func_type))
+        Ok(ctx.global_context.type_map.insert(func_type))
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
@@ -112,7 +118,6 @@ impl TypedObject for FunctionDef {
         let kind = ctx
             .global_context
             .type_map
-            .borrow()
             .get_tagged::<FunctionType>(type_id)
             .unwrap()
             .unwrap();

@@ -41,7 +41,7 @@ pub struct GlobalContext {
     pub modules: HashMap<ModuleRef, ModuleContext>,
     pub functions: Vec<Function>,
     pub span_ref: Rc<RefCell<SpanRef>>,
-    pub type_map: Rc<RefCell<TypeMap>>,
+    pub type_map: Rc<TypeMap>,
     pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,
     pub libstd: PathBuf,
     pub resolver: Rc<InternalResolver>,
@@ -132,7 +132,7 @@ impl From<CompilerOptions> for GlobalContext {
                                 let span_ref = ctx.span_ref.borrow();
                                 let $prop = span_ref.find(stringify!($prop), MAGICAL_NAMES);
 
-                                let mut type_map = ctx.type_map.borrow_mut();
+                                let type_map = &ctx.type_map;
 
                                 let func = FunctionType {
                                     reciever: Some($reciever),
@@ -197,7 +197,7 @@ impl From<CompilerOptions> for GlobalContext {
 impl Default for GlobalContext {
     fn default() -> Self {
         let span_ref: Rc<RefCell<SpanRef>> = Default::default();
-        let type_map: Rc<RefCell<TypeMap>> = Rc::new(RefCell::new(TypeMap::new()));
+        let type_map: Rc<TypeMap> = Rc::new(TypeMap::new());
 
         let resolver = Rc::new(InternalResolver {
             span_ref: span_ref.clone(),
@@ -476,7 +476,6 @@ impl GlobalContext {
 
         self.resolver
             .sources
-            .borrow_mut()
             .insert(key.clone(), source.clone());
 
         if let Some(previous) = self.modules.insert(

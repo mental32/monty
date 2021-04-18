@@ -54,7 +54,7 @@ impl TypedObject for Return {
             None => TypeMap::NONE_TYPE,
         };
 
-        let type_map = ctx.global_context.type_map.borrow();
+        let type_map = &ctx.global_context.type_map;
 
         if expected != actual {
             let ret_node = ctx

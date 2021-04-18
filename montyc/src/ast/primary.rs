@@ -108,7 +108,7 @@ impl TypedObject for Primary {
             Primary::Subscript { value: _, index: _ } => todo!(),
             Primary::Call { func, args: _ } => {
                 let func_t = func.infer_type(ctx).unwrap_or_compiler_error(ctx);
-                let func_t = ctx.global_context.type_map.borrow().get_tagged::<FunctionType>(func_t).unwrap().unwrap();
+                let func_t = &ctx.global_context.type_map.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
 
                 Ok(func_t.inner.ret)
             },
@@ -137,7 +137,7 @@ impl TypedObject for Primary {
                     })
                     .unwrap_or_default();
 
-                let type_map = ctx.global_context.type_map.borrow();
+                let type_map = &ctx.global_context.type_map;
 
                 if let Err((expected, actual, idx)) = type_map.unify_call(func_t, callsite.iter()) {
                     let def_node = 'outer: loop {

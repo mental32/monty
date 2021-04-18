@@ -16,7 +16,7 @@ impl<'a> From<(&LocalContext<'a>, &ClassDef)> for crate::class::Class {
         let type_id = match ctx.global_context.is_builtin(def, &ctx.module_ref) {
             Some(type_id) => type_id,
             None => {
-                let mut type_map = ctx.global_context.type_map.borrow_mut();
+                let mut type_map = &ctx.global_context.type_map;
 
                 type_map.insert(crate::typing::TypeDescriptor::Class(crate::typing::ClassType {
                     name: def.name.inner.name(),

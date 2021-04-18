@@ -104,7 +104,7 @@ impl MontyError {
                 def_node,
             } => {
                 let mut labels = vec![];
-                let type_map = ctx.global_context.type_map.borrow();
+                let type_map = &ctx.global_context.type_map;
 
                 let ret_span = ret_node.span().unwrap();
 
@@ -128,7 +128,7 @@ impl MontyError {
                 .with_message(if def_node.inner.returns.is_some() {
                     format!(
                         "function defined here supposedly returning a value of {}.",
-                        type_map.get(expected).unwrap()
+                        type_map.get(expected).unwrap().value()
                     )
                 } else {
                     "function defined here is expected to return `None`".to_string()
@@ -140,8 +140,8 @@ impl MontyError {
                     .with_message("incomaptible return type for function.")
                     .with_labels(labels)
                     .with_notes(vec![
-                        format!("expected: {}", type_map.get(expected).unwrap()),
-                        format!("actual: {}", type_map.get(actual).unwrap()),
+                        format!("expected: {}", type_map.get(expected).unwrap().value()),
+                        format!("actual: {}", type_map.get(actual).unwrap().value()),
                     ])
             }
 
@@ -171,9 +171,9 @@ impl MontyError {
                         ctx.global_context
                             .resolver
                             .sources
-                            .borrow()
                             .get(&ctx.module_ref)
                             .unwrap()
+                            .value()
                             .get(node.span().unwrap())
                             .unwrap()
                             .to_string()
@@ -204,7 +204,7 @@ impl MontyError {
                 right,
                 op,
             } => {
-                let ty = ctx.global_context.type_map.borrow();
+                let ty = &ctx.global_context.type_map;
 
                 let left = ty.get(left).unwrap();
                 let right = ty.get(right).unwrap();
@@ -215,8 +215,8 @@ impl MontyError {
                         format!(
                             "Operator {:?} is not supported for types \"{}\" and \"{}\"",
                             op.sigil(),
-                            left,
-                            right
+                            left.value(),
+                            right.value()
                         ),
                     )])
             }
