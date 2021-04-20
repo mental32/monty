@@ -40,11 +40,14 @@ impl AstObject for Assign {
 
 impl TypedObject for Assign {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        Err(crate::MontyError::InferenceFailure)  // assignments do not have types, their values do however.
+        Ok(TypeMap::NEVER)  // assignments do not have types, their values do however.
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        let expected = self.kind.as_ref().ok_or(crate::MontyError::InferenceFailure).and_then(|at| at.infer_type(&ctx))?;
+        let expected = match self.kind.as_ref() {
+            Some(at) => Some(at.infer_type(ctx)?),
+            None => None,
+        };
 
         let actual = {
             let mut ctx = ctx.clone();
@@ -52,8 +55,15 @@ impl TypedObject for Assign {
             self.value.infer_type(&ctx)?
         };
 
-        if expected != actual {
-            todo!("assignment type error");
+        if let Some(expected) = expected {
+            if expected != actual {
+                ctx.exit_with_error(MontyError::IncompatibleTypes {
+                    left_span: self.name.span.clone(),
+                    left: expected,
+                    right_span: self.value.span.clone(),
+                    right: actual,
+                });
+            }
         }
 
         Ok(())

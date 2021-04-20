@@ -27,7 +27,7 @@ impl AstObject for Return {
 
 impl TypedObject for Return {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        Err(MontyError::InferenceFailure)
+        Ok(TypeMap::NEVER)
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {

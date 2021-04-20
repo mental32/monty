@@ -283,12 +283,35 @@ impl TypedObject for Expr {
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         match self {
-            Expr::If { test, body, orelse } => todo!(),
+            Expr::If { test, body, orelse } => {
+                let test_type = test.infer_type(ctx)?;
+
+                if test_type != TypeMap::BOOL {
+                    ctx.exit_with_error(MontyError::BadConditionalType {
+                        actual: test_type,
+                        span: test.span.clone(),
+                    });
+                }
+
+                let immediate_body_type = body.infer_type(ctx)?;
+                let adjacent_branch_type = orelse.infer_type(ctx)?;
+
+                if immediate_body_type != adjacent_branch_type {
+                    ctx.exit_with_error(MontyError::IncompatibleTypes {
+                        left_span: body.span.clone(),
+                        right_span: orelse.span.clone(),
+                        left: immediate_body_type,
+                        right: adjacent_branch_type,
+                    });
+                }
+
+                Ok(())
+            }
 
             Expr::BinOp { left, op, right } => {
                 let _ = self.infer_type(ctx)?;
                 Ok(())
-            },
+            }
 
             Expr::Unary { op, value } => todo!(),
             Expr::Named { target, value } => todo!(),
