@@ -16,6 +16,7 @@ derive_more = "0.99.13"
 structopt = "0.3.21"
 thiserror = "1.0.24"
 dashmap = "4.0.2"
+bitflags = "1.2.1"
 
 # Logging dependencies
 log = "0.4.14"

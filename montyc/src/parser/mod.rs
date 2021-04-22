@@ -170,7 +170,7 @@ where
     let seq = parser.token_sequence();
 
     let (stream, result) = func(&seq).unwrap();
-    assert!(stream.is_empty(), "{:?}", (stream, result));
+    assert!(stream.is_empty(), "{:?}\n{:#?}", stream, result);
 
     result
 }

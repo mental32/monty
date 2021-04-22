@@ -310,7 +310,9 @@ impl CompilerError for Option<LocalTypeId> {
         match self {
             Some(t) => t,
             None => {
-                todo!();
+                ctx.exit_with_error(MontyError::UnknownType {
+                    node: ctx.this.as_ref().unwrap().clone(),
+                });
             }
         }
     }

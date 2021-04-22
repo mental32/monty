@@ -1,4 +1,1 @@
-def main():
-    _ = 1 + 2
-    _ = 3.14
-
+1 if False else 42

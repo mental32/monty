@@ -15,7 +15,7 @@ impl TypedObject for Function {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        log::trace!("typecheck: {}", &self.kind.inner);
+        log::trace!("typecheck:function {}", &self.kind.inner);
 
         let mut implicit_return = true;
 

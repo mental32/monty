@@ -1,6 +1,6 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::prelude::*;
+use crate::{layout, prelude::*};
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -29,6 +29,40 @@ pub enum InfixOp {
     Eq,
     And,
     Or,
+}
+
+impl AstObject for InfixOp {
+    fn span(&self) -> Option<logos::Span> {
+        todo!()
+    }
+
+    fn unspanned(&self) -> Rc<dyn AstObject> {
+        todo!()
+    }
+
+    fn walk(&self) -> Option<ObjectIter> {
+        todo!()
+    }
+}
+
+impl LookupTarget for InfixOp {
+    fn is_named(&self, target: SpanEntry) -> bool {
+        todo!()
+    }
+
+    fn name(&self) -> SpanEntry {
+        todo!()
+    }
+}
+
+impl TypedObject for InfixOp {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        todo!()
+    }
+
+    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+        todo!()
+    }
 }
 
 impl InfixOp {
@@ -327,5 +361,65 @@ impl LookupTarget for Expr {
 
     fn name(&self) -> crate::parser::SpanEntry {
         None
+    }
+}
+
+impl<'a> Lower for &'a Expr {
+    type Output = Layout<&'a dyn AstObject>;
+
+    fn lower(&self) -> Self::Output {
+        log::trace!("lower:expr {:?}", self);
+
+        let mut layout = Layout::<&dyn AstObject>::new();
+
+        match self {
+            Expr::If { test, body, orelse } => {
+                let body = &body.inner;
+                let test = &test.inner;
+                let orelse = &orelse.inner;
+
+                let (t_start, t_end) = layout.with_sublayout_from(test);
+
+                layout.succeed(layout.start, t_start);
+
+                let (b_start, b_end) = layout.with_sublayout_from(body);
+                let (o_start, o_end) = layout.with_sublayout_from(orelse);
+
+                layout.succeed(t_end, b_start);
+                layout.succeed(t_end, o_start);
+
+                layout.succeed(b_end, layout.end);
+                layout.succeed(o_end, layout.end);
+            },
+
+            Expr::BinOp { left, op, right } => {
+                let left = &left.inner;
+                let right = &right.inner;
+
+                let (l_start, l_end) = layout.with_sublayout_from(left);
+
+                layout.succeed(layout.start, l_start);
+
+                let (r_start, r_end) = layout.with_sublayout_from(right);
+
+                layout.succeed(l_end, r_start);
+
+                let infix = layout.insert_into_new_block(op);
+
+                layout.succeed(r_end, infix);
+
+                layout.succeed(infix, layout.end);
+            }
+
+            Expr::Unary { op, value } => todo!(),
+            Expr::Named { target, value } => todo!(),
+            Expr::Primary(primary) => {
+                let block = layout.insert_into_new_block(primary);
+                layout.succeed(block, layout.end);
+                layout.succeed(layout.start, block);
+            }
+        }
+
+        layout
     }
 }

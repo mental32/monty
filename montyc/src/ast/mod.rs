@@ -292,11 +292,11 @@ where
     T: TypedObject + fmt::Debug,
 {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        self.as_ref().ok_or(MontyError::InferenceFailure)?.infer_type(ctx)
+        self.as_ref().unwrap().infer_type(ctx)
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        self.as_ref().ok_or(MontyError::InferenceFailure)?.typecheck(ctx)
+        self.as_ref().unwrap().typecheck(ctx)
     }
 }
 

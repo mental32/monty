@@ -3,7 +3,8 @@
     bool_to_option,
     drain_filter,
     assert_matches,
-    type_ascription
+    type_ascription,
+    btree_drain_filter,
 )]
 #![allow(warnings)]
 
@@ -18,15 +19,18 @@ use ast::{
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use context::LocalContext;
 use parser::Span;
+use prelude::TypeMap;
 use typing::{LocalTypeId, TypedObject};
 
 pub mod ast;
 pub mod class;
 pub mod context;
 pub mod func;
+pub mod layout;
 pub mod parser;
 pub mod scope;
 pub mod typing;
+pub mod lowering;
 
 use thiserror::Error;
 
@@ -48,9 +52,6 @@ macro_rules! isinstance {
 
 #[derive(Debug, Error)]
 pub enum MontyError {
-    #[error("Failed to infer the type of a value (internal error.)")]
-    InferenceFailure,
-
     #[error("Incompatible return type.")]
     BadReturnType {
         expected: LocalTypeId,
@@ -58,6 +59,9 @@ pub enum MontyError {
         ret_node: Rc<Spanned<Return>>,
         def_node: Rc<Spanned<FunctionDef>>,
     },
+
+    #[error("Incompatible type used within a conditional.")]
+    BadConditionalType { actual: LocalTypeId, span: Span },
 
     #[error("Incompatible return type due to implicit return.")]
     MissingReturn {
@@ -80,7 +84,15 @@ pub enum MontyError {
         def_node: Rc<Spanned<FunctionDef>>,
     },
 
-    #[error("foo")]
+    #[error("Generic incompatible type error.")]
+    IncompatibleTypes {
+        left_span: Span,
+        left: LocalTypeId,
+        right_span: Span,
+        right: LocalTypeId,
+    },
+
+    #[error("Unimplemented binary operator for types.")]
     BadBinaryOp {
         span: Span,
         left: LocalTypeId,
@@ -95,8 +107,6 @@ impl MontyError {
         ctx: &LocalContext<'_>,
     ) -> codespan_reporting::diagnostic::Diagnostic<()> {
         match self {
-            MontyError::InferenceFailure => unreachable!(),
-
             MontyError::BadReturnType {
                 expected,
                 actual,
@@ -220,6 +230,30 @@ impl MontyError {
                         ),
                     )])
             }
+
+            MontyError::BadConditionalType { actual, span } => Diagnostic::error()
+                .with_message("Incompatible type for conditional.")
+                .with_labels(vec![Label::primary((), span).with_message(format!(
+                    "expected {}, found {}",
+                    ctx.global_context
+                        .resolver
+                        .resolve_type(TypeMap::BOOL)
+                        .unwrap(),
+                    ctx.global_context.resolver.resolve_type(actual).unwrap(),
+                ))]),
+
+            MontyError::IncompatibleTypes {
+                left_span,
+                left,
+                right_span,
+                right,
+            } => Diagnostic::error()
+                .with_message("Incompatible types")
+                .with_labels(vec![Label::primary((), right_span).with_message(format!(
+                    "expected {}, found {}",
+                    ctx.global_context.resolver.resolve_type(left).unwrap(),
+                    ctx.global_context.resolver.resolve_type(right).unwrap()
+                )), Label::secondary((), left_span).with_message(ctx.global_context.resolver.resolve_type(left).unwrap())]),
         }
     }
 }
@@ -237,15 +271,13 @@ pub struct CompilerOptions {
 
 pub mod prelude {
     pub use crate::{
-        ast::AstObject,
-        scope::{LocalScope, OpaqueScope, LookupTarget, WrappedScope, Scope},
-        typing::{TypedObject, TypeMap, LocalTypeId},
-        context::{LocalContext, ModuleContext, GlobalContext},
-        ast::*,
-        parser::{Parseable, token::PyToken, SpanEntry, ParserT, Span, SpanRef},
+        ast::{AstObject, Spanned},
+        context::{GlobalContext, LocalContext, ModuleContext, ModuleFlags, ModuleRef},
+        parser::{token::PyToken, Parseable, ParserT, Span, SpanEntry, SpanRef},
+        scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
+        typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject},
+        lowering::Lower,
+        layout::{Layout, BlockId},
         MontyError,
-        typing::CompilerError,
-        context::ModuleRef,
-        typing::FunctionType,
     };
 }

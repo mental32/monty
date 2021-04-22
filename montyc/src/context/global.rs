@@ -1,27 +1,24 @@
-use std::{
-    cell::{Ref, RefCell},
-    collections::HashMap,
-    fs::DirEntry,
-    hash::Hash,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{cell::{Cell, Ref, RefCell}, collections::HashMap, fs::DirEntry, hash::Hash, path::{Path, PathBuf}, rc::Rc};
 
-use class::ClassDef;
 use codespan_reporting::diagnostic::Diagnostic;
 use log::*;
 
-use crate::{CompilerOptions, MontyError, ast::{
+use crate::{
+    ast::{
         atom::Atom,
-        class,
+        class::ClassDef,
         import::{Import, ImportDecl},
         module::Module,
-        primary::Primary,
         stmt::Statement,
-        AstObject, Spanned,
-    }, class::Class, func::Function, parser::{Parseable, SpanEntry, SpanRef}, scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, ScopedObject}, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap}};
+    },
+    class::Class,
+    func::Function,
+    prelude::*,
+    typing::{LocalTypeId, TypeDescriptor},
+    CompilerOptions,
+};
 
-use super::{ModuleRef, local::LocalContext, module::ModuleContext, resolver::InternalResolver};
+use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
 
 fn shorten(path: &Path) -> String {
     let mut c = path
@@ -39,7 +36,7 @@ fn shorten(path: &Path) -> String {
 #[derive(Debug)]
 pub struct GlobalContext {
     pub modules: HashMap<ModuleRef, ModuleContext>,
-    pub functions: Vec<Function>,
+    pub functions: RefCell<Vec<Function>>,
     pub span_ref: Rc<RefCell<SpanRef>>,
     pub type_map: Rc<TypeMap>,
     pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,
@@ -207,7 +204,7 @@ impl Default for GlobalContext {
 
         Self {
             modules: HashMap::new(),
-            functions: Vec::new(),
+            functions: RefCell::new(Vec::new()),
             span_ref,
             type_map,
             builtins: HashMap::new(),
@@ -219,7 +216,10 @@ impl Default for GlobalContext {
 
 impl GlobalContext {
     pub fn is_builtin(&self, t: &dyn AstObject, t_mref: &ModuleRef) -> Option<LocalTypeId> {
-        log::trace!("is_builtin: checking if object is a builtin ({:?})", t.name());
+        log::trace!(
+            "is_builtin: checking if object is a builtin ({:?})",
+            t.name()
+        );
 
         let t_mref = t.renamed_properties().unwrap_or(t_mref.clone());
         let t_mref = &t_mref;
@@ -269,11 +269,10 @@ impl GlobalContext {
 
             if let Some(Statement::Class(class_def)) = (o.as_ref()).downcast_ref() {
                 if class_def.is_named(name) {
-                    let klass = obj.with_context(self, |local, this| {
-                        Class::from((&local, class_def))
-                    });
+                    let klass =
+                        obj.with_context(self, |local, this| Class::from((&local, class_def)));
 
-                    return Some(Rc::new(klass))
+                    return Some(Rc::new(klass));
                 }
             }
         }
@@ -281,7 +280,12 @@ impl GlobalContext {
         None
     }
 
-    fn preload_module_literal(&mut self, source: &str, path: &str, f: impl Fn(&mut Self, ModuleRef)) {
+    fn preload_module_literal(
+        &mut self,
+        source: &str,
+        path: &str,
+        f: impl Fn(&mut Self, ModuleRef),
+    ) {
         debug!("Preloading module ({:?})", path);
 
         let module = self.parse_and_register_module(source.to_string().into_boxed_str(), path);
@@ -471,9 +475,7 @@ impl GlobalContext {
 
         let scope = Rc::new(scope) as Rc<dyn Scope>;
 
-        self.resolver
-            .sources
-            .insert(key.clone(), source.clone());
+        self.resolver.sources.insert(key.clone(), source.clone());
 
         if let Some(previous) = self.modules.insert(
             key.clone(),
@@ -482,6 +484,7 @@ impl GlobalContext {
                 path,
                 scope,
                 source,
+                flags: ModuleFlags::EMPTY,
             },
         ) {
             panic!(

@@ -1,5 +1,6 @@
 from __monty import extern, typing  # type: ignore
 
+
 @extern
 class int:
     """
@@ -19,6 +20,7 @@ class int:
         >>> int('0b100', base=0)
         4
     """
+
 
 @extern
 class float:

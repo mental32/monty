@@ -17,6 +17,20 @@ pub enum Statement {
     Pass,
 }
 
+impl Statement {
+    pub fn inner_as_object(&self) -> Rc<dyn AstObject> {
+        match self.clone() {
+            Statement::Expression(e) => Rc::new(e),
+            Statement::FnDef(f) => Rc::new(f),
+            Statement::Ret(r) => Rc::new(r),
+            Statement::Asn(a) => Rc::new(a),
+            Statement::Import(i) => Rc::new(i),
+            Statement::Class(c) => Rc::new(c),
+            Statement::Pass => todo!()
+        }
+    }
+}
+
 impl AstObject for Statement {
     fn span(&self) -> Option<logos::Span> {
         match self {
