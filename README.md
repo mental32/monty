@@ -11,15 +11,18 @@
 
 ## Brief
 
-Monty `(/ˈmɒntɪ/)` is an attempt to provide a completely organic dialect of
-Python equipped with a stronger, safer, and smarter type system.
+Monty `(/ˈmɒntɪ/)` is an attempt to provide a completely organic alternative
+dialect of Python equipped with a stronger, safer, and smarter type system.
 
-At a high level monty can be closely compared with what TypeScript does for the
-JavaScript community. The core contrast between Monty and TypeScript however is
+At a high level monty can be closely compared with what TypeScript does for
+JavaScript. The core contrast between Monty and TypeScript however is
 that TS is a strict syntactical superset of JS, Monty is a strict syntactical
 subset of Python; meaning that TS adds backwards incompatible syntax to JS
 where Monty disallows existing Python syntax and semantics in a backwards
 compatible manner.
+
+Monty is intended to be compiled straight to native binaries or WASM via the
+use of [cranelift] or [llvm].
 
 ## Related projects
 
@@ -31,3 +34,6 @@ compatible manner.
 - [Peggen](https://github.com/gvanrossum/pegen)
 - [MyPy](https://github.com/python/mypy)
 - [PyPy](https://foss.heptapod.net/pypy/pypy)
+
+[cranelift]: https://github.com/bytecodealliance/wasmtime/tree/main/cranelift
+[llvm]: https://llvm.org/
