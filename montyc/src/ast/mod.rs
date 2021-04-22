@@ -1,14 +1,15 @@
-use std::{
-    any::{Any, TypeId},
-    mem::MaybeUninit,
-    rc::Rc,
-};
+use std::{any::Any, rc::Rc};
 use std::{fmt, sync::Arc};
 
-use logos::{source, Span};
-use typing::{TypeMap, TypedObject};
+use logos::Span;
+use typing::TypedObject;
 
-use crate::{MontyError, context::LocalContext, parser::token::PyToken, scope::LookupTarget, typing::{self, LocalTypeId}};
+use crate::{
+    context::LocalContext,
+    parser::token::PyToken,
+    scope::LookupTarget,
+    typing::{self, LocalTypeId},
+};
 
 pub mod assign;
 pub mod atom;
@@ -124,11 +125,11 @@ impl LookupTarget for PyToken {
 }
 
 impl TypedObject for PyToken {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         unreachable!()
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+    fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {
         unreachable!()
     }
 }

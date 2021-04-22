@@ -26,7 +26,7 @@ impl AstObject for Return {
 }
 
 impl TypedObject for Return {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         Ok(TypeMap::NEVER)
     }
 
@@ -41,12 +41,12 @@ impl TypedObject for Return {
                         kind.ret
                     },
 
-                    None => return unreachable!("{:?}", ctx.scope.root()),
+                    None => unreachable!("{:?}", ctx.scope.root()),
                 }
             }
 
             ScopeRoot::Func(func) => func.kind.inner.ret,
-            ScopeRoot::Class(_) => return panic!("return in a class def"),
+            ScopeRoot::Class(_) => panic!("return in a class def"),
         };
 
         let actual = match &self.value {
@@ -54,7 +54,7 @@ impl TypedObject for Return {
             None => TypeMap::NONE_TYPE,
         };
 
-        let type_map = &ctx.global_context.type_map;
+        let _type_map = &ctx.global_context.type_map;
 
         if expected != actual {
             let ret_node = ctx
@@ -103,7 +103,7 @@ impl Parseable for Return {
 }
 
 impl LookupTarget for Return {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, _target: crate::parser::SpanEntry) -> bool {
         false
     }
 

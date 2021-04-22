@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::prelude::*;
 
-use super::{assign::Assign, primary::Primary, stmt::Statement, AstObject};
+use super::{assign::Assign, primary::Primary, AstObject};
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Atom {
@@ -118,7 +118,7 @@ impl TypedObject for Atom {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         log::trace!("typecheck: {:?}", self);
 
-        if let Self::Name(target) = self {
+        if let Self::Name(_target) = self {
             let _ = self.infer_type(ctx)?;
         } else {
             log::trace!("Skipping typecheck: {:?}", self);

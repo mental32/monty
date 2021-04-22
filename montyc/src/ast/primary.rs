@@ -123,7 +123,7 @@ impl TypedObject for Primary {
 
         match self {
             Primary::Atomic(at) => at.typecheck(ctx),
-            Primary::Subscript { value, index } => todo!(),
+            Primary::Subscript { value: _, index: _ } => todo!(),
 
             Primary::Call { func, args } => {
                 let func_t = func.infer_type(ctx).unwrap_or_compiler_error(ctx);
@@ -179,7 +179,7 @@ impl TypedObject for Primary {
                 }
             }
 
-            Primary::Attribute { left, attr } => todo!(),
+            Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!(),
         }
     }
@@ -187,7 +187,7 @@ impl TypedObject for Primary {
 
 impl LookupTarget for Primary {
     fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        matches!(self, Self::Atomic(Spanned { inner: Atom::Name((n)), .. }) if n.clone() == target)
+        matches!(self, Self::Atomic(Spanned { inner: Atom::Name(n), .. }) if n.clone() == target)
     }
 
     fn name(&self) -> crate::parser::SpanEntry {

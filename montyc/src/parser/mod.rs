@@ -6,7 +6,7 @@ use logos::Logos;
 use nom::IResult;
 use regex::Regex;
 
-use crate::{ast::{AstObject, Spanned}, class::Class};
+use crate::{ast::{AstObject, Spanned}};
 
 pub mod comb;
 pub mod token;

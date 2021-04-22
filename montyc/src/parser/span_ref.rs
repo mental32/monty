@@ -61,7 +61,7 @@ impl SpanRef {
 
     #[inline]
     pub fn find(&self, needle: &str, haystack: &str) -> SpanEntry {
-        let mut it = (1..self.ptr).zip(self.seq[1..].iter().cloned());
+        let it = (1..self.ptr).zip(self.seq[1..].iter().cloned());
 
         for (idx, range) in it {
             if haystack.get(range).map(|st| st == needle).unwrap_or(false) {

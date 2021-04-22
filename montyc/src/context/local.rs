@@ -1,8 +1,6 @@
 use std::{path::PathBuf, rc::Rc};
 
-use codespan_reporting::diagnostic::Diagnostic;
-
-use crate::{MontyError, ast::AstObject, parser::SpanEntry, scope::Scope};
+use crate::{MontyError, ast::AstObject, scope::Scope};
 
 use super::{ModuleRef, global::GlobalContext};
 
@@ -37,7 +35,7 @@ impl<'a> LocalContext<'a> {
 
         let diagnostic = err.into_diagnostic(self);
 
-        codespan_reporting::term::emit(&mut writer, &config, &file, &diagnostic);
+        let _ = codespan_reporting::term::emit(&mut writer, &config, &file, &diagnostic);
 
         std::process::exit(1);
     }

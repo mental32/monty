@@ -1,8 +1,9 @@
-use std::rc::Rc;
-
 use nom::{branch::alt, IResult};
 
-use crate::{ast::{AstObject, Spanned, atom::Atom, expr::Expr, funcdef, primary::Primary, stmt::{self, Statement}}, parser::{token::PyToken, TokenSlice}};
+use crate::{
+    ast::{atom::Atom, expr::Expr, primary::Primary, stmt::Statement, Spanned},
+    parser::{token::PyToken, TokenSlice},
+};
 
 use super::{
     assignment, expect, expect_many_n, expect_with, expression, funcdef::function_def, return_stmt,
@@ -108,7 +109,6 @@ pub fn statement<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
 
     alt((small_stmt, compound_stmt))(stream)
 }
-
 
 #[inline]
 pub fn statement_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Statement> {

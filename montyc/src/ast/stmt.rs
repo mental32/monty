@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::{parser::comb::stmt::statement_unspanned, prelude::*};
 use super::{
     assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, import::Import,
-    retrn::Return, AstObject, Spanned,
+    retrn::Return, AstObject,
 };
 
 #[derive(Debug, Clone)]

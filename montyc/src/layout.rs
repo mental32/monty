@@ -1,11 +1,7 @@
-use std::{cell::Cell, collections::BTreeMap, convert::TryInto};
-use std::{collections::BTreeSet, rc::Rc};
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
-use crate::{
-    ast::{assign::Assign, expr::Expr, stmt::Statement},
-    func::Function,
-    prelude::*,
-};
+use crate::prelude::*;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 #[repr(transparent)]
@@ -191,7 +187,7 @@ impl<T> Layout<T> {
     pub fn reduce_forwarding_edges(&mut self) {
         // get all blocks that make up a forward edge (a block that only has a direct jump `x -> y` and no body)
         let is_forward_edge = |(id, block): (&BlockId, &Block<T>)| {
-            if (block.nodes.is_empty() && (block.succs.len() == 1 && block.preds.len() == 1)) {
+            if block.nodes.is_empty() && (block.succs.len() == 1 && block.preds.len() == 1) {
                 let from = block.preds.iter().next().cloned().unwrap();
                 let to = block.succs.iter().next().cloned().unwrap();
 

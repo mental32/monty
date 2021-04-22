@@ -1,6 +1,6 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{layout, prelude::*};
+use crate::{prelude::*};
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -46,7 +46,7 @@ impl AstObject for InfixOp {
 }
 
 impl LookupTarget for InfixOp {
-    fn is_named(&self, target: SpanEntry) -> bool {
+    fn is_named(&self, _target: SpanEntry) -> bool {
         todo!()
     }
 
@@ -56,11 +56,11 @@ impl LookupTarget for InfixOp {
 }
 
 impl TypedObject for InfixOp {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         todo!()
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+    fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {
         todo!()
     }
 }
@@ -190,17 +190,26 @@ impl TypedObject for Expr {
             } => body.infer_type(ctx),
 
             Expr::BinOp { left, op, right } => {
-                let left_ty = left.infer_type(ctx).unwrap_or_compiler_error(ctx);
-                let right_ty = right.infer_type(ctx).unwrap_or_compiler_error(ctx);
+                let left_ty = {
+                    let mut ctx = ctx.clone();
+                    ctx.this = Some(left.clone());
+                    left.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
+                };
 
-                let left_name = ctx
+                let right_ty = {
+                    let mut ctx = ctx.clone();
+                    ctx.this = Some(right.clone());
+                    right.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
+                };
+
+                let _left_name = ctx
                     .global_context
                     .type_map
                     .get(left_ty)
                     .map(|i| i.value().clone())
                     .unwrap()
                     .clone();
-                let right_name = ctx
+                let _right_name = ctx
                     .global_context
                     .type_map
                     .get(right_ty)
@@ -342,20 +351,20 @@ impl TypedObject for Expr {
                 Ok(())
             }
 
-            Expr::BinOp { left, op, right } => {
+            Expr::BinOp { left: _, op: _, right: _ } => {
                 let _ = self.infer_type(ctx)?;
                 Ok(())
             }
 
-            Expr::Unary { op, value } => todo!(),
-            Expr::Named { target, value } => todo!(),
+            Expr::Unary { op: _, value: _ } => todo!(),
+            Expr::Named { target: _, value: _ } => todo!(),
             Expr::Primary(p) => p.typecheck(ctx),
         }
     }
 }
 
 impl LookupTarget for Expr {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, _target: crate::parser::SpanEntry) -> bool {
         false
     }
 
@@ -390,7 +399,7 @@ impl<'a> Lower for &'a Expr {
 
                 layout.succeed(b_end, layout.end);
                 layout.succeed(o_end, layout.end);
-            },
+            }
 
             Expr::BinOp { left, op, right } => {
                 let left = &left.inner;
@@ -411,8 +420,8 @@ impl<'a> Lower for &'a Expr {
                 layout.succeed(infix, layout.end);
             }
 
-            Expr::Unary { op, value } => todo!(),
-            Expr::Named { target, value } => todo!(),
+            Expr::Unary { op: _, value: _ } => todo!(),
+            Expr::Named { target: _, value: _ } => todo!(),
             Expr::Primary(primary) => {
                 let block = layout.insert_into_new_block(primary);
                 layout.succeed(block, layout.end);

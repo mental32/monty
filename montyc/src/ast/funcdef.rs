@@ -10,7 +10,7 @@ pub struct FunctionDef {
     pub name: Spanned<Atom>,
     pub args: Option<Vec<(SpanEntry, Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
-    // decorator_list: Option<Vec<Rc<dyn AstObject>>>,
+    // pub decorator_list: Vec<Rc<Spanned<Primary>>>,
     pub returns: Option<Spanned<Primary>>,
     // type_comment: Option<Rc<Expr>>,
 }
@@ -36,7 +36,7 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         let mut args = vec![];
 
         if let Some(def_args) = &def.args {
-            for (arg_name, arg_ann) in def_args {
+            for (_arg_name, arg_ann) in def_args {
                 let type_id = match arg_ann.infer_type(ctx) {
                     Ok(tyid) => tyid,
                     Err(err) => ctx.exit_with_error(err),
@@ -150,5 +150,26 @@ impl LookupTarget for FunctionDef {
 
     fn name(&self) -> SpanEntry {
         self.name.name()
+    }
+}
+
+impl Lower for FunctionDef {
+    type Output = Layout<Rc<dyn AstObject>>;
+
+    fn lower(&self) -> Self::Output {
+        let mut layout = Layout::new();
+        let mut prev = layout.start.clone();
+
+        for object in self.body.iter() {
+            let new = layout.insert_into_new_block(object.clone());
+
+            layout.succeed(prev, new);
+
+            prev = new;
+        }
+
+        layout.succeed(prev, layout.end);
+
+        layout
     }
 }

@@ -1,9 +1,4 @@
-use montyc::{
-    ast::stmt::Statement,
-    context::GlobalContext,
-    prelude::*,
-    CompilerOptions,
-};
+use montyc::{CompilerOptions, ast::stmt::Statement, context::GlobalContext, func::Function, prelude::*};
 
 use structopt::StructOpt;
 
@@ -19,14 +14,16 @@ fn main() {
         for (obj, lctx) in ctx.walk(mref.clone()) {
             obj.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
 
-            if let Some(stmt) = obj.as_ref().downcast_ref::<Statement>() {
-                if let Statement::Expression(e) = stmt {
-                    let mut cfg = e.lower();
-                    dbg!(&cfg);
-                    cfg.reduce_forwarding_edges();
-                    dbg!(cfg);
-                }
+            if let Some(Statement::FnDef(f)) = obj.as_ref().downcast_ref() {
+                ctx.functions.borrow_mut().push(Function::new(&f, &lctx));
             }
+
         }
+
+        let f = ctx.functions.borrow();
+        let f = f.last().unwrap();
+
+        let _ = dbg!(f.lower());
+
     });
 }

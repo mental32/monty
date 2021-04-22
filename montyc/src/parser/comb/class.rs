@@ -49,7 +49,7 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
             }
         }
     } else {
-        let (s, stmt) = statement(stream)?;
+        let (_s, stmt) = statement(stream)?;
         body.push(Rc::new(stmt));
     }
 
@@ -70,7 +70,7 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
     Ok((stream, def))
 }
 
-fn decorator<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+fn decorator<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
     let (stream, at) = expect(stream, PyToken::At)?;
     let (stream, dec) = super::primary(stream)?;
 
@@ -99,7 +99,7 @@ fn decorator_list<'a>(
         if let Ok((tail, dec)) = decorator(stream) {
             list.push(Rc::new(dec));
 
-            let (tail, refs) = chomp(tail).unwrap_or((tail, vec![]));
+            let (tail, _refs) = chomp(tail).unwrap_or((tail, vec![]));
 
             stream = tail;
         } else {

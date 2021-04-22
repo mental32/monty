@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
-use nom::{sequence::tuple, IResult};
+use nom::{IResult};
 
 use crate::ast::{
     atom::Atom,
     expr::Expr,
-    module::{self, Module},
+    module::{Module},
     primary::Primary,
     retrn::Return,
     stmt::Statement,

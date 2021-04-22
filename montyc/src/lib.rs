@@ -1,18 +1,11 @@
-#![feature(
-    variant_count,
-    bool_to_option,
-    drain_filter,
-    assert_matches,
-    type_ascription,
-    btree_drain_filter,
-)]
-#![allow(warnings)]
+#![feature(variant_count, bool_to_option, drain_filter, assert_matches)]
+// #![allow(warnings)]
 
 use std::rc::Rc;
 
 use ast::{
     expr::{Expr, InfixOp},
-    funcdef::{self, FunctionDef},
+    funcdef::FunctionDef,
     retrn::Return,
     AstObject, Spanned,
 };
@@ -20,23 +13,23 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 use context::LocalContext;
 use parser::Span;
 use prelude::TypeMap;
-use typing::{LocalTypeId, TypedObject};
+use typing::LocalTypeId;
 
 pub mod ast;
 pub mod class;
+pub mod codegen;
 pub mod context;
 pub mod func;
 pub mod layout;
+pub mod lowering;
 pub mod parser;
 pub mod scope;
 pub mod typing;
-pub mod lowering;
 
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, MontyError>;
 
-#[macro_use]
 #[macro_export]
 macro_rules! isinstance {
     ($e:expr, $t:ident) => {{
@@ -156,8 +149,8 @@ impl MontyError {
             }
 
             MontyError::MissingReturn {
-                expected,
-                actual,
+                expected: _,
+                actual: _,
                 def_node,
             } => Diagnostic::error()
                 .with_message("missing return for annotated function.")
@@ -249,11 +242,15 @@ impl MontyError {
                 right,
             } => Diagnostic::error()
                 .with_message("Incompatible types")
-                .with_labels(vec![Label::primary((), right_span).with_message(format!(
-                    "expected {}, found {}",
-                    ctx.global_context.resolver.resolve_type(left).unwrap(),
-                    ctx.global_context.resolver.resolve_type(right).unwrap()
-                )), Label::secondary((), left_span).with_message(ctx.global_context.resolver.resolve_type(left).unwrap())]),
+                .with_labels(vec![
+                    Label::primary((), right_span).with_message(format!(
+                        "expected {}, found {}",
+                        ctx.global_context.resolver.resolve_type(left).unwrap(),
+                        ctx.global_context.resolver.resolve_type(right).unwrap()
+                    )),
+                    Label::secondary((), left_span)
+                        .with_message(ctx.global_context.resolver.resolve_type(left).unwrap()),
+                ]),
         }
     }
 }
@@ -273,11 +270,11 @@ pub mod prelude {
     pub use crate::{
         ast::{AstObject, Spanned},
         context::{GlobalContext, LocalContext, ModuleContext, ModuleFlags, ModuleRef},
+        layout::{BlockId, Layout},
+        lowering::Lower,
         parser::{token::PyToken, Parseable, ParserT, Span, SpanEntry, SpanRef},
         scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
         typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject},
-        lowering::Lower,
-        layout::{Layout, BlockId},
         MontyError,
     };
 }

@@ -33,9 +33,9 @@ impl Import {
                 .collect(),
 
             Import::From {
-                module,
+                module: _,
                 names,
-                level,
+                level: _,
             } => names
                 .iter()
                 .map(|target| ImportDecl {
@@ -65,7 +65,7 @@ impl AstObject for Import {
             Import::From {
                 module,
                 names,
-                level,
+                level: _,
             } => Some(Box::new(
                 Some(module.clone() as Rc<_>)
                     .into_iter()
@@ -78,12 +78,12 @@ impl AstObject for Import {
 impl TypedObject for Import {
     fn infer_type<'a>(
         &self,
-        ctx: &crate::context::LocalContext<'a>,
+        _ctx: &crate::context::LocalContext<'a>,
     ) -> crate::Result<LocalTypeId> {
         todo!()
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+    fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {
         Ok(())
     }
 }

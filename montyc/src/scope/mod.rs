@@ -1,8 +1,6 @@
 use std::{
     any::{Any, TypeId},
-    cell::RefCell,
     fmt,
-    marker::PhantomData,
     rc::Rc,
 };
 
@@ -10,13 +8,12 @@ use fmt::Debug;
 
 use crate::{
     ast::{
-        assign::Assign, atom::Atom, class::ClassDef, funcdef::FunctionDef, import::Import,
-        primary::Primary, stmt::Statement, AstObject,
+        assign::Assign, class::ClassDef, funcdef::FunctionDef,
+        stmt::Statement, AstObject,
     },
     context::{GlobalContext, LocalContext, ModuleRef},
     func::Function,
     parser::SpanEntry,
-    typing::{LocalTypeId, TypeMap, TypedObject},
 };
 
 mod local;

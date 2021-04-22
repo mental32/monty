@@ -1,6 +1,10 @@
-use std::{cell::{Cell, Ref, RefCell}, collections::HashMap, fs::DirEntry, hash::Hash, path::{Path, PathBuf}, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
-use codespan_reporting::diagnostic::Diagnostic;
 use log::*;
 
 use crate::{
@@ -50,7 +54,7 @@ impl From<CompilerOptions> for GlobalContext {
     fn from(opts: CompilerOptions) -> Self {
         debug!("Bootstrapping with {:?}", opts);
 
-        let CompilerOptions { libstd, input } = opts;
+        let CompilerOptions { libstd, input: _ } = opts;
 
         let libstd = match libstd.canonicalize() {
             Ok(path) => path,
@@ -76,7 +80,7 @@ impl From<CompilerOptions> for GlobalContext {
         // HACK: Synthesize a module so that our `SpanRef` string/ident/comment interner is aware of certain builtin
         //       method names this is necessary when resolving binary expressions using builtin types (since they have)
         //       no module, hence "builin", the name resolution logic fails.
-        ctx.preload_module_literal(MAGICAL_NAMES, "__monty:magical_names", |ctx, mref| {
+        ctx.preload_module_literal(MAGICAL_NAMES, "__monty:magical_names", |_ctx, _mref| {
             // panic!("{:#?}", ctx);
         });
 
@@ -94,7 +98,7 @@ impl From<CompilerOptions> for GlobalContext {
                 .expect("failed to get pre-loaded module.");
 
             for item in module_context.scope.iter() {
-                let object_original = item.object.clone();
+                let _object_original = item.object.clone();
                 let object_unspanned = item.object.unspanned();
 
                 // associate opaque class definitions of builtin types...
@@ -182,7 +186,7 @@ impl From<CompilerOptions> for GlobalContext {
                 }
 
                 item.with_context(ctx, |local, object| {
-                    object.typecheck(&local);
+                    object.typecheck(&local).unwrap_or_compiler_error(&local);
                 })
             }
         });
@@ -270,7 +274,7 @@ impl GlobalContext {
             if let Some(Statement::Class(class_def)) = (o.as_ref()).downcast_ref() {
                 if class_def.is_named(name) {
                     let klass =
-                        obj.with_context(self, |local, this| Class::from((&local, class_def)));
+                        obj.with_context(self, |local, _this| Class::from((&local, class_def)));
 
                     return Some(Rc::new(klass));
                 }
@@ -348,7 +352,7 @@ impl GlobalContext {
         'outer: for path in paths_to_inspect.iter() {
             let mut root = path.to_owned();
 
-            for (idx, part) in qualname.iter().enumerate() {
+            for (_idx, part) in qualname.iter().enumerate() {
                 let final_path = match search(&root, part) {
                     Some(p) => p,
                     None => continue 'outer,
@@ -495,6 +499,4 @@ impl GlobalContext {
 
         key
     }
-
-    pub fn compile<I>(&mut self, i: I) {}
 }

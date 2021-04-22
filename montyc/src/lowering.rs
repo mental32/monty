@@ -1,4 +1,3 @@
-
 pub trait Lower {
     type Output;
 

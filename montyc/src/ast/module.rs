@@ -34,11 +34,11 @@ impl AstObject for Module {
 }
 
 impl TypedObject for Module {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         todo!();
     }
 
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+    fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {
         todo!();
     }
 }
@@ -48,7 +48,7 @@ impl Parseable for Module {
 }
 
 impl LookupTarget for Module {
-    fn is_named(&self, target: SpanEntry) -> bool {
+    fn is_named(&self, _target: SpanEntry) -> bool {
         false
     }
 

@@ -1,9 +1,6 @@
 use std::{
-    any::{Any, TypeId},
+    any::{TypeId},
     cell::Cell,
-    collections::HashMap,
-    intrinsics::transmute,
-    mem::transmute_copy,
     num::NonZeroUsize,
     rc::Rc,
 };
@@ -153,7 +150,7 @@ impl TypeDescriptor {
 use dashmap::DashMap;
 
 use crate::{
-    ast::{funcdef::FunctionDef, AstObject},
+    ast::{funcdef::FunctionDef},
     context::{resolver::InternalResolver, LocalContext, ModuleRef},
     parser::SpanEntry,
     MontyError,
@@ -184,7 +181,7 @@ impl TypeMap {
 
     #[inline]
     pub fn correctly_initialized() -> Self {
-        let mut mapping = DashMap::with_capacity(std::mem::variant_count::<BuiltinTypeId>());
+        let mapping = DashMap::with_capacity(std::mem::variant_count::<BuiltinTypeId>());
 
         mapping.insert(Self::INTEGER, TypeDescriptor::Simple(BuiltinTypeId::Int));
         mapping.insert(Self::FLOAT, TypeDescriptor::Simple(BuiltinTypeId::Float));

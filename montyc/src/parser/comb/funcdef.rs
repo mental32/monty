@@ -32,9 +32,9 @@ fn argument_annotated<'a>(
 
             match &kind.inner {
                 Primary::Atomic(_) => {}
-                Primary::Subscript { value, index } => {}
-                Primary::Call { func, args } => {}
-                Primary::Attribute { left, attr } => {}
+                Primary::Subscript { value: _, index: _ } => {}
+                Primary::Call { func: _, args: _ } => {}
+                Primary::Attribute { left: _, attr: _ } => {}
                 Primary::Await(_) => unreachable!(),
             }
 
@@ -78,7 +78,7 @@ fn arguments<'a>(
 
 #[inline]
 pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<FunctionDef>> {
-    let (stream, def) = expect(stream, PyToken::FnDef)?;
+    let (stream, _def) = expect(stream, PyToken::FnDef)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, ident) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;

@@ -39,7 +39,7 @@ impl AstObject for Assign {
 }
 
 impl TypedObject for Assign {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         Ok(TypeMap::NEVER)  // assignments do not have types, their values do however.
     }
 
@@ -51,7 +51,7 @@ impl TypedObject for Assign {
 
         let actual = {
             let mut ctx = ctx.clone();
-            ctx.this = Some((Rc::new(self.value.clone()) as Rc<dyn AstObject>));
+            ctx.this = Some(Rc::new(self.value.clone()) as Rc<dyn AstObject>);
             self.value.infer_type(&ctx)?
         };
 

@@ -128,8 +128,8 @@ impl Scope for OpaqueScope {
                 .resolve_ref(target, mctx.source.as_ref())
                 .unwrap();
 
-            for (type_id, (object, mref)) in global_context.builtins.iter() {
-                let item = object.as_ref();
+            for (_type_id, (object, mref)) in global_context.builtins.iter() {
+                let _item = object.as_ref();
                 let object = Some(object.scope.root())
                     .and_then(|root| match root {
                         ScopeRoot::AstObject(obj) => Some(obj),
