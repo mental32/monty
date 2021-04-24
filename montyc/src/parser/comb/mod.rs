@@ -48,7 +48,7 @@ pub fn return_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanne
         Err(_) => (stream, ret.span.end, None),
     };
 
-    let inner = Return { value };
+    let inner = Return { value: value.map(Rc::new) };
 
     let ret = Spanned {
         span: ret.span.start..span_end,

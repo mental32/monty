@@ -1,5 +1,5 @@
 #![feature(variant_count, bool_to_option, drain_filter, assert_matches)]
-// #![allow(warnings)]
+#![deny(warnings)]
 
 use std::rc::Rc;
 
@@ -12,7 +12,7 @@ use ast::{
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use context::LocalContext;
 use parser::Span;
-use prelude::TypeMap;
+use prelude::{SpanEntry, TypeMap};
 use typing::LocalTypeId;
 
 pub mod ast;
@@ -21,7 +21,15 @@ pub mod codegen;
 pub mod context;
 pub mod func;
 pub mod layout;
-pub mod lowering;
+
+pub mod lowering {
+    pub trait Lower {
+        type Output;
+
+        fn lower(&self) -> Self::Output;
+    }
+}
+
 pub mod parser;
 pub mod scope;
 pub mod typing;
@@ -41,10 +49,26 @@ macro_rules! isinstance {
             $crate::scope::_downcast_ref::<$t>($e)
         }
     }};
+
+    ($e:expr, $t:ident, $p:pat => $a:ident) => {{
+        let result = crate::isinstance!($e, $t); // result: Some(ref $t)
+
+        match &result {
+            Some($p) => Some($a),
+            _ => None,
+        }
+    }};
 }
 
 #[derive(Debug, Error)]
 pub enum MontyError {
+    #[error("local variable referenced before assignment.")]
+    UnboundLocal {
+        name: SpanEntry,
+        assign: Span,
+        used: Span,
+    },
+
     #[error("Incompatible return type.")]
     BadReturnType {
         expected: LocalTypeId,
@@ -250,6 +274,19 @@ impl MontyError {
                     )),
                     Label::secondary((), left_span)
                         .with_message(ctx.global_context.resolver.resolve_type(left).unwrap()),
+                ]),
+
+            MontyError::UnboundLocal { name, assign, used } => Diagnostic::error()
+                .with_message(format!(
+                    "Local variable {:?} referenced before assignment",
+                    ctx.global_context
+                        .resolver
+                        .resolve(ctx.module_ref.clone(), name)
+                        .unwrap()
+                ))
+                .with_labels(vec![
+                    Label::primary((), used).with_message("name used here."),
+                    Label::secondary((), assign).with_message("but initially assigned later here.")
                 ]),
         }
     }

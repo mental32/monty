@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use crate::prelude::*;
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
+use crate::{prelude::*, scope::LookupOrder};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -108,10 +108,15 @@ impl TypedObject for Primary {
             Primary::Subscript { value: _, index: _ } => todo!(),
             Primary::Call { func, args: _ } => {
                 let func_t = func.infer_type(ctx).unwrap_or_compiler_error(ctx);
-                let func_t = &ctx.global_context.type_map.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
+                let func_t = &ctx
+                    .global_context
+                    .type_map
+                    .get_tagged::<FunctionType>(func_t)
+                    .unwrap()
+                    .unwrap();
 
                 Ok(func_t.inner.ret)
-            },
+            }
 
             Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!("`await` doesn't exist here."),
@@ -132,7 +137,11 @@ impl TypedObject for Primary {
                     .as_ref()
                     .map(|args| {
                         args.iter()
-                            .map(|arg| arg.infer_type(ctx).unwrap_or_compiler_error(ctx))
+                            .map(|arg| {
+                                let mut ctx = ctx.clone();
+                                ctx.this = Some(arg.clone());
+                                arg.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
+                            })
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
@@ -141,12 +150,13 @@ impl TypedObject for Primary {
 
                 if let Err((expected, actual, idx)) = type_map.unify_call(func_t, callsite.iter()) {
                     let def_node = 'outer: loop {
-                        let results = ctx.scope.lookup_def(func.name(), &ctx.global_context);
+                        let results = ctx
+                            .scope
+                            .lookup_def(func.name(), &ctx.global_context, LookupOrder::Unspecified)
+                            .unwrap_or_compiler_error(ctx);
 
                         for obj in results {
-                            if let Some(f) =
-                                obj.as_ref().downcast_ref::<Spanned<FunctionDef>>()
-                            {
+                            if let Some(f) = obj.as_ref().downcast_ref::<Spanned<FunctionDef>>() {
                                 break 'outer f.clone();
                             } else if let Some(Statement::FnDef(f)) =
                                 obj.as_ref().downcast_ref::<Statement>()

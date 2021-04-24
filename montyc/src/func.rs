@@ -1,6 +1,11 @@
-use std::{rc::Rc};
+use std::{marker::PhantomData, rc::Rc};
 
-use crate::{ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement}, prelude::*, scope::ScopeRoot, typing::TaggedType};
+use crate::{
+    ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement},
+    prelude::*,
+    scope::ScopeRoot,
+    typing::TaggedType,
+};
 
 #[derive(Debug)]
 pub struct Function {
@@ -10,28 +15,36 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn new(def: &FunctionDef, ctx: &LocalContext) -> Self {
+    pub fn new(def: Rc<dyn AstObject>, ctx: &LocalContext) -> Self {
+        let fndef = def.as_ref().as_function().unwrap();
 
-        let def = Rc::new(Spanned {
-            inner: def.clone(),
-            span: def.name.span.clone(),
-        });
+        let mut scope = OpaqueScope::from(def.clone());
 
-        let scope = LocalScope::from(def.inner.clone());
+        scope.module_ref = Some(ctx.module_ref.clone());
+
+        let scope = LocalScope {
+            _t: PhantomData,
+            inner: scope,
+        };
 
         let kind = {
             let type_id = def.infer_type(ctx).unwrap_or_compiler_error(ctx);
-            ctx.global_context.type_map.get_tagged(type_id).unwrap().unwrap()
+
+            ctx.global_context
+                .type_map
+                .get_tagged(type_id)
+                .unwrap()
+                .unwrap()
         };
 
-        Self {
-            def,
-            scope,
-            kind,
-        }
+        let def = Rc::new(Spanned {
+            inner: fndef.clone(),
+            span: fndef.name.span.clone(),
+        });
+
+        Self { def, scope, kind }
     }
 }
-
 
 impl TypedObject for Function {
     fn infer_type<'a>(&self, _: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
@@ -48,7 +61,9 @@ impl TypedObject for Function {
 
             if node.as_ref().downcast_ref::<Spanned<Return>>().is_some()
                 || node.as_ref().downcast_ref::<Return>().is_some()
-                || node.as_ref().downcast_ref::<Spanned<Statement>>()
+                || node
+                    .as_ref()
+                    .downcast_ref::<Spanned<Statement>>()
                     .map(|Spanned { inner, .. }| matches!(inner, Statement::Ret(_)))
                     .unwrap_or(false)
             {

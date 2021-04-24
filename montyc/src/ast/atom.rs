@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use crate::prelude::*;
+use crate::{prelude::*, scope::LookupOrder};
 
-use super::{assign::Assign, primary::Primary, AstObject};
+use super::{assign::Assign, stmt::Statement, AstObject};
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Atom {
@@ -64,7 +64,14 @@ impl TypedObject for Atom {
             Atom::Name(target) => {
                 log::trace!("infer_type: performing name lookup on atom {:?}", self);
 
-                let results = ctx.scope.lookup_def(target.clone(), &ctx.global_context);
+                let results = ctx
+                    .scope
+                    .lookup_def(
+                        target.clone(),
+                        &ctx.global_context,
+                        LookupOrder::ControlFlowSensitive(ctx.this.clone().unwrap()),
+                    )
+                    .unwrap_or_compiler_error(ctx);
 
                 if results.is_empty() {
                     ctx.exit_with_error(MontyError::UndefinedVariable {
@@ -73,28 +80,12 @@ impl TypedObject for Atom {
                 }
 
                 for top in results {
-                    let top_u = top.unspanned();
-
-                    if let Some(asn) = top_u.as_ref().downcast_ref::<Assign>() {
+                    if let Some(asn) = crate::isinstance!(top.as_ref(), Assign).or_else(
+                        || crate::isinstance!(top.as_ref(), Statement, Statement::Asn(n) => n),
+                    ) {
                         match asn.value.inner.infer_type(ctx) {
                             Ok(i) => return Ok(i),
                             Err(err) => ctx.exit_with_error(err),
-                        }
-                    } else if let Some(atom) =
-                        top.as_ref().downcast_ref::<Atom>()
-                            .cloned()
-                            .or(top.as_ref().downcast_ref::<Primary>().and_then(|p| {
-                                if let Primary::Atomic(atom) = p {
-                                    Some(atom.inner.clone())
-                                } else {
-                                    None
-                                }
-                            }))
-                    {
-                        if atom == *self {
-                            continue;
-                        } else {
-                            todo!()
                         }
                     } else {
                         log::trace!("infer_type: lookup successfull! top={:?}", top.name());

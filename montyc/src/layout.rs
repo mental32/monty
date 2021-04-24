@@ -14,6 +14,23 @@ pub struct Block<T> {
     pub nodes: Vec<T>,
 }
 
+#[derive(Debug)]
+pub struct LayoutIter<'a, T> {
+    start: BlockId,
+    pending: Vec<BlockId>,
+    layout: &'a Layout<T>,
+}
+
+impl<'a, T> Iterator for LayoutIter<'a, T> {
+    type Item = (BlockId, &'a Block<T>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.pending.pop()?;
+        let block = self.layout.blocks.get(&current).unwrap();
+        Some((current, block))
+    }
+}
+
 /// Represent then layout of a given AST.
 ///
 /// Inspired by `cranelift_codegen::ir::Layout` this
@@ -55,6 +72,46 @@ impl<T> Layout<T> {
             start: BlockId(0),
             end: BlockId(1),
             blocks,
+        }
+    }
+
+    pub fn iter_from(&self, start: BlockId) -> impl Iterator<Item = (BlockId, &Block<T>)> {
+        let mut pending = vec![];
+        let mut processing = vec![start];
+
+        while let Some(current) = processing.pop() {
+            let block = self.blocks.get(&current).unwrap();
+
+            for pred in block.succs.iter().cloned() {
+                pending.push(pred);
+                processing.push(pred);
+            }
+        }
+
+        LayoutIter {
+            start,
+            pending,
+            layout: self,
+        }
+    }
+
+    pub fn rev_iter(&self, start: BlockId) -> impl Iterator<Item = (BlockId, &Block<T>)> {
+        let mut pending = vec![];
+        let mut processing = vec![start];
+
+        while let Some(current) = processing.pop() {
+            let block = self.blocks.get(&current).unwrap();
+
+            for pred in block.preds.iter().cloned() {
+                pending.push(pred);
+                processing.push(pred);
+            }
+        }
+
+        LayoutIter {
+            start,
+            pending,
+            layout: self,
         }
     }
 

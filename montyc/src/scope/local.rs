@@ -2,7 +2,7 @@ use std::{marker::PhantomData, rc::Rc};
 
 use crate::prelude::*;
 
-use super::{ScopeIter, ScopeRoot, ScopedObject, collect_subnodes};
+use super::{LookupOrder, ScopeIter, ScopeRoot, ScopedObject, collect_subnodes};
 
 
 // -- LocalScope
@@ -68,8 +68,9 @@ impl<T: std::fmt::Debug> Scope for LocalScope<T> {
         &self,
         target: SpanEntry,
         global_context: &GlobalContext,
-    ) -> Vec<Rc<dyn AstObject>> {
-        self.inner.lookup_any(target, global_context)
+        order: LookupOrder,
+    ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
+        self.inner.lookup_any(target, global_context, order)
     }
 
     fn module_ref(&self) -> ModuleRef {

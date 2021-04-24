@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::prelude::*;
 
-use super::{ScopeIter, ScopeRoot, ScopedObject};
+use super::{LookupOrder, ScopeIter, ScopeRoot, ScopedObject};
 
 
 // -- WrappedScope
@@ -38,8 +38,9 @@ impl Scope for WrappedScope {
         &self,
         target: SpanEntry,
         global_context: &GlobalContext,
-    ) -> Vec<Rc<dyn AstObject>> {
-        self.inner.lookup_any(target, global_context)
+        order: LookupOrder
+    ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
+        self.inner.lookup_any(target, global_context, order)
     }
 
     fn parent(&self) -> Option<Rc<dyn Scope>> {

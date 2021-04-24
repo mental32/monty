@@ -7,10 +7,7 @@ use std::{
 use fmt::Debug;
 
 use crate::{
-    ast::{
-        assign::Assign, class::ClassDef, funcdef::FunctionDef,
-        stmt::Statement, AstObject,
-    },
+    ast::{assign::Assign, class::ClassDef, funcdef::FunctionDef, stmt::Statement, AstObject},
     context::{GlobalContext, LocalContext, ModuleRef},
     func::Function,
     parser::SpanEntry,
@@ -70,12 +67,23 @@ impl dyn AstObject {
             None
         }
     }
+
+    pub fn as_function(&self) -> Option<&FunctionDef> {
+        crate::isinstance!(self, FunctionDef)
+            .or_else(|| crate::isinstance!(self, Statement, Statement::FnDef(f) => f))
+    }
 }
 
 #[doc(hidden)]
 #[inline(always)]
 pub(in crate) fn _downcast_ref<T: Any>(o: &dyn AstObject) -> Option<&T> {
     o.downcast_ref::<T>()
+}
+
+#[derive(Debug)]
+pub enum LookupOrder {
+    ControlFlowSensitive(Rc<dyn AstObject>),
+    Unspecified,
 }
 
 // -- enum ScopeRoot
@@ -109,14 +117,16 @@ pub trait Scope: core::fmt::Debug {
         &self,
         target: SpanEntry,
         global_context: &GlobalContext,
-    ) -> Vec<Rc<dyn AstObject>>;
+        order: LookupOrder,
+    ) -> crate::Result<Vec<Rc<dyn AstObject>>>;
 
     fn lookup_def(
         &self,
         target: SpanEntry,
         global_context: &GlobalContext,
-    ) -> Vec<Rc<dyn AstObject>> {
-        let mut results = self.lookup_any(target, global_context);
+        order: LookupOrder,
+    ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
+        let mut results = self.lookup_any(target, global_context, order)?;
 
         let _ = results.drain_filter(|o| {
             crate::isinstance!(o.as_ref(), Assign).is_some()
@@ -125,6 +135,6 @@ pub trait Scope: core::fmt::Debug {
                 || crate::isinstance!(o.as_ref(), ClassDef).is_some()
         });
 
-        results
+        Ok(results)
     }
 }

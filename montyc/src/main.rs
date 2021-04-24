@@ -14,16 +14,9 @@ fn main() {
         for (obj, lctx) in ctx.walk(mref.clone()) {
             obj.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
 
-            if let Some(Statement::FnDef(f)) = obj.as_ref().downcast_ref() {
-                ctx.functions.borrow_mut().push(Function::new(&f, &lctx));
+            if let Some(Statement::FnDef(_)) = obj.as_ref().downcast_ref() {
+                ctx.functions.borrow_mut().push(Function::new(obj.clone(), &lctx));
             }
-
         }
-
-        let f = ctx.functions.borrow();
-        let f = f.last().unwrap();
-
-        let _ = dbg!(f.lower());
-
     });
 }

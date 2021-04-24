@@ -1,1 +1,3 @@
-1 if False else 42
+def f() -> int:
+    return x
+    x = 1

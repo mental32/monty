@@ -6,7 +6,7 @@ use super::{expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, Spanne
 
 #[derive(Debug, Clone)]
 pub struct Return {
-    pub value: Option<Spanned<Expr>>,
+    pub value: Option<Rc<Spanned<Expr>>>,
 }
 
 impl AstObject for Return {
@@ -50,7 +50,12 @@ impl TypedObject for Return {
         };
 
         let actual = match &self.value {
-            Some(value) => value.infer_type(&ctx)?,
+            Some(value) => {
+                let mut ctx = ctx.clone();
+                ctx.this = Some(value.clone() as Rc<_>);
+                value.infer_type(&ctx)?
+            },
+
             None => TypeMap::NONE_TYPE,
         };
 
