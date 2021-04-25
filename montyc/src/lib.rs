@@ -1,4 +1,10 @@
-#![feature(variant_count, bool_to_option, drain_filter, assert_matches)]
+#![feature(
+    variant_count,
+    bool_to_option,
+    drain_filter,
+    assert_matches,
+    get_mut_unchecked
+)]
 #![deny(warnings)]
 
 use std::rc::Rc;
@@ -62,11 +68,20 @@ macro_rules! isinstance {
 
 #[derive(Debug, Error)]
 pub enum MontyError {
-    #[error("local variable referenced before assignment.")]
+    #[error("Local variable referenced before assignment.")]
     UnboundLocal {
         name: SpanEntry,
         assign: Span,
         used: Span,
+    },
+
+    #[error("Reassigned a name with an incompatible type.")]
+    IncompatibleReassignment {
+        name: SpanEntry,
+        first_assigned: Span,
+        incorrectly_reassigned: Span,
+        expected: LocalTypeId,
+        actual: LocalTypeId,
     },
 
     #[error("Incompatible return type.")]
@@ -286,7 +301,37 @@ impl MontyError {
                 ))
                 .with_labels(vec![
                     Label::primary((), used).with_message("name used here."),
-                    Label::secondary((), assign).with_message("but initially assigned later here.")
+                    Label::secondary((), assign).with_message("but initially assigned later here."),
+                ]),
+
+            MontyError::IncompatibleReassignment {
+                name,
+                first_assigned,
+                incorrectly_reassigned,
+                expected,
+                actual,
+            } => Diagnostic::error()
+                .with_message("Incompatible type for reassignment.")
+                .with_labels(vec![
+                    Label::primary((), first_assigned).with_message(format!(
+                        "\"{}\" was first assigned here with type {}",
+                        ctx.global_context
+                            .resolver
+                            .resolve(ctx.module_ref.clone(), name)
+                            .unwrap(),
+                        ctx.global_context.resolver.resolve_type(expected).unwrap(),
+                    )),
+                    Label::secondary((), incorrectly_reassigned).with_message(format!(
+                        "but gets incorrectly reassigned here with type {}",
+                        ctx.global_context.resolver.resolve_type(actual).unwrap()
+                    )),
+                ])
+                .with_notes(vec![
+                    "Note: Names within the same scope can not be assigned with multiple different types...".to_string(),
+                    format!("Help: Consider using a union type e.g. Union[{}, {}] instead.",
+                        ctx.global_context.resolver.resolve_type(actual).unwrap(),
+                        ctx.global_context.resolver.resolve_type(expected).unwrap()
+                    )
                 ]),
         }
     }

@@ -1,3 +1,3 @@
-def f() -> int:
-    return x
+def f():
     x = 1
+    x = ""

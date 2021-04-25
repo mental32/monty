@@ -1,5 +1,7 @@
 use std::{marker::PhantomData, rc::Rc};
 
+use dashmap::DashMap;
+
 use crate::{
     ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement},
     prelude::*,
@@ -12,6 +14,7 @@ pub struct Function {
     pub def: Rc<Spanned<FunctionDef>>,
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
+    pub vars: DashMap<SpanEntry, (LocalTypeId, Span)>,
 }
 
 impl Function {
@@ -42,7 +45,9 @@ impl Function {
             span: fndef.name.span.clone(),
         });
 
-        Self { def, scope, kind }
+        let vars = DashMap::default();
+
+        Self { def, scope, kind, vars }
     }
 }
 
@@ -54,10 +59,14 @@ impl TypedObject for Function {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         log::trace!("typecheck:function {}", &self.kind.inner);
 
+        assert_matches!(ctx.scope.root(), ScopeRoot::Func(_));
+
         let mut implicit_return = true;
 
         for scoped_object in self.scope.iter() {
             let node = scoped_object.object.clone();
+
+            assert_matches!(scoped_object.scope.root(), ScopeRoot::Func(_));
 
             if node.as_ref().downcast_ref::<Spanned<Return>>().is_some()
                 || node.as_ref().downcast_ref::<Return>().is_some()

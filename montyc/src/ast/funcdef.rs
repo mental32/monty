@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
-use crate::prelude::*;
+use dashmap::DashMap;
+
+use crate::{func::Function, prelude::*, scope::ScopeRoot};
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
@@ -122,20 +124,27 @@ impl TypedObject for FunctionDef {
             .unwrap()
             .unwrap();
 
-        let func = Rc::new(crate::func::Function {
+        let mut func = Rc::new(Function {
             scope,
             kind,
+            vars: DashMap::default(),
             def: Rc::new(this),
         });
 
-        let mut scope = func.scope.clone();
-        scope.inner.root = crate::scope::ScopeRoot::Func(func.clone());
+        let mut root = ScopeRoot::Func(Rc::clone(&func));
+
+        // SAFETY: The only other reference to `func` is in the scope root.
+        //         which doesn't get dereferenced in the call to `std::mem::swap`.
+        unsafe {
+            let func = Rc::get_mut_unchecked(&mut func);
+            std::mem::swap(&mut func.scope.inner.root, &mut root);
+        }
 
         let ctx = LocalContext {
             global_context: ctx.global_context,
             module_ref: ctx.module_ref.clone(),
-            scope: Rc::new(scope) as Rc<_>,
-            this: None,
+            scope: Rc::new(func.scope.clone()) as Rc<_>,
+            this: ctx.this.clone(),
             parent: ctx.parent.clone(),
         };
 

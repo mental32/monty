@@ -114,18 +114,8 @@ impl<'a> LookupIter<'a> {
         global_context: &GlobalContext,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
         log::trace!(
-            "lookup: Performing generic lookup on target=({:?} -> {:?})",
+            "lookup:search_unordered Performing generic lookup on target={:?}",
             target,
-            {
-                let mctx = global_context
-                    .modules
-                    .get(self.0.module_ref.as_ref().expect("no module ref"))
-                    .unwrap();
-                global_context
-                    .span_ref
-                    .borrow()
-                    .resolve_ref(target, mctx.source.as_ref())
-            }
         );
 
         let mut results = vec![];

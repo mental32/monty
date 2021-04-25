@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::prelude::*;
 
-use super::{AstObject, ObjectIter, Spanned, atom::Atom, expr::Expr};
+use super::{atom::Atom, expr::Expr, AstObject, ObjectIter, Spanned};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assign {
@@ -40,7 +40,7 @@ impl AstObject for Assign {
 
 impl TypedObject for Assign {
     fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        Ok(TypeMap::NEVER)  // assignments do not have types, their values do however.
+        Ok(TypeMap::NEVER) // assignments do not have types, their values do however.
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
@@ -55,6 +55,29 @@ impl TypedObject for Assign {
             self.value.infer_type(&ctx)?
         };
 
+        if let ScopeRoot::Func(func) = ctx.scope.root() {
+            if let Atom::Name(name) = &self.name.inner {
+                if let Some((ty, span)) = func.vars.get(name).map(|kv| kv.value().clone()) {
+                    if ty != actual {
+                        ctx.exit_with_error(MontyError::IncompatibleReassignment {
+                            name: name.clone(),
+                            first_assigned: span.clone(),
+                            incorrectly_reassigned: ctx.this.clone().unwrap().span().unwrap(),
+                            expected: ty,
+                            actual,
+                        })
+                    }
+                } else {
+                    func.vars.insert(
+                        name.clone(),
+                        (actual, ctx.this.clone().unwrap().span().unwrap()),
+                    );
+                }
+            }
+        } else {
+            unreachable!("{:?}", ctx.scope.root());
+        }
+
         if let Some(expected) = expected {
             if expected != actual {
                 ctx.exit_with_error(MontyError::IncompatibleTypes {
@@ -67,7 +90,6 @@ impl TypedObject for Assign {
         }
 
         Ok(())
-
     }
 }
 
