@@ -29,7 +29,7 @@ impl ModuleContext {
             module_ref: ModuleRef::from(self.path.clone()),
             scope: self.scope.clone(),
             this: None,
-            parent: None,
+            // parent: None,
         }
     }
 }

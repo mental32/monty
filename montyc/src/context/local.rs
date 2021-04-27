@@ -11,7 +11,7 @@ pub struct LocalContext<'a> {
     pub module_ref: ModuleRef,
     pub scope: Rc<dyn Scope>,
     pub this: Option<Rc<dyn AstObject>>,
-    pub parent: Option<&'a LocalContext<'a>>,
+    // pub parent: Option<&'a LocalContext<'a>>,
 }
 
 impl<'a> LocalContext<'a> {

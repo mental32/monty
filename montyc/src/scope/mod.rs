@@ -128,12 +128,21 @@ pub trait Scope: core::fmt::Debug {
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
         let mut results = self.lookup_any(target, global_context, order)?;
 
-        let _ = results.drain_filter(|o| {
-            crate::isinstance!(o.as_ref(), Assign).is_some()
-                || crate::isinstance!(o.as_ref(), FunctionDef).is_some()
-                || o.as_ref().downcast_ref::<Function>().is_some()
-                || crate::isinstance!(o.as_ref(), ClassDef).is_some()
-        });
+        let dropped = results
+            .drain_filter(|o| {
+                !(crate::isinstance!(o.as_ref(), Assign).is_some()
+                    || crate::isinstance!(o.as_ref(), FunctionDef).is_some()
+                    || o.as_ref().downcast_ref::<Function>().is_some()
+                    || crate::isinstance!(o.as_ref(), ClassDef).is_some()
+                    || crate::isinstance!(o.as_ref(), Statement, Statement::FnDef(f) => f).is_some()
+                    || crate::isinstance!(o.as_ref(), Statement, Statement::Asn(a) => a).is_some()
+                )
+            })
+            .collect::<Vec<_>>();
+
+        if !dropped.is_empty() {
+            log::trace!("lookup_def: dropping results = {:?}", dropped);
+        }
 
         Ok(results)
     }

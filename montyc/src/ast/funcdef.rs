@@ -19,8 +19,11 @@ pub struct FunctionDef {
 
 impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
     fn from((def, ctx): (&'b FunctionDef, &'a LocalContext)) -> Self {
+        let mut ret_ctx = ctx.clone();
+        ret_ctx.this = def.returns.clone().map(|r| Rc::new(r) as Rc<_>);
+
         let ret = match def.returns.as_ref() {
-            Some(node) => match node.infer_type(&ctx) {
+            Some(node) => match node.infer_type(&ret_ctx) {
                 Ok(tid) => tid,
                 Err(_) => ctx.exit_with_error(MontyError::UndefinedVariable {
                     node: Rc::new(def.returns.clone().unwrap()),
@@ -39,7 +42,10 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
 
         if let Some(def_args) = &def.args {
             for (_arg_name, arg_ann) in def_args {
-                let type_id = match arg_ann.infer_type(ctx) {
+                let mut ctx = ctx.clone();
+                ctx.this = Some(arg_ann.clone());
+
+                let type_id = match arg_ann.infer_type(&ctx) {
                     Ok(tyid) => tyid,
                     Err(err) => ctx.exit_with_error(err),
                 };
@@ -53,7 +59,13 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
             ..
         }) = def.reciever
         {
-            Some(Atom::Name(r).infer_type(ctx).unwrap_or_compiler_error(ctx))
+            let mut ctx = ctx.clone();
+            ctx.this = Some(Rc::new(def.reciever.clone()));
+            Some(
+                Atom::Name(r)
+                    .infer_type(&ctx)
+                    .unwrap_or_compiler_error(&ctx),
+            )
         } else {
             None
         };
@@ -129,6 +141,7 @@ impl TypedObject for FunctionDef {
             kind,
             vars: DashMap::default(),
             def: Rc::new(this),
+            refs: Default::default(),
         });
 
         let mut root = ScopeRoot::Func(Rc::clone(&func));
@@ -145,7 +158,7 @@ impl TypedObject for FunctionDef {
             module_ref: ctx.module_ref.clone(),
             scope: Rc::new(func.scope.clone()) as Rc<_>,
             this: ctx.this.clone(),
-            parent: ctx.parent.clone(),
+            // parent: ctx.parent.clone(),
         };
 
         func.typecheck(&ctx)

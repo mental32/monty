@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, marker::PhantomData, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
@@ -10,12 +10,25 @@ use crate::{
 };
 
 #[derive(Debug)]
+pub enum DataRef {
+    StringConstant {
+        span_entry: NonZeroUsize,
+        module_ref: ModuleRef,
+    },
+
+    FunctionRef {
+        span_entry: NonZeroUsize,
+        module_ref: ModuleRef,
+    },
+}
+
+#[derive(Debug)]
 pub struct Function {
     pub def: Rc<Spanned<FunctionDef>>,
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
     pub vars: DashMap<SpanEntry, (LocalTypeId, Span)>,
-    // pub refs: Vec<()>,
+    pub refs: RefCell<Vec<DataRef>>,
 }
 
 impl Function {
@@ -32,6 +45,7 @@ impl Function {
         let mut scope = OpaqueScope::from(def.clone());
 
         scope.module_ref = Some(ctx.module_ref.clone());
+        scope.parent = Some(ctx.scope.clone());
 
         let scope = LocalScope {
             _t: PhantomData,
@@ -60,6 +74,7 @@ impl Function {
             scope,
             kind,
             vars,
+            refs: Default::default(),
         };
 
         let mut func = Rc::new(func);

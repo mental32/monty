@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use cranelift_module::Linkage;
 use montyc::{
     ast::stmt::Statement, context::GlobalContext, func::Function, prelude::*, CompilerOptions,
 };
@@ -24,7 +25,7 @@ fn main() {
                     module_ref: mref.clone(),
                     scope: Rc::new(func.scope.clone()) as Rc<_>,
                     this: lctx.this.clone(),
-                    parent: lctx.parent.clone(),
+                    // parent: lctx.parent.clone(),
                 };
 
                 func.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
@@ -38,6 +39,15 @@ fn main() {
         {
             let funcs = ctx.functions.borrow();
             let mut ctx = montyc::context::codegen::CodegenBackend::new(None);
+
+            ctx.declare_functions(funcs.iter().map(|(f, mref)| {
+                (
+                    f.as_ref(),
+                    mref,
+                    Linkage::Export,
+                    cranelift_codegen::isa::CallConv::SystemV,
+                )
+            }));
 
             for (func, mref) in funcs.iter() {
                 ctx.add_function_to_module(

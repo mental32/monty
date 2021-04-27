@@ -17,11 +17,11 @@ use crate::{
     typing::{LocalTypeId, TypeMap},
 };
 
+use codegen::isa::CallConv;
 use cranelift_codegen::{
     self as codegen,
+    ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind},
     settings::{self, Configurable},
-    ir::InstBuilder,
-    ir::{ExternalName, types, StackSlot, Signature, StackSlotData, StackSlotKind},
     verify_function, Context,
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
@@ -29,15 +29,19 @@ use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use dashmap::DashMap;
 
+#[derive(Debug)]
 pub struct ModuleNames {
-    namespace: u32,
-    functions: HashMap<NonZeroUsize, ExternalName>,
+    pub namespace: u32,
+    pub functions: HashMap<NonZeroUsize, (ExternalName, FuncId)>,
 }
 
 pub type CodegenLowerArg<'a, 'b> = CodegenContext<'a, 'b>;
 
 #[derive(Clone)]
-pub struct CodegenContext<'a, 'b> where 'a: 'b {
+pub struct CodegenContext<'a, 'b>
+where
+    'a: 'b,
+{
     pub codegen_backend: &'b CodegenBackend,
     pub builder: Rc<RefCell<FunctionBuilder<'a>>>,
     pub vars: &'a DashMap<NonZeroUsize, StackSlot>,
@@ -68,8 +72,6 @@ impl CodegenBackend {
             index: names.functions.len() as u32,
         };
 
-        names.functions.insert(fn_name, external_name.clone());
-
         external_name
     }
 
@@ -80,6 +82,8 @@ impl CodegenBackend {
         linkage: Linkage,
         callcov: codegen::isa::CallConv,
     ) -> Option<(FuncId, codegen::ir::Function)> {
+        let fn_name = func.name_as_string()?;
+
         let mut sig = Signature::new(callcov);
 
         if func.kind.inner.ret != TypeMap::NONE_TYPE {
@@ -92,23 +96,37 @@ impl CodegenBackend {
                 .push(codegen::ir::AbiParam::new(self.types[param]));
         }
 
-        let name = func.name_as_string()?;
+        let name = if let Some((name, fid)) = self
+            .names
+            .get(mref)
+            .and_then(|mn| mn.functions.get(&func.def.name().clone().unwrap()))
+            .cloned()
+        {
+            return Some((fid, codegen::ir::Function::with_name_signature(name, sig)));
+        } else {
+            self.produce_external_name(func.def.name().unwrap(), mref)
+        };
 
-        let clfn = codegen::ir::Function::with_name_signature(
-            self.produce_external_name(func.def.name().unwrap(), mref),
-            sig,
-        );
+        let clfn = codegen::ir::Function::with_name_signature(name.clone(), sig);
 
         let fid = self
             .object_module
-            .declare_function(&name, linkage, &clfn.signature)
+            .declare_function(&fn_name, linkage, &clfn.signature)
             .ok()?;
+
+        self.names
+            .get_mut(mref)
+            .unwrap()
+            .functions
+            .insert(func.def.name().unwrap(), (name.clone(), fid));
 
         Some((fid, clfn))
     }
 
     #[allow(warnings)]
     fn build_function(&self, fid: FuncId, func: &Function, cl_func: &mut codegen::ir::Function) {
+        use cranelift_codegen::ir::InstBuilder;
+
         log::trace!("codegen::build_function {:?} = {}", fid, func.kind.inner);
 
         let layout = func.lower_and_then(|_, mut layout| {
@@ -174,7 +192,7 @@ impl CodegenBackend {
                                 vars: &vars,
                                 func,
                             });
-                        },
+                        }
 
                         Statement::FnDef(_) => todo!(),
 
@@ -222,6 +240,15 @@ impl CodegenBackend {
 
         if implicit_return {
             builder.borrow_mut().ins().return_(&[]);
+        }
+    }
+
+    pub fn declare_functions<'a>(
+        &mut self,
+        it: impl Iterator<Item = (&'a Function, &'a ModuleRef, Linkage, CallConv)>,
+    ) {
+        for (func, mref, linkage, callcov) in it {
+            self.declare_function(func, mref, linkage, callcov);
         }
     }
 
@@ -290,7 +317,6 @@ impl CodegenBackend {
             types,
             flags,
             names: HashMap::default(),
-            // functions: Default::default(),
         }
     }
 

@@ -1,4 +1,5 @@
+def meaning_of_life() -> int:
+    return 42
+
 def main() -> int:
-    x = 1
-    y = x + 1
-    return y * 100
+    return meaning_of_life()

@@ -66,6 +66,10 @@ macro_rules! isinstance {
             $crate::scope::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
         {
             Some(inner)
+        } else if let Some(inner) = $crate::scope::_downcast_ref::<$crate::scope::Renamed>($e)
+            .and_then(|rn| rn.inner.as_ref().downcast_ref::<$t>())
+        {
+            Some(inner)
         } else {
             $crate::scope::_downcast_ref::<$t>($e)
         }
@@ -116,6 +120,9 @@ pub enum MontyError {
         actual: LocalTypeId,
         def_node: Rc<Spanned<FunctionDef>>,
     },
+
+    #[error("Object is not callable.")]
+    NotCallable { kind: LocalTypeId, callsite: Span },
 
     #[error("Failed to infer the type of a value.")]
     UnknownType { node: Rc<dyn AstObject> },
@@ -224,7 +231,7 @@ impl MontyError {
                 .with_message("use of undefined variable.")
                 .with_labels(vec![Label::primary((), node.span().unwrap()).with_message(
                     format!(
-                        "\"{}\" is not defined anywhere.",
+                        "\"{}\" is not defined.",
                         ctx.global_context
                             .resolver
                             .sources
@@ -348,6 +355,10 @@ impl MontyError {
                         ctx.global_context.resolver.resolve_type(expected).unwrap()
                     )
                 ]),
+
+            MontyError::NotCallable { kind, callsite } => Diagnostic::error().with_message("Object is not callable.").with_labels(vec![
+                Label::primary((), callsite).with_message(format!("Attempted to call a non-callable object of type: {}", ctx.global_context.resolver.resolve_type(kind).unwrap())),
+            ])
         }
     }
 }
@@ -372,6 +383,7 @@ pub mod prelude {
         parser::{token::PyToken, Parseable, ParserT, Span, SpanEntry, SpanRef},
         scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
         typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject},
+        func::{Function, DataRef},
         MontyError,
     };
 }

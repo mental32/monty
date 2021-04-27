@@ -463,7 +463,6 @@ impl GlobalContext {
                 module_ref: module_ref.clone(),
                 scope: scoped.scope,
                 this: Some(object.clone()),
-                parent: None,
             };
 
             Some((object, ctx))

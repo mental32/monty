@@ -144,9 +144,9 @@ impl<'a> LookupIter<'a> {
         for object in self.0.nodes.iter().map(|o| o.unspanned()) {
             let item = object.as_ref();
 
-            log::trace!("lookup: immediate -> {:?}", item);
-
             if item.is_named(target) {
+                log::trace!("lookup:search_unordered {:?}", item);
+
                 results.push(object.clone());
             }
         }
@@ -302,7 +302,7 @@ impl Scope for OpaqueScope {
                 module_ref: scoped.scope.module_ref(),
                 scope: scoped.scope,
                 this: Some(object.clone()),
-                parent: None,
+                // parent: None,
             };
 
             Some((object, ctx))
