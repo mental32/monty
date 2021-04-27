@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{prelude::*, scope::LookupOrder};
+use crate::{context::codegen::CodegenLowerArg, prelude::*, scope::LookupOrder};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -204,6 +204,20 @@ impl LookupTarget for Primary {
         match self {
             Self::Atomic(at) => at.name(),
             _ => None,
+        }
+    }
+}
+
+impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> for Primary {
+    fn lower_with(&self, ctx: CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value {
+
+        #[allow(warnings)]
+        match self {
+            Primary::Atomic(at) => at.inner.lower_with(ctx),
+            Primary::Subscript { value, index } => todo!(),
+            Primary::Call { func, args } => todo!(),
+            Primary::Attribute { left, attr } => todo!(),
+            Primary::Await(_) => todo!(),
         }
     }
 }

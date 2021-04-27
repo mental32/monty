@@ -23,16 +23,31 @@ use typing::LocalTypeId;
 
 pub mod ast;
 pub mod class;
-pub mod codegen;
 pub mod context;
 pub mod func;
 pub mod layout;
 
 pub mod lowering {
-    pub trait Lower {
-        type Output;
+    pub trait Lower<Output> {
+        fn lower(&self) -> Output;
 
-        fn lower(&self) -> Self::Output;
+        fn lower_and_then<F, T>(&self, f: F) -> T
+        where
+            F: Fn(&Self, Output) -> T,
+        {
+            f(self, self.lower())
+        }
+    }
+
+    pub trait LowerWith<Input, Output> {
+        fn lower_with(&self, i: Input) -> Output;
+
+        fn lower_with_and_then<F, T>(&self, i: Input, f: F) -> T
+        where
+            F: Fn(&Self, Output) -> T,
+        {
+            f(self, self.lower_with(i))
+        }
     }
 }
 
@@ -353,7 +368,7 @@ pub mod prelude {
         ast::{AstObject, Spanned},
         context::{GlobalContext, LocalContext, ModuleContext, ModuleFlags, ModuleRef},
         layout::{BlockId, Layout},
-        lowering::Lower,
+        lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanEntry, SpanRef},
         scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
         typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject},

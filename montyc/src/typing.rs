@@ -11,6 +11,13 @@ pub type NodeId = Option<NonZeroUsize>;
 #[repr(transparent)]
 pub struct LocalTypeId(usize);
 
+impl LocalTypeId {
+    #[inline]
+    pub fn is_builtin(&self) -> bool {
+        (0..=255).contains(&self.0)
+    }
+}
+
 #[derive(Debug)]
 pub struct TaggedType<T> {
     pub type_id: LocalTypeId,
@@ -77,6 +84,23 @@ pub enum BuiltinTypeId {
     Never = 255,
 }
 
+impl BuiltinTypeId {
+    fn size_of(&self) -> usize {
+        match self {
+            BuiltinTypeId::Invalid => unreachable!(),
+            BuiltinTypeId::Int => 8,
+            BuiltinTypeId::Float => todo!(),
+            BuiltinTypeId::Str => todo!(),
+            BuiltinTypeId::Bool => todo!(),
+            BuiltinTypeId::None => todo!(),
+            BuiltinTypeId::Ellipsis => todo!(),
+            BuiltinTypeId::Module => todo!(),
+            BuiltinTypeId::Unknown => todo!(),
+            BuiltinTypeId::Never => todo!(),
+        }
+    }
+}
+
 impl std::fmt::Display for BuiltinTypeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -130,6 +154,14 @@ impl std::fmt::Display for TypeDescriptor {
 }
 
 impl TypeDescriptor {
+    fn size_of(&self) -> usize {
+        match self {
+            TypeDescriptor::Simple(s) => s.size_of(),
+            TypeDescriptor::Function(_) => todo!(),
+            TypeDescriptor::Class(_) => todo!(),
+        }
+    }
+
     fn inner_type_id(&self) -> TypeId {
         match self {
             Self::Simple(_) => TypeId::of::<BuiltinTypeId>(),
@@ -149,12 +181,7 @@ impl TypeDescriptor {
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::{funcdef::FunctionDef},
-    context::{resolver::InternalResolver, LocalContext, ModuleRef},
-    parser::SpanEntry,
-    MontyError,
-};
+use crate::{MontyError, ast::{funcdef::FunctionDef}, context::{resolver::InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry, prelude::Span};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId>;
@@ -166,6 +193,7 @@ pub trait TypedObject {
 pub struct TypeMap {
     last_id: Cell<usize>,
     inner: DashMap<LocalTypeId, TypeDescriptor>,
+    pub cache: DashMap<(ModuleRef, Span), LocalTypeId>,
 }
 
 impl TypeMap {
@@ -201,8 +229,14 @@ impl TypeMap {
 
         Self {
             inner: mapping,
+            cache: DashMap::new(),
             last_id: Cell::new(255),
         }
+    }
+
+    #[inline]
+    pub fn size_of(&self, ty: impl Into<LocalTypeId>) -> Option<usize> {
+        Some(self.get(ty.into())?.value().size_of())
     }
 
     #[inline]

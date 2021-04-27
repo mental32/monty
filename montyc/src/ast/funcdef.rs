@@ -162,10 +162,8 @@ impl LookupTarget for FunctionDef {
     }
 }
 
-impl Lower for FunctionDef {
-    type Output = Layout<Rc<dyn AstObject>>;
-
-    fn lower(&self) -> Self::Output {
+impl Lower<Layout<Rc<dyn AstObject>>> for FunctionDef {
+    fn lower(&self) -> Layout<Rc<dyn AstObject>> {
         let mut layout = Layout::new();
         let mut prev = layout.start.clone();
 

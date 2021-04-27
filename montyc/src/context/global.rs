@@ -40,7 +40,7 @@ fn shorten(path: &Path) -> String {
 #[derive(Debug)]
 pub struct GlobalContext {
     pub modules: HashMap<ModuleRef, ModuleContext>,
-    pub functions: RefCell<Vec<Function>>,
+    pub functions: RefCell<Vec<(Rc<Function>, ModuleRef)>>,
     pub span_ref: Rc<RefCell<SpanRef>>,
     pub type_map: Rc<TypeMap>,
     pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,

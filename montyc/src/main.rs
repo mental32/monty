@@ -1,4 +1,8 @@
-use montyc::{CompilerOptions, ast::stmt::Statement, context::GlobalContext, func::Function, prelude::*};
+use std::rc::Rc;
+
+use montyc::{
+    ast::stmt::Statement, context::GlobalContext, func::Function, prelude::*, CompilerOptions,
+};
 
 use structopt::StructOpt;
 
@@ -12,11 +16,39 @@ fn main() {
 
     global_context.preload_module(file.unwrap(), |ctx, mref| {
         for (obj, lctx) in ctx.walk(mref.clone()) {
-            obj.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
-
             if let Some(Statement::FnDef(_)) = obj.as_ref().downcast_ref() {
-                ctx.functions.borrow_mut().push(Function::new(obj.clone(), &lctx));
+                let func = Function::new(obj.clone(), &lctx);
+
+                let lctx = LocalContext {
+                    global_context: ctx,
+                    module_ref: mref.clone(),
+                    scope: Rc::new(func.scope.clone()) as Rc<_>,
+                    this: lctx.this.clone(),
+                    parent: lctx.parent.clone(),
+                };
+
+                func.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
+
+                ctx.functions.borrow_mut().push((func, mref.clone()));
+            } else {
+                obj.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
             }
+        }
+
+        {
+            let funcs = ctx.functions.borrow();
+            let mut ctx = montyc::context::codegen::CodegenBackend::new(None);
+
+            for (func, mref) in funcs.iter() {
+                ctx.add_function_to_module(
+                    func,
+                    mref,
+                    cranelift_module::Linkage::Export,
+                    cranelift_codegen::isa::CallConv::SystemV,
+                );
+            }
+
+            ctx.finish(None::<&str>);
         }
     });
 }

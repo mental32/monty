@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{prelude::*, scope::LookupOrder};
+use crate::{context::codegen::CodegenLowerArg, prelude::*, scope::LookupOrder};
 
 use super::{assign::Assign, stmt::Statement, AstObject};
 
@@ -136,6 +136,39 @@ impl LookupTarget for Atom {
         match self {
             Self::Name(n) => n.clone(),
             _ => None,
+        }
+    }
+}
+
+impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> for Atom {
+    fn lower_with(&self, ctx: CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value {
+        use cranelift_codegen::ir::InstBuilder;
+
+        match self {
+            Atom::None => todo!(),
+            Atom::Ellipsis => todo!(),
+            Atom::Int(n) => ctx.builder.borrow_mut().ins().iconst(
+                cranelift_codegen::ir::types::I64,
+                cranelift_codegen::ir::immediates::Imm64::new(
+                    *n as i64,
+                ),
+            ),
+            Atom::Str(_) => todo!(),
+            Atom::Bool(_) => todo!(),
+            Atom::Float(_) => todo!(),
+            Atom::Comment(_) => todo!(),
+            Atom::Name(n) => {
+                let ss = ctx.vars.get(&n.unwrap()).unwrap();
+                let ty = ctx.func
+                    .vars
+                    .get(n)
+                    .map(|r| r.value().0)
+                    .unwrap();
+
+                let ty = ctx.codegen_backend.types[&ty];
+
+                ctx.builder.borrow_mut().ins().stack_load(ty, ss.clone(), 0)
+            }
         }
     }
 }

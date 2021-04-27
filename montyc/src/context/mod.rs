@@ -4,6 +4,7 @@ pub(crate) mod global;
 pub(crate) mod local;
 pub(crate) mod module;
 pub(crate) mod resolver;
+pub mod codegen;
 
 pub use self::{global::GlobalContext, local::LocalContext, module::{ModuleContext, ModuleFlags}};
 

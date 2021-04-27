@@ -1,6 +1,9 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{prelude::*};
+use crate::{
+    context::codegen::{CodegenContext, CodegenLowerArg},
+    prelude::*,
+};
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -202,20 +205,14 @@ impl TypedObject for Expr {
                     right.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
                 };
 
-                let _left_name = ctx
-                    .global_context
+                ctx.global_context
                     .type_map
-                    .get(left_ty)
-                    .map(|i| i.value().clone())
-                    .unwrap()
-                    .clone();
-                let _right_name = ctx
-                    .global_context
+                    .cache
+                    .insert((ctx.module_ref.clone(), left.span.clone()), left_ty);
+                ctx.global_context
                     .type_map
-                    .get(right_ty)
-                    .map(|i| i.value().clone())
-                    .unwrap()
-                    .clone();
+                    .cache
+                    .insert((ctx.module_ref.clone(), right.span.clone()), right_ty);
 
                 let ltr_name_str = format!("__{}__", op.as_ref());
                 let rtl_name_str = format!("__r{}__", op.as_ref());
@@ -351,13 +348,27 @@ impl TypedObject for Expr {
                 Ok(())
             }
 
-            Expr::BinOp { left: _, op: _, right: _ } => {
-                let _ = self.infer_type(ctx)?;
+            Expr::BinOp {
+                left: _,
+                op: _,
+                right: _,
+            } => {
+                let ty = self.infer_type(ctx)?;
+                ctx.global_context.type_map.cache.insert(
+                    (
+                        ctx.module_ref.clone(),
+                        ctx.this.clone().unwrap().span().unwrap(),
+                    ),
+                    ty,
+                );
                 Ok(())
             }
 
             Expr::Unary { op: _, value: _ } => todo!(),
-            Expr::Named { target: _, value: _ } => todo!(),
+            Expr::Named {
+                target: _,
+                value: _,
+            } => todo!(),
             Expr::Primary(p) => p.typecheck(ctx),
         }
     }
@@ -373,10 +384,8 @@ impl LookupTarget for Expr {
     }
 }
 
-impl<'a> Lower for &'a Expr {
-    type Output = Layout<&'a dyn AstObject>;
-
-    fn lower(&self) -> Self::Output {
+impl<'a> Lower<Layout<&'a dyn AstObject>> for &'a Expr {
+    fn lower(&self) -> Layout<&'a dyn AstObject> {
         log::trace!("lower:expr {:?}", self);
 
         let mut layout = Layout::<&dyn AstObject>::new();
@@ -421,7 +430,10 @@ impl<'a> Lower for &'a Expr {
             }
 
             Expr::Unary { op: _, value: _ } => todo!(),
-            Expr::Named { target: _, value: _ } => todo!(),
+            Expr::Named {
+                target: _,
+                value: _,
+            } => todo!(),
             Expr::Primary(primary) => {
                 let block = layout.insert_into_new_block(primary);
                 layout.succeed(block, layout.end);
@@ -430,5 +442,106 @@ impl<'a> Lower for &'a Expr {
         }
 
         layout
+    }
+}
+
+impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> for Expr {
+    fn lower_with(&self, ctx: CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value {
+        use cranelift_codegen::ir::InstBuilder;
+
+        let CodegenContext {
+            codegen_backend,
+            builder,
+            vars,
+            func,
+        } = ctx.clone();
+
+        #[allow(warnings)]
+        match self {
+            Expr::If { test, body, orelse } => todo!(),
+
+            Expr::BinOp { left, op, right } => {
+                let left_ty = func
+                    .kind
+                    .inner
+                    .resolver
+                    .type_map
+                    .cache
+                    .get(&(
+                        func.scope.inner.module_ref.clone().unwrap(),
+                        left.span.clone()
+                    ))
+                    .unwrap()
+                    .value()
+                    .clone();
+
+                let right_ty = func
+                    .kind
+                    .inner
+                    .resolver
+                    .type_map
+                    .cache
+                    .get(&(
+                        func.scope.inner.module_ref.clone().unwrap(),
+                        right.span.clone()
+                    ))
+                    .unwrap()
+                    .value()
+                    .clone();
+
+                if left_ty.is_builtin() && right_ty.is_builtin() {
+                    let lvalue = left.inner.lower_with(ctx.clone());
+                    let rvalue = right.inner.lower_with(ctx);
+
+                    match op {
+                        InfixOp::Add => match (left_ty, right_ty) {
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                builder.borrow_mut().ins().iadd(lvalue, rvalue)
+                            }
+                            _ => unreachable!(),
+                        },
+
+                        InfixOp::Sub => match (left_ty, right_ty) {
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                builder.borrow_mut().ins().isub(lvalue, rvalue)
+                            }
+                            _ => unreachable!(),
+                        },
+
+                        InfixOp::Power => todo!(),
+                        InfixOp::Invert => todo!(),
+                        InfixOp::FloorDiv => todo!(),
+                        InfixOp::MatMult => todo!(),
+                        InfixOp::Mod => todo!(),
+                        InfixOp::Div => todo!(),
+
+                        InfixOp::Mult => match (left_ty, right_ty) {
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                builder.borrow_mut().ins().imul(lvalue, rvalue)
+                            },
+                            _ => unreachable!(),
+                        },
+
+                        InfixOp::LeftShift => todo!(),
+                        InfixOp::RightShift => todo!(),
+                        InfixOp::NotEq => todo!(),
+                        InfixOp::Eq => todo!(),
+                        InfixOp::And => todo!(),
+                        InfixOp::Or => todo!(),
+                    }
+                } else {
+                    todo!()
+                }
+            }
+
+            Expr::Unary { op, value } => todo!(),
+            Expr::Named { target, value } => todo!(),
+            Expr::Primary(p) => p.inner.lower_with(CodegenContext {
+                codegen_backend,
+                builder: Rc::clone(&builder),
+                vars: &vars,
+                func,
+            }),
+        }
     }
 }

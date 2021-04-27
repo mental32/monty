@@ -1,3 +1,4 @@
-def f():
+def main() -> int:
     x = 1
-    x = ""
+    y = x + 1
+    return y * 100

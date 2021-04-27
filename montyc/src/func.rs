@@ -15,10 +15,18 @@ pub struct Function {
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
     pub vars: DashMap<SpanEntry, (LocalTypeId, Span)>,
+    // pub refs: Vec<()>,
 }
 
 impl Function {
-    pub fn new(def: Rc<dyn AstObject>, ctx: &LocalContext) -> Self {
+    pub fn name_as_string(&self) -> Option<String> {
+        self.kind.inner.resolver.resolve(
+            self.scope.inner.module_ref.clone().unwrap(),
+            self.def.inner.name(),
+        )
+    }
+
+    pub fn new(def: Rc<dyn AstObject>, ctx: &LocalContext) -> Rc<Self> {
         let fndef = def.as_ref().as_function().unwrap();
 
         let mut scope = OpaqueScope::from(def.clone());
@@ -47,7 +55,25 @@ impl Function {
 
         let vars = DashMap::default();
 
-        Self { def, scope, kind, vars }
+        let func = Self {
+            def,
+            scope,
+            kind,
+            vars,
+        };
+
+        let mut func = Rc::new(func);
+
+        let mut root = ScopeRoot::Func(Rc::clone(&func));
+
+        // SAFETY: The only other reference to `func` is in the scope root.
+        //         which doesn't get dereferenced in the call to `std::mem::swap`.
+        unsafe {
+            let func = Rc::get_mut_unchecked(&mut func);
+            std::mem::swap(&mut func.scope.inner.root, &mut root);
+        }
+
+        func
     }
 }
 
@@ -101,10 +127,8 @@ impl TypedObject for Function {
     }
 }
 
-impl Lower for &Function {
-    type Output = Layout<Rc<dyn AstObject>>;
-
-    fn lower(&self) -> Self::Output {
+impl Lower<Layout<Rc<dyn AstObject>>> for &Function {
+    fn lower(&self) -> Layout<Rc<dyn AstObject>> {
         self.def.inner.lower()
     }
 }

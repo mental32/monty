@@ -76,17 +76,19 @@ impl<T> Layout<T> {
     }
 
     pub fn iter_from(&self, start: BlockId) -> impl Iterator<Item = (BlockId, &Block<T>)> {
-        let mut pending = vec![];
+        let mut pending = vec![start];
         let mut processing = vec![start];
 
         while let Some(current) = processing.pop() {
             let block = self.blocks.get(&current).unwrap();
 
-            for pred in block.succs.iter().cloned() {
-                pending.push(pred);
-                processing.push(pred);
+            for succ in block.succs.iter().cloned() {
+                pending.push(succ);
+                processing.push(succ);
             }
         }
+
+    pending.reverse();
 
         LayoutIter {
             start,
@@ -124,7 +126,7 @@ impl<T> Layout<T> {
     }
 
     /// Create a sub-layout by translating an external layout.
-    pub fn with_sublayout_from(&mut self, t: impl Lower<Output = Layout<T>>) -> (BlockId, BlockId)
+    pub fn with_sublayout_from(&mut self, t: impl Lower<Layout<T>>) -> (BlockId, BlockId)
     where
         T: Clone,
     {
