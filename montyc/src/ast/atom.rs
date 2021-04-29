@@ -154,7 +154,10 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                 ),
             ),
             Atom::Str(_) => todo!(),
-            Atom::Bool(_) => todo!(),
+            Atom::Bool(b) => {
+                ctx.builder.borrow_mut().ins().iconst(ctx.codegen_backend.types[&TypeMap::INTEGER], *b as i64)
+            },
+
             Atom::Float(_) => todo!(),
             Atom::Comment(_) => todo!(),
             Atom::Name(n) => {

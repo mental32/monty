@@ -96,10 +96,12 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
         let (stream, ret) = expect_ident(stream)?;
 
-        let ret = ret.map(|t| match t {
-            PyToken::Ident(n) => Atom::Name(n),
-            _ => unreachable!(),
-        }).transparent_with(Primary::Atomic);
+        let ret = ret
+            .map(|t| match t {
+                PyToken::Ident(n) => Atom::Name(n),
+                _ => unreachable!(),
+            })
+            .transparent_with(Primary::Atomic);
 
         (stream, Some(ret))
     } else {
@@ -119,13 +121,23 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         stream = s;
     } else {
         loop {
-            if let Ok((remaining, _)) = terminated(
-                expect_(PyToken::Newline),
-                expect_many_n::<4>(PyToken::Whitespace),
-            )(stream)
-            {
-                // panic!("{:?}", remaining);
-                let (remaining, part) = statement(remaining).unwrap();
+            let (remainaing, _) = expect_many_n::<0>(PyToken::Newline)(stream)?;
+
+            if let Ok((remaining, _)) = expect_many_n::<4>(PyToken::Whitespace)(remainaing) {
+                let (remaining, part) = match statement(remaining) {
+                    Ok(i) => i,
+                    Err(err) => {
+                        if let nom::Err::Error(err) = &err {
+                            if let Some((top, _)) = err.input.get(0) {
+                                if matches!(top, PyToken::Elif | PyToken::Else) {
+                                    break
+                                }
+                            }
+                        }
+
+                        return Err(err);
+                    }
+                };
 
                 body.push(Rc::new(part) as Rc<_>);
                 stream = remaining;

@@ -25,7 +25,6 @@ impl ScopedObject {
             this: Some(self.object.clone()),
             global_context,
             module_ref: self.scope.module_ref(),
-            // parent: None,
         };
 
         f(ctx, self.object.clone())

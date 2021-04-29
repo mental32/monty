@@ -76,7 +76,6 @@ impl TypedObject for Assign {
             }
         } else {
             log::warn!("typecheck:assign unbound assignment in non-function scope {:?}", self);
-            // unreachable!("{:?}", ctx.scope.root());
         }
 
         if let Some(expected) = expected {

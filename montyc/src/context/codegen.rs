@@ -131,7 +131,7 @@ impl CodegenBackend {
 
         let layout = func.lower_and_then(|_, mut layout| {
             layout.reduce_forwarding_edges();
-            // layout.fold_linear_block_sequences();
+            layout.fold_linear_block_sequences();
             layout
         });
 
@@ -192,54 +192,17 @@ impl CodegenBackend {
 
             for node in block.nodes.iter() {
                 if let Some(stmt) = crate::isinstance!(node.as_ref(), Statement) {
-                    match stmt {
-                        Statement::Expression(e) => {
-                            let _ = e.lower_with(CodegenContext {
-                                codegen_backend: self,
-                                builder: Rc::clone(&builder),
-                                vars: &vars,
-                                func,
-                            });
-                        }
+                    let ret = stmt.lower_with(CodegenContext {
+                        codegen_backend: self,
+                        builder: Rc::clone(&builder),
+                        vars: &vars,
+                        func,
+                    });
 
-                        Statement::FnDef(_) => todo!(),
+                    if implicit_return && ret.is_some() {
+                        implicit_return = ret.unwrap();
+                    }
 
-                        Statement::Ret(r) => {
-                            implicit_return = false;
-
-                            if let Some(e) = &r.value {
-                                let value = e.inner.lower_with(CodegenContext {
-                                    codegen_backend: self,
-                                    builder: Rc::clone(&builder),
-                                    vars: &vars,
-                                    func,
-                                });
-
-                                builder.borrow_mut().ins().return_(&[value]);
-                            } else {
-                                builder.borrow_mut().ins().return_(&[]);
-                            };
-                        }
-
-                        Statement::Asn(asn) => {
-                            let ss = vars.get(&asn.name().unwrap()).unwrap().value().clone();
-
-                            let value = asn.value.inner.lower_with(CodegenContext {
-                                codegen_backend: self,
-                                builder: Rc::clone(&builder),
-                                vars: &vars,
-                                func,
-                            });
-
-                            builder.borrow_mut().ins().stack_store(value, ss, 0);
-                        }
-
-                        Statement::Import(_) => todo!(),
-                        Statement::Class(_) => todo!(),
-                        Statement::Pass => {
-                            builder.borrow_mut().ins().nop();
-                        }
-                    };
                 } else {
                     unreachable!();
                 }
@@ -318,6 +281,7 @@ impl CodegenBackend {
 
         {
             types.insert(TypeMap::INTEGER, codegen::ir::types::I64);
+            types.insert(TypeMap::BOOL, codegen::ir::types::I64);
         }
 
         Self {

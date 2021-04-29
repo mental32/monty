@@ -63,6 +63,14 @@ fn dyn_classdef<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<S
 }
 
 #[inline]
+fn dyn_ifstmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
+    let (stream, klass) = super::ifelse::if_stmt(stream)?;
+
+    Ok((stream, klass.map(Statement::If)))
+}
+
+
+#[inline]
 fn dyn_span_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, tok) = expect_with(stream, |(t, _)| {
         matches!(
@@ -98,7 +106,7 @@ fn small_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
 
 #[inline]
 fn compound_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    alt((dyn_funcdef, dyn_import, dyn_classdef))(stream)
+    alt((dyn_funcdef, dyn_import, dyn_classdef, dyn_ifstmt))(stream)
 }
 
 #[inline]

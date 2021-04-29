@@ -46,7 +46,6 @@ impl TypedObject for TypedFuncArg {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
     pub reciever: Option<Spanned<PyToken>>,
@@ -207,7 +206,6 @@ impl TypedObject for FunctionDef {
             module_ref: ctx.module_ref.clone(),
             scope: Rc::new(func.scope.clone()) as Rc<_>,
             this: ctx.this.clone(),
-            // parent: ctx.parent.clone(),
         };
 
         func.typecheck(&ctx)

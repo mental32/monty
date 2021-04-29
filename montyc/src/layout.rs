@@ -88,7 +88,7 @@ impl<T> Layout<T> {
             }
         }
 
-    pending.reverse();
+        pending.reverse();
 
         LayoutIter {
             start,
@@ -243,6 +243,46 @@ impl<T> Layout<T> {
         key
     }
 
+    /// Fold sequences of blocks that are "straight" (in that they only contain a single lineage of successors) into one block.
+    pub fn fold_linear_block_sequences(&mut self) where T: std::fmt::Debug {
+        // Starting Graph: [b1 -> b2 -> b3]
+        // REDUCE b2 INTO b1: [(b1 << b2) -> b3]
+        // Graph: [b1 -> b3]
+        // REDUCE b3 into b1: [(b1 << b3)]
+        // Final Graph: [b1]
+
+        while let Some((left, right)) = self.blocks.iter().find_map(|(b1, b)| {
+            if b.succs.len() == 1 && *b1 != self.start {
+                let (b2, succ) = self.blocks.get_key_value(b.succs.iter().next()?)?;
+                if succ.succs.len() == 1 && *b2 != self.end {
+                    Some((*b1, *b2))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }) {
+            log::trace!("layout:fold_linear_block_sequences reducing({:?} << {:?})", left, right);
+
+            let mut edge = self.blocks.remove(&right).unwrap();
+
+            let left_block = self.blocks.get_mut(&left).unwrap();
+            
+            left_block.nodes.extend(edge.nodes.drain(..));
+
+            let edge_succ = edge.succs.iter().next().unwrap();
+
+            left_block.succs.remove(&right);
+            left_block.succs.insert(*edge_succ);
+
+            let edge_succ = self.blocks.get_mut(edge_succ).unwrap();
+
+            edge_succ.preds.remove(&right);
+            edge_succ.preds.insert(left);
+        }
+    }
+
     pub fn reduce_forwarding_edges(&mut self) {
         // get all blocks that make up a forward edge (a block that only has a direct jump `x -> y` and no body)
         let is_forward_edge = |(id, block): (&BlockId, &Block<T>)| {
@@ -267,7 +307,7 @@ impl<T> Layout<T> {
             let _ = self.blocks.remove(&to_be_dropped);
 
             log::trace!(
-                "layouyt:reduce_forwarding_edges forwarding({:?} -> {:?}) = {:?}",
+                "layout:reduce_forwarding_edges forwarding({:?} -> {:?}) = {:?}",
                 from,
                 to,
                 to_be_dropped

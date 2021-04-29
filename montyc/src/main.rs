@@ -25,7 +25,6 @@ fn main() {
                     module_ref: mref.clone(),
                     scope: Rc::new(func.scope.clone()) as Rc<_>,
                     this: lctx.this.clone(),
-                    // parent: lctx.parent.clone(),
                 };
 
                 func.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
