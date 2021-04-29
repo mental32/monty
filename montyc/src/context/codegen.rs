@@ -161,18 +161,11 @@ impl CodegenBackend {
                 builder.switch_to_block(start);
                 builder.append_block_params_for_function_params(start);
 
-                for (n, ty) in func.vars.iter().map(|r| (r.key().clone(), r.value().0)) {
-                    let ss = vars.get(&n.unwrap()).unwrap();
+                let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
-                    let ty = func
-                        .vars
-                        .get(&n)
-                        .map(|r| r.value().0)
-                        .unwrap();
-    
-                    let ty = self.types[&ty];
-    
-                    builder.ins().stack_load(ty, ss.clone(), 0);
+                for ((n, ty), value) in func.vars.iter().map(|r| (r.key().clone(), r.value().0)).zip(params.into_iter()) {
+                    let ss = vars.get(&n.unwrap()).unwrap().value().clone();
+                    builder.ins().stack_store(value, ss, 0);
                 }
 
             }
