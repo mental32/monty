@@ -7,6 +7,47 @@ use crate::{func::Function, prelude::*, scope::ScopeRoot};
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
+pub struct TypedFuncArg {
+    pub(crate) name: SpanEntry,
+    pub(crate) annotation: Rc<Spanned<Primary>>,
+}
+
+impl LookupTarget for TypedFuncArg {
+    fn is_named(&self, target: SpanEntry) -> bool {
+        target == self.name
+    }
+
+    fn name(&self) -> SpanEntry {
+        self.name.clone()
+    }
+}
+
+impl AstObject for TypedFuncArg {
+    fn span(&self) -> Option<logos::Span> {
+        None
+    }
+
+    fn unspanned(&self) -> Rc<dyn AstObject> {
+        Rc::new(self.clone())
+    }
+
+    fn walk(&self) -> Option<super::ObjectIter> {
+        None
+    }
+}
+
+impl TypedObject for TypedFuncArg {
+    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        self.annotation.infer_type(ctx)
+    }
+
+    fn typecheck<'a>(&self, _: &LocalContext<'a>) -> crate::Result<()> {
+        Ok(())
+    }
+}
+
+
+#[derive(Debug, Clone)]
 pub struct FunctionDef {
     pub reciever: Option<Spanned<PyToken>>,
     pub name: Spanned<Atom>,
@@ -136,10 +177,18 @@ impl TypedObject for FunctionDef {
             .unwrap()
             .unwrap();
 
+        let vars = DashMap::default();
+
+        if let Some(args) = &this.inner.args {
+            for (name, ann) in args.iter() {
+                vars.insert(name.clone(), (ann.infer_type(ctx)?, ann.span.clone()));
+            }
+        }
+
         let mut func = Rc::new(Function {
             scope,
             kind,
-            vars: DashMap::default(),
+            vars,
             def: Rc::new(this),
             refs: Default::default(),
         });

@@ -1,9 +1,6 @@
 use std::rc::Rc;
 
-use crate::{
-    ast::{class::ClassDef, funcdef::FunctionDef},
-    prelude::*,
-};
+use crate::{ast::{class::ClassDef, funcdef::{FunctionDef, TypedFuncArg}}, prelude::*};
 
 use super::{collect_subnodes, LookupOrder, Renamed, ScopeIter, ScopeRoot, ScopedObject};
 
@@ -136,8 +133,15 @@ impl<'a> LookupIter<'a> {
         };
 
         for (name, object) in extra {
+            log::trace!("lookup:search_undordered checking function arg: {:?} = {:?}", name, object);
+
             if name == target {
-                results.push(object.clone() as Rc<dyn AstObject>);
+                let arg = TypedFuncArg {
+                    name,
+                    annotation: Rc::clone(&object),
+                };
+
+                results.push(Rc::new(arg) as Rc<_>);
             }
         }
 
