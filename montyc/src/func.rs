@@ -39,7 +39,7 @@ impl Function {
         )
     }
 
-    pub fn new(def: Rc<dyn AstObject>, ctx: &LocalContext) -> Rc<Self> {
+    pub fn new(def: Rc<dyn AstObject>, ctx: &LocalContext) -> crate::Result<Rc<Self>> {
         let fndef = def.as_ref().as_function().unwrap();
 
         let mut scope = OpaqueScope::from(def.clone());
@@ -69,6 +69,12 @@ impl Function {
 
         let vars = DashMap::default();
 
+        if let Some(args) = &def.inner.args {
+            for (name, ann) in args.iter() {
+                vars.insert(name.clone(), (ann.infer_type(ctx)?, ann.span.clone()));
+            }
+        }
+
         let func = Self {
             def,
             scope,
@@ -88,7 +94,7 @@ impl Function {
             std::mem::swap(&mut func.scope.inner.root, &mut root);
         }
 
-        func
+        Ok(func)
     }
 }
 

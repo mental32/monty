@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{context::codegen::CodegenLowerArg, func::DataRef, prelude::*, scope::LookupOrder};
+use crate::{context::codegen::{CodegenLowerArg}, func::DataRef, prelude::*, scope::LookupOrder};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -275,11 +275,19 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                 let (target_name, target_fid) = module.functions.get(func.as_ref().unwrap()).unwrap();
 
+                let args = match args {
+                    Some(args) => {
+                        args.iter().map(|arg| arg.inner.lower_with(ctx.clone())).collect()
+                    },
+
+                    None => vec![],
+                };
+
                 let mut builder = ctx.builder.borrow_mut();
 
                 let func_ref = cranelift_module::Module::declare_func_in_func(&ctx.codegen_backend.object_module, *target_fid, &mut builder.func);
 
-                let result = builder.ins().call(func_ref, &[]);
+                let result = builder.ins().call(func_ref, args.as_slice());
 
                 builder.inst_results(result).first().unwrap().clone()
             }

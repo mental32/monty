@@ -1,5 +1,5 @@
-def meaning_of_life() -> int:
-    return 42
+def int_identity(n: int) -> int:
+    return n
 
 def main() -> int:
-    return meaning_of_life()
+    return int_identity(42)  # meaning of life

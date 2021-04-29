@@ -160,6 +160,21 @@ impl CodegenBackend {
 
                 builder.switch_to_block(start);
                 builder.append_block_params_for_function_params(start);
+
+                for (n, ty) in func.vars.iter().map(|r| (r.key().clone(), r.value().0)) {
+                    let ss = vars.get(&n.unwrap()).unwrap();
+
+                    let ty = func
+                        .vars
+                        .get(&n)
+                        .map(|r| r.value().0)
+                        .unwrap();
+    
+                    let ty = self.types[&ty];
+    
+                    builder.ins().stack_load(ty, ss.clone(), 0);
+                }
+
             }
 
             None => unreachable!(),
