@@ -163,11 +163,15 @@ impl CodegenBackend {
 
                 let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
-                for ((n, ty), value) in func.vars.iter().map(|r| (r.key().clone(), r.value().0)).zip(params.into_iter()) {
+                for ((n, ty), value) in func
+                    .vars
+                    .iter()
+                    .map(|r| (r.key().clone(), r.value().0))
+                    .zip(params.into_iter())
+                {
                     let ss = vars.get(&n.unwrap()).unwrap().value().clone();
                     builder.ins().stack_store(value, ss, 0);
                 }
-
             }
 
             None => unreachable!(),
@@ -202,7 +206,6 @@ impl CodegenBackend {
                     if implicit_return && ret.is_some() {
                         implicit_return = ret.unwrap();
                     }
-
                 } else {
                     unreachable!();
                 }
@@ -234,7 +237,9 @@ impl CodegenBackend {
 
         self.build_function(fid, func, &mut cl_func);
 
-        verify_function(&cl_func, &self.flags).unwrap();
+        if let Err(e) = verify_function(&cl_func, &self.flags) {
+            log::trace!("codegen:add_function_to_module {:?} {:?}", cl_func, e);
+        }
 
         let mut ctx = Context::for_function(cl_func);
         let mut ts = codegen::binemit::NullTrapSink {};

@@ -28,6 +28,7 @@ pub mod ifelse;
 pub mod import;
 pub mod primary;
 pub mod stmt;
+pub mod while_;
 
 pub use {self::core::*, assign::*, atom::*, expr::*, ifelse::*, primary::*};
 

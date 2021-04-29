@@ -22,6 +22,7 @@ pub mod module;
 pub mod primary;
 pub mod retrn;
 pub mod stmt;
+pub mod while_;
 
 pub type Iter<U> = Box<dyn Iterator<Item = U>>;
 

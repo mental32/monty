@@ -1,9 +1,6 @@
 use std::rc::Rc;
 
-use super::{
-    assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain,
-    import::Import, retrn::Return, AstObject,
-};
+use super::{AstObject, assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain, import::Import, retrn::Return, while_::While};
 
 use crate::{
     context::codegen::CodegenLowerArg, parser::comb::stmt::statement_unspanned, prelude::*,
@@ -18,6 +15,7 @@ pub enum Statement {
     Import(Import),
     Class(ClassDef),
     If(IfChain),
+    While(While),
     Pass,
 }
 
@@ -31,6 +29,7 @@ impl Statement {
             Statement::Import(i) => Rc::new(i),
             Statement::Class(c) => Rc::new(c),
             Statement::If(f) => Rc::new(f),
+            Statement::While(w) => Rc::new(w),
             Statement::Pass => todo!(),
         }
     }
@@ -46,6 +45,7 @@ impl AstObject for Statement {
             Statement::Import(i) => i.span(),
             Statement::Class(c) => c.span(),
             Statement::If(f) => f.span(),
+            Statement::While(w) => w.span(),
             Statement::Pass => None,
         }
     }
@@ -59,6 +59,7 @@ impl AstObject for Statement {
             Statement::Import(i) => i.unspanned(),
             Statement::Class(c) => c.unspanned(),
             Statement::If(f) => f.unspanned(),
+            Statement::While(w) => w.unspanned(),
             Statement::Pass => Rc::new(Self::Pass),
         }
     }
@@ -72,6 +73,7 @@ impl AstObject for Statement {
             Statement::Import(i) => i.walk(),
             Statement::Class(c) => c.walk(),
             Statement::If(f) => f.walk(),
+            Statement::While(w) => w.walk(),
             Statement::Pass => None,
         }
     }
@@ -86,6 +88,7 @@ impl TypedObject for Statement {
             Statement::Asn(a) => a.infer_type(ctx),
             Statement::Import(i) => i.infer_type(ctx),
             Statement::Class(c) => c.infer_type(ctx),
+            Statement::While(w) => w.infer_type(ctx),
             Statement::If(_) => Ok(TypeMap::NONE_TYPE),
             Statement::Pass => Ok(TypeMap::NONE_TYPE),
         }
@@ -100,6 +103,7 @@ impl TypedObject for Statement {
             Statement::Import(i) => i.typecheck(ctx),
             Statement::Class(c) => c.typecheck(ctx),
             Statement::If(f) => f.typecheck(ctx),
+            Statement::While(w) => w.typecheck(ctx),
             Statement::Pass => Ok(()),
         }
     }
@@ -119,6 +123,7 @@ impl LookupTarget for Statement {
             Statement::Import(e) => e.is_named(target),
             Statement::Class(e) => e.is_named(target),
             Statement::If(f) => f.is_named(target),
+            Statement::While(w) => w.is_named(target),
             Statement::Pass => false,
         }
     }
@@ -132,6 +137,7 @@ impl LookupTarget for Statement {
             Statement::Import(e) => e.name(),
             Statement::Class(e) => e.name(),
             Statement::If(f) => f.name(),
+            Statement::While(w) => w.name(),
             Statement::Pass => None,
         }
     }
@@ -140,9 +146,6 @@ impl LookupTarget for Statement {
 impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
     fn lower_with(&self, ctx: CodegenLowerArg<'a, 'b>) -> Option<bool> {
         use cranelift_codegen::ir::InstBuilder;
-
-        dbg!(&ctx.builder.borrow().func);
-
 
         match self {
             Statement::Expression(e) => {
@@ -189,9 +192,6 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                     })
                     .collect();
 
-                dbg!(&ctx.builder.borrow().func);
-                dbg!(&branch_blocks);
-
                 for (branch_blocks_idx, ifstmt) in ifstmt.branches.iter().enumerate() {
                     let (head_block, body_block, local_escape_block) = branch_blocks[branch_blocks_idx];
 
@@ -231,6 +231,41 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                     }
                 }
             }
+
+            Statement::While(w) => {
+                let (head, body, escape) = {
+                    let mut builder = ctx.builder.borrow_mut();
+
+                    (builder.create_block(), builder.create_block(), builder.create_block())
+                };
+
+                ctx.builder.borrow_mut().ins().jump(head, &[]);
+
+                ctx.builder.borrow_mut().switch_to_block(head);
+
+                let cc = w.test.inner.lower_with(ctx.clone());
+
+                ctx.builder.borrow_mut().ins().brnz(cc, body, &[]);
+                ctx.builder.borrow_mut().ins().jump(escape, &[]);
+
+                ctx.builder.borrow_mut().switch_to_block(body);
+
+                let mut ret = None;
+
+                for part in w.body.iter() {
+                    ret = part.inner.lower_with(ctx.clone());
+                }
+
+                if !ctx.builder.borrow().is_filled() {
+                    ctx.builder.borrow_mut().ins().jump(head, &[]);
+                    ctx.builder.borrow_mut().switch_to_block(escape);
+                } else {
+                    ctx.builder.borrow_mut().switch_to_block(escape);
+                    ctx.builder.borrow_mut().ins().jump(head, &[]);
+                }
+
+                return ret;
+            },
         }
 
         None

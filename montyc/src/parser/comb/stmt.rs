@@ -69,6 +69,12 @@ fn dyn_ifstmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
     Ok((stream, klass.map(Statement::If)))
 }
 
+#[inline]
+fn dyn_while<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
+    let (stream, klass) = super::while_::while_stmt(stream)?;
+
+    Ok((stream, klass.map(Statement::While)))
+}
 
 #[inline]
 fn dyn_span_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
@@ -106,7 +112,7 @@ fn small_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
 
 #[inline]
 fn compound_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    alt((dyn_funcdef, dyn_import, dyn_classdef, dyn_ifstmt))(stream)
+    alt((dyn_funcdef, dyn_import, dyn_classdef, dyn_ifstmt, dyn_while))(stream)
 }
 
 #[inline]
