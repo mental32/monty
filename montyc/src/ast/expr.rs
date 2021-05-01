@@ -1,6 +1,9 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{context::codegen::{CodegenContext, CodegenLowerArg}, prelude::*, typing::TypeDescriptor};
+use crate::{
+    context::codegen::{CodegenContext, CodegenLowerArg},
+    prelude::*,
+};
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -190,17 +193,8 @@ impl TypedObject for Expr {
             } => body.infer_type(ctx),
 
             Expr::BinOp { left, op, right } => {
-                let left_ty = {
-                    let mut ctx = ctx.clone();
-                    ctx.this = Some(left.clone());
-                    left.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
-                };
-
-                let right_ty = {
-                    let mut ctx = ctx.clone();
-                    ctx.this = Some(right.clone());
-                    right.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
-                };
+                let left_ty = ctx.with(Rc::clone(left), |ctx, this| this.infer_type(&ctx))?;
+                let right_ty = ctx.with(Rc::clone(right), |ctx, this| this.infer_type(&ctx))?;
 
                 ctx.global_context
                     .type_map
@@ -241,72 +235,21 @@ impl TypedObject for Expr {
                     module_ref: name_ref,
                 };
 
-                let type_map = &ctx.global_context.type_map;
+                let left_class = ctx.try_get_class_of_type(left_ty).unwrap();
+                let right_class = ctx.try_get_class_of_type(right_ty).unwrap();
 
-                let left_class = match type_map.get(left_ty).unwrap().value() {
-                    TypeDescriptor::Simple(_) => {
-                        ctx.global_context.builtins.get(&left_ty).unwrap().0.clone()
-                    }
-                    TypeDescriptor::Function(_) => todo!(),
-                    TypeDescriptor::Generic(_) => todo!(),
-                    TypeDescriptor::Class(klass) => ctx
-                        .global_context
-                        .get_class_from_module(klass.mref.clone(), klass.name)
-                        .unwrap(),
-                };
+                // unify(ltr) or unify(rtl)
 
-                let right_class = match type_map.get(right_ty).unwrap().value() {
-                    TypeDescriptor::Simple(_) => ctx
-                        .global_context
-                        .builtins
-                        .get(&right_ty)
-                        .unwrap()
-                        .0
-                        .clone(),
-                    TypeDescriptor::Generic(_) => todo!(),
-                    TypeDescriptor::Function(_) => todo!(),
-                    TypeDescriptor::Class(klass) => ctx
-                        .global_context
-                        .get_class_from_module(klass.mref.clone(), klass.name)
-                        .unwrap(),
-                };
+                let method = left_class
+                    .try_unify_method(ctx, &ltr)
+                    .or(right_class.try_unify_method(ctx, &rtl));
 
-                // unify(ltr)
-
-                for (name, kind) in left_class.properties.iter() {
-                    if *name == ltr.name.unwrap() {
-                        if type_map.unify_func(kind.clone(), &ltr) {
-                            let ret = match type_map.get(kind.clone()).map(|i| i.value().clone()) {
-                                Some(TypeDescriptor::Function(f)) => f.ret,
-                                _ => todo!(),
-                            };
-
-                            return Ok(ret);
-                        }
-                    }
-                }
-
-                // unify(rtl)
-
-                for (name, kind) in right_class.properties.iter() {
-                    if *name == rtl.name.unwrap() {
-                        if type_map.unify_func(kind.clone(), &rtl) {
-                            let ret = match type_map.get(kind.clone()).map(|i| i.value().clone()) {
-                                Some(TypeDescriptor::Function(f)) => f.ret,
-                                _ => todo!(),
-                            };
-
-                            return Ok(ret);
-                        }
-                    }
-                }
-
-                ctx.exit_with_error(MontyError::BadBinaryOp {
+                method.ok_or(MontyError::BadBinaryOp {
                     span: ctx.this.as_ref().unwrap().span().unwrap(),
                     left: left_ty,
                     right: right_ty,
                     op: op.clone(),
-                });
+                })
             }
 
             Expr::Unary { op: _, value: _ } => todo!(),
@@ -468,7 +411,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                     .cache
                     .get(&(
                         func.scope.inner.module_ref.clone().unwrap(),
-                        left.span.clone()
+                        left.span.clone(),
                     ))
                     .unwrap()
                     .value()
@@ -482,7 +425,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                     .cache
                     .get(&(
                         func.scope.inner.module_ref.clone().unwrap(),
-                        right.span.clone()
+                        right.span.clone(),
                     ))
                     .unwrap()
                     .value()
@@ -517,7 +460,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                         InfixOp::Mult => match (left_ty, right_ty) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
                                 builder.borrow_mut().ins().imul(lvalue, rvalue)
-                            },
+                            }
                             _ => unreachable!(),
                         },
 

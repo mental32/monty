@@ -1,9 +1,14 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{MontyError, ast::AstObject, scope::Scope};
+use crate::{
+    ast::AstObject,
+    class::Class,
+    scope::Scope,
+    typing::{LocalTypeId, TypeDescriptor},
+    MontyError,
+};
 
-use super::{ModuleRef, global::GlobalContext};
-
+use super::{global::GlobalContext, ModuleRef};
 
 #[derive(Clone, Debug)]
 pub struct LocalContext<'a> {
@@ -11,10 +16,30 @@ pub struct LocalContext<'a> {
     pub module_ref: ModuleRef,
     pub scope: Rc<dyn Scope>,
     pub this: Option<Rc<dyn AstObject>>,
-    // pub parent: Option<&'a LocalContext<'a>>,
 }
 
 impl<'a> LocalContext<'a> {
+    pub fn try_get_class_of_type(&self, ty: LocalTypeId) -> Option<Rc<Class>> {
+        match self.global_context.type_map.get(ty).unwrap().value() {
+            TypeDescriptor::Simple(_) => Some(self.global_context.builtins.get(&ty)?.0.clone()),
+
+            TypeDescriptor::Class(klass) => self
+                .global_context
+                .get_class_from_module(klass.mref.clone(), klass.name),
+
+            TypeDescriptor::Generic(_) | TypeDescriptor::Function(_) => todo!(),
+        }
+    }
+
+    pub fn with<T>(&self, object: Rc<impl AstObject>, f: impl Fn(Self, Rc<dyn AstObject>) -> T) -> T
+    {
+        let mut object_context = self.clone();
+
+        object_context.this = Some(object.clone());
+
+        f(object_context, object)
+    }
+
     pub fn exit_with_error(&self, err: MontyError) -> ! {
         let mut writer = codespan_reporting::term::termcolor::StandardStream::stderr(
             codespan_reporting::term::termcolor::ColorChoice::Auto,
