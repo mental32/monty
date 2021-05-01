@@ -130,6 +130,18 @@ impl CodegenBackend {
         log::trace!("codegen::build_function {:?} = {}", fid, func.kind.inner);
 
         let layout = func.lower_and_then(|_, mut layout| {
+            // discard all comment nodes
+            for block in layout.blocks.values_mut() {
+                let _ = block.nodes.retain(|node| {
+                    crate::isinstance!(
+                        node.as_ref(),
+                        Statement,
+                        Statement::Expression(Expr::Primary(p)) => !p.inner.is_comment() // retain discards elements when the predicate produces "false"
+                    )
+                    .unwrap_or(true)
+                });
+            }
+
             layout.reduce_forwarding_edges();
             layout.fold_linear_block_sequences();
             layout
@@ -190,7 +202,11 @@ impl CodegenBackend {
                 let mut builder = builder.borrow_mut();
 
                 let block = builder.create_block();
-                builder.ins().jump(block, &[]);
+
+                if !builder.is_filled() {
+                    builder.ins().jump(block, &[]);
+                }
+
                 builder.switch_to_block(block);
             }
 

@@ -51,6 +51,10 @@ impl Primary {
 
         names
     }
+
+    pub fn is_comment(&self) -> bool {
+        matches!(self, Self::Atomic(Spanned { inner: Atom::Comment(_), ..}))
+    }
 }
 
 impl AstObject for Primary {
