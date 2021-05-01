@@ -72,8 +72,10 @@ fn primary_call<'a>(
         }
     }
 
+    let _ = rparen;  // TODO: figure out how to span the func name and whole call expr appropriately.
+
     let obj = Spanned {
-        span: base.span.start..rparen.span.end,
+        span: base.span.start..base.span.end,
         inner: Primary::Call {
             func: Rc::new(base.clone()),
             args: if args.is_empty() { None } else { Some(args) },
