@@ -75,7 +75,7 @@ macro_rules! isinstance {
         }
     }};
 
-    ($e:expr, $t:ident, $p:pat => $a:ident) => {{
+    ($e:expr, $t:ident, $p:pat => $a:expr) => {{
         let result = crate::isinstance!($e, $t); // result: Some(ref $t)
 
         match &result {

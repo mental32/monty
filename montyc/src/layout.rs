@@ -244,17 +244,23 @@ impl<T> Layout<T> {
     }
 
     /// Fold sequences of blocks that are "straight" (in that they only contain a single lineage of successors) into one block.
-    pub fn fold_linear_block_sequences(&mut self) where T: std::fmt::Debug {
+    pub fn fold_linear_block_sequences<F>(&mut self, f: F)
+    where
+        F: Fn(&Block<T>, &Block<T>) -> bool,
+    {
         // Starting Graph: [b1 -> b2 -> b3]
         // REDUCE b2 INTO b1: [(b1 << b2) -> b3]
         // Graph: [b1 -> b3]
         // REDUCE b3 into b1: [(b1 << b3)]
         // Final Graph: [b1]
 
-        while let Some((left, right)) = self.blocks.iter().find_map(|(b1, b)| {
-            if b.succs.len() == 1 && *b1 != self.start {
-                let (b2, succ) = self.blocks.get_key_value(b.succs.iter().next()?)?;
-                if succ.succs.len() == 1 && *b2 != self.end {
+        while let Some((left, right)) = self.blocks.iter().find_map(|(b1, pred)| {
+            if pred.succs.len() == 1 && *b1 != self.start {
+                let (b2, succ) = self.blocks.get_key_value(pred.succs.iter().next()?)?;
+                if succ.succs.len() == 1
+                    && *b2 != self.end
+                    && f(pred, succ)
+                {
                     Some((*b1, *b2))
                 } else {
                     None
@@ -263,12 +269,16 @@ impl<T> Layout<T> {
                 None
             }
         }) {
-            log::trace!("layout:fold_linear_block_sequences reducing({:?} << {:?})", left, right);
+            log::trace!(
+                "layout:fold_linear_block_sequences reducing({:?} << {:?})",
+                left,
+                right
+            );
 
             let mut edge = self.blocks.remove(&right).unwrap();
 
             let left_block = self.blocks.get_mut(&left).unwrap();
-            
+
             left_block.nodes.extend(edge.nodes.drain(..));
 
             let edge_succ = edge.succs.iter().next().unwrap();

@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, path::Path, rc::Rc};
 
-use crate::prelude::*;
+use crate::{ast::retrn::Return, layout::Block, prelude::*};
 use crate::{
     ast::{
         atom::Atom,
@@ -143,7 +143,20 @@ impl CodegenBackend {
             }
 
             layout.reduce_forwarding_edges();
-            layout.fold_linear_block_sequences();
+
+            layout.fold_linear_block_sequences(
+                |pred: &Block<Rc<dyn AstObject>>, succ: &Block<Rc<dyn AstObject>>| {
+                    fn as_ret(object: &Rc<dyn AstObject>) -> Option<()> {
+                        crate::isinstance!(object.as_ref(), Return, _ => ()).or(
+                            crate::isinstance!(object.as_ref(), Statement, Statement::Ret(r) => ()),
+                        )
+                    };
+
+                    pred.nodes.iter().find_map(as_ret).is_none()
+                        && succ.nodes.iter().find_map(as_ret).is_none()
+                },
+            );
+
             layout
         });
 
