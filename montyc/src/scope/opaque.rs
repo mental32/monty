@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{ast::{class::ClassDef, funcdef::{FunctionDef, TypedFuncArg}}, prelude::*};
+use crate::{ast::{class::ClassDef, funcdef::{FunctionDef, TypedFuncArg}, import::Import, stmt::Statement}, prelude::*};
 
 use super::{collect_subnodes, LookupOrder, Renamed, ScopeIter, ScopeRoot, ScopedObject};
 
@@ -133,7 +133,11 @@ impl<'a> LookupIter<'a> {
         };
 
         for (name, object) in extra {
-            log::trace!("lookup:search_undordered checking function arg: {:?} = {:?}", name, object);
+            log::trace!(
+                "lookup:search_undordered checking function arg: {:?} = {:?}",
+                name,
+                object
+            );
 
             if name == target {
                 let arg = TypedFuncArg {
@@ -145,13 +149,39 @@ impl<'a> LookupIter<'a> {
             }
         }
 
+        let source = global_context.resolver.sources.get(self.0.module_ref.as_ref().unwrap());
+
         for object in self.0.nodes.iter().map(|o| o.unspanned()) {
             let item = object.as_ref();
 
-            if item.is_named(target) {
-                log::trace!("lookup:search_unordered {:?}", item);
+            if let Some(import) = crate::isinstance!(object.as_ref(), Statement, Statement::Import(i) => i) {
+                let (module, item) = match import {
+                    Import::Names(names) => (None, names.iter().find(|name| name.is_named(target))),
+                    Import::From { module, names, .. } => (
+                        Some(module),
+                        names.iter().find(|name| name.is_named(target)),
+                    ),
+                };
 
-                results.push(object.clone());
+                if let Some(item) = item {
+                    let object = if let Some(module) = module {
+                        global_context.access_from_module(module, item, source.as_ref().unwrap())
+                    } else {
+                        global_context.resolve_module(item)
+                    };
+
+                    if let Some(object) = object {
+                        log::trace!("lookup:search_unordered {:?}", item);
+
+                        results.push(object.clone())
+                    }
+                }
+            } else {
+                if item.is_named(target) {
+                    log::trace!("lookup:search_unordered {:?}", item);
+
+                    results.push(object.clone());
+                }
             }
         }
 

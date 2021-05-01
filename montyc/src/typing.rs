@@ -26,42 +26,7 @@ pub struct FunctionType {
     pub args: Vec<LocalTypeId>,
     pub ret: LocalTypeId,
     pub decl: Option<Rc<FunctionDef>>,
-    // non type related stuff
-    pub resolver: Rc<InternalResolver>,
     pub module_ref: ModuleRef,
-}
-
-impl std::fmt::Display for FunctionType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let args = self
-            .args
-            .iter()
-            .map(|arg| {
-                if let Some(inner) = self.resolver.type_map.get(*arg) {
-                    format!("{}", inner.value())
-                } else {
-                    format!("{}", BuiltinTypeId::Unknown)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        let source = self.resolver.sources.get(&self.module_ref).unwrap();
-        let name = self
-            .resolver
-            .span_ref
-            .borrow()
-            .resolve_ref(self.name, source.value())
-            .unwrap();
-
-        let ret = if let Some(inner) = self.resolver.type_map.get(self.ret) {
-            format!("{}", inner.value())
-        } else {
-            format!("{}", BuiltinTypeId::Unknown)
-        };
-
-        write!(f, "<function {}({}) -> {}>", name, args, ret)
-    }
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -70,14 +35,6 @@ pub enum Generic {
     Union { inner: Vec<LocalTypeId> },
 }
 
-impl std::fmt::Display for Generic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Generic::Pointer { inner } => write!(f, "Pointer({:?})", inner),
-            Generic::Union { inner } => write!(f, "Union[{}]", inner.iter().map(|l| format!("{:?}", l)).collect::<Vec<_>>().join(", "))
-        }
-    }
-}
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
@@ -132,18 +89,6 @@ impl std::fmt::Display for BuiltinTypeId {
 pub struct ClassType {
     pub name: SpanEntry,
     pub mref: ModuleRef,
-    pub resolver: Rc<InternalResolver>,
-}
-
-impl std::fmt::Display for ClassType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "<type object @ name={:?}, module={:?}>",
-            self.resolver.resolve(self.mref.clone(), self.name),
-            self.mref,
-        )
-    }
 }
 
 #[derive(Debug, Clone, derive_more::From)]
@@ -154,16 +99,6 @@ pub enum TypeDescriptor {
     Generic(Generic),
 }
 
-impl std::fmt::Display for TypeDescriptor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TypeDescriptor::Simple(s) => write!(f, "{}", s),
-            TypeDescriptor::Function(ft) => write!(f, "{}", ft),
-            TypeDescriptor::Class(k) => write!(f, "{}", k),
-            TypeDescriptor::Generic(g) => write!(f, "{}", g),
-        }
-    }
-}
 
 impl TypeDescriptor {
     fn size_of(&self) -> usize {
@@ -196,13 +131,7 @@ impl TypeDescriptor {
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::funcdef::FunctionDef,
-    context::{resolver::InternalResolver, LocalContext, ModuleRef},
-    parser::SpanEntry,
-    prelude::Span,
-    MontyError,
-};
+use crate::{MontyError, ast::funcdef::FunctionDef, context::{LocalContext, ModuleRef}, parser::SpanEntry, prelude::Span};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId>;

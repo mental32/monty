@@ -26,6 +26,7 @@ pub mod class;
 pub mod context;
 pub mod func;
 pub mod layout;
+pub mod fmt;
 
 pub mod lowering {
     pub trait Lower<Output> {
@@ -160,6 +161,12 @@ impl MontyError {
         self,
         ctx: &LocalContext<'_>,
     ) -> codespan_reporting::diagnostic::Diagnostic<()> {
+        macro_rules! fmt_type {
+            ($t:expr) => ({
+                $crate::fmt::Formattable { gctx: ctx.global_context, inner: $t }
+            }) 
+        }
+
         match self {
             MontyError::BadReturnType {
                 expected,
@@ -168,7 +175,6 @@ impl MontyError {
                 def_node,
             } => {
                 let mut labels = vec![];
-                let type_map = &ctx.global_context.type_map;
 
                 let ret_span = ret_node.span().unwrap();
 
@@ -192,7 +198,7 @@ impl MontyError {
                 .with_message(if def_node.inner.returns.is_some() {
                     format!(
                         "function defined here supposedly returning a value of {}.",
-                        type_map.get(expected).unwrap().value()
+                        fmt_type!(expected)
                     )
                 } else {
                     "function defined here is expected to return `None`".to_string()
@@ -204,8 +210,8 @@ impl MontyError {
                     .with_message("incomaptible return type for function.")
                     .with_labels(labels)
                     .with_notes(vec![
-                        format!("expected: {}", type_map.get(expected).unwrap().value()),
-                        format!("actual: {}", type_map.get(actual).unwrap().value()),
+                        format!("expected: {}", fmt_type!(expected)),
+                        format!("actual: {}", fmt_type!(actual)),
                     ])
             }
 
@@ -254,11 +260,11 @@ impl MontyError {
                 .with_labels(vec![
                     Label::primary((), arg_node.span.clone()).with_message(format!(
                         "The argument here evaluates to \"{}\"",
-                        ctx.global_context.resolver.resolve_type(actual).unwrap()
+                        fmt_type!(actual)
                     )),
                     Label::secondary((), def_node.inner.name.span.clone()).with_message(format!(
                         "Function defined here expected \"{}\"",
-                        ctx.global_context.resolver.resolve_type(expected).unwrap(),
+                        fmt_type!(expected),
                     )),
                 ]),
 
@@ -279,8 +285,8 @@ impl MontyError {
                         format!(
                             "Operator {:?} is not supported for types \"{}\" and \"{}\"",
                             op.sigil(),
-                            left.value(),
-                            right.value()
+                            ctx.as_formattable(left.value()),
+                            ctx.as_formattable(right.value())
                         ),
                     )])
             }
@@ -289,11 +295,8 @@ impl MontyError {
                 .with_message("Incompatible type for conditional.")
                 .with_labels(vec![Label::primary((), span).with_message(format!(
                     "expected {}, found {}",
-                    ctx.global_context
-                        .resolver
-                        .resolve_type(TypeMap::BOOL)
-                        .unwrap(),
-                    ctx.global_context.resolver.resolve_type(actual).unwrap(),
+                    fmt_type!(TypeMap::BOOL),
+                    fmt_type!(actual),
                 ))]),
 
             MontyError::IncompatibleTypes {
@@ -306,11 +309,11 @@ impl MontyError {
                 .with_labels(vec![
                     Label::primary((), right_span).with_message(format!(
                         "expected {}, found {}",
-                        ctx.global_context.resolver.resolve_type(left).unwrap(),
-                        ctx.global_context.resolver.resolve_type(right).unwrap()
+                        fmt_type!(left),
+                        fmt_type!(right)
                     )),
                     Label::secondary((), left_span)
-                        .with_message(ctx.global_context.resolver.resolve_type(left).unwrap()),
+                        .with_message(format!("{}", fmt_type!(left))),
                 ]),
 
             MontyError::UnboundLocal { name, assign, used } => Diagnostic::error()
@@ -341,23 +344,23 @@ impl MontyError {
                             .resolver
                             .resolve(ctx.module_ref.clone(), name)
                             .unwrap(),
-                        ctx.global_context.resolver.resolve_type(expected).unwrap(),
+                        fmt_type!(expected),
                     )),
                     Label::secondary((), incorrectly_reassigned).with_message(format!(
                         "but gets incorrectly reassigned here with type {}",
-                        ctx.global_context.resolver.resolve_type(actual).unwrap()
+                        fmt_type!(actual)
                     )),
                 ])
                 .with_notes(vec![
                     "Note: Names within the same scope can not be assigned with multiple different types...".to_string(),
                     format!("Help: Consider using a union type e.g. Union[{}, {}] instead.",
-                        ctx.global_context.resolver.resolve_type(actual).unwrap(),
-                        ctx.global_context.resolver.resolve_type(expected).unwrap()
+                        fmt_type!(actual),
+                        fmt_type!(expected)
                     )
                 ]),
 
             MontyError::NotCallable { kind, callsite } => Diagnostic::error().with_message("Object is not callable.").with_labels(vec![
-                Label::primary((), callsite).with_message(format!("Attempted to call a non-callable object of type: {}", ctx.global_context.resolver.resolve_type(kind).unwrap())),
+                Label::primary((), callsite).with_message(format!("Attempted to call a non-callable object of type: {}", fmt_type!(kind))),
             ])
         }
     }

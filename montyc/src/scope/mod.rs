@@ -6,7 +6,19 @@ use std::{
 
 use fmt::Debug;
 
-use crate::{ast::{AstObject, assign::Assign, class::ClassDef, funcdef::{FunctionDef, TypedFuncArg}, stmt::Statement}, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, parser::SpanEntry};
+use crate::{
+    ast::{
+        assign::Assign,
+        class::ClassDef,
+        funcdef::{FunctionDef, TypedFuncArg},
+        // import::Import,
+        stmt::Statement,
+        AstObject,
+    },
+    context::{GlobalContext, LocalContext, ModuleRef},
+    func::Function,
+    parser::SpanEntry,
+};
 
 mod local;
 mod object;
@@ -125,13 +137,18 @@ pub trait Scope: core::fmt::Debug {
 
         let dropped = results
             .drain_filter(|o| {
-                !(crate::isinstance!(o.as_ref(), Assign).is_some()
-                    || crate::isinstance!(o.as_ref(), FunctionDef).is_some()
-                    || o.as_ref().downcast_ref::<Function>().is_some()
-                    || crate::isinstance!(o.as_ref(), ClassDef).is_some()
-                    || crate::isinstance!(o.as_ref(), Statement, Statement::FnDef(f) => f).is_some()
-                    || crate::isinstance!(o.as_ref(), Statement, Statement::Asn(a) => a).is_some()
-                    || crate::isinstance!(o.as_ref(), TypedFuncArg).is_some()
+                !(
+                    crate::isinstance!(o.as_ref(), Assign).is_some()
+                        || crate::isinstance!(o.as_ref(), FunctionDef).is_some()
+                        || o.as_ref().downcast_ref::<Function>().is_some()
+                        || crate::isinstance!(o.as_ref(), ClassDef).is_some()
+                        || crate::isinstance!(o.as_ref(), Statement, Statement::FnDef(f) => f)
+                            .is_some()
+                        || crate::isinstance!(o.as_ref(), Statement, Statement::Asn(a) => a)
+                            .is_some()
+                        || crate::isinstance!(o.as_ref(), TypedFuncArg).is_some()
+                    // || crate::isinstance!(o.as_ref(), Import).is_some()
+                    // || crate::isinstance!(o.as_ref(), Statement, Statement::Import(i) => i).is_some()
                 )
             })
             .collect::<Vec<_>>();

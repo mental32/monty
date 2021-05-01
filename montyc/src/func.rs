@@ -32,8 +32,8 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn name_as_string(&self) -> Option<String> {
-        self.kind.inner.resolver.resolve(
+    pub fn name_as_string(&self, gctx: &GlobalContext) -> Option<String> {
+        gctx.resolver.resolve(
             self.scope.inner.module_ref.clone().unwrap(),
             self.def.inner.name(),
         )
@@ -104,7 +104,7 @@ impl TypedObject for Function {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        log::trace!("typecheck:function {}", &self.kind.inner);
+        log::trace!("typecheck:function {}", ctx.as_formattable(&self.kind.inner));
 
         assert_matches!(ctx.scope.root(), ScopeRoot::Func(_));
 

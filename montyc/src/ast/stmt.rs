@@ -181,7 +181,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
             }
 
             Statement::If(ifstmt) => {
-                let global_escape_block = dbg!(ctx.builder.borrow_mut().create_block());
+                let global_escape_block = ctx.builder.borrow_mut().create_block();
 
                 let branch_blocks: Vec<_> = ifstmt
                     .branches

@@ -37,7 +37,7 @@ fn main() {
 
         {
             let funcs = ctx.functions.borrow();
-            let mut ctx = montyc::context::codegen::CodegenBackend::new(None);
+            let mut ctx = montyc::context::codegen::CodegenBackend::new(ctx, None);
 
             ctx.declare_functions(funcs.iter().map(|(f, mref)| {
                 (

@@ -1,12 +1,6 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{
-    ast::AstObject,
-    class::Class,
-    scope::Scope,
-    typing::{LocalTypeId, TypeDescriptor},
-    MontyError,
-};
+use crate::{MontyError, ast::{AstObject, Spanned}, class::Class, fmt::Formattable, scope::Scope, typing::{LocalTypeId, TypeDescriptor}};
 
 use super::{global::GlobalContext, ModuleRef};
 
@@ -19,9 +13,9 @@ pub struct LocalContext<'a> {
 }
 
 impl<'a> LocalContext<'a> {
-    pub fn try_get_class_of_type(&self, ty: LocalTypeId) -> Option<Rc<Class>> {
-        match self.global_context.type_map.get(ty).unwrap().value() {
-            TypeDescriptor::Simple(_) => Some(self.global_context.builtins.get(&ty)?.0.clone()),
+    pub fn try_get_class_of_type(&self, type_id: LocalTypeId) -> Option<Rc<Class>> {
+        match self.global_context.type_map.get(type_id).unwrap().value() {
+            TypeDescriptor::Simple(_) => Some(self.global_context.builtins.get(&type_id)?.0.clone()),
 
             TypeDescriptor::Class(klass) => self
                 .global_context
@@ -31,8 +25,23 @@ impl<'a> LocalContext<'a> {
         }
     }
 
-    pub fn with<T>(&self, object: Rc<impl AstObject>, f: impl Fn(Self, Rc<dyn AstObject>) -> T) -> T
+    /// Associate a span of the current module with a type used for later codegen.
+    pub fn cache_type<T>(&self, t: &Spanned<T>, type_id: LocalTypeId)
+    where
+        T: AstObject + Clone + ?Sized,
     {
+        self.global_context
+            .type_map
+            .cache
+            .insert((self.module_ref.clone(), t.span.clone()), type_id);
+    }
+
+    /// Invoke `f` with a context which sets `ctx.this` to `object`.
+    pub fn with<T>(
+        &self,
+        object: Rc<impl AstObject>,
+        f: impl Fn(Self, Rc<dyn AstObject>) -> T,
+    ) -> T {
         let mut object_context = self.clone();
 
         object_context.this = Some(object.clone());
@@ -40,6 +49,11 @@ impl<'a> LocalContext<'a> {
         f(object_context, object)
     }
 
+    pub fn as_formattable<T>(&self, t: T) -> Formattable<'_, T> {
+        Formattable { gctx: self.global_context, inner: t }
+    }
+
+    /// Format and emit the error to stderr then call [std::process::exit]
     pub fn exit_with_error(&self, err: MontyError) -> ! {
         let mut writer = codespan_reporting::term::termcolor::StandardStream::stderr(
             codespan_reporting::term::termcolor::ColorChoice::Auto,

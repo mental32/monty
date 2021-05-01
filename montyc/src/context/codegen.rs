@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, path::Path, rc::Rc};
 
-use crate::{ast::retrn::Return, layout::Block, prelude::*};
+use crate::{ast::retrn::Return, fmt::Formattable, layout::Block, prelude::*};
 use crate::{
     ast::{
         atom::Atom,
@@ -42,21 +42,22 @@ pub struct CodegenContext<'a, 'b>
 where
     'a: 'b,
 {
-    pub codegen_backend: &'b CodegenBackend,
+    pub codegen_backend: &'b CodegenBackend<'a>,
     pub builder: Rc<RefCell<FunctionBuilder<'a>>>,
     pub vars: &'a DashMap<NonZeroUsize, StackSlot>,
     pub func: &'b Function,
 }
 
-pub struct CodegenBackend {
+pub struct CodegenBackend<'a> {
     // functions: Vec<(FuncId, codegen::ir::Function)>,
+    pub(crate) global_context: &'a GlobalContext,
     pub(crate) object_module: ObjectModule,
     pub(crate) flags: settings::Flags,
     pub(crate) names: HashMap<ModuleRef, ModuleNames>,
     pub(crate) types: HashMap<LocalTypeId, codegen::ir::Type>,
 }
 
-impl CodegenBackend {
+impl<'global> CodegenBackend<'global> {
     fn produce_external_name(&mut self, fn_name: NonZeroUsize, mref: &ModuleRef) -> ExternalName {
         let n = self.names.len();
         let names = self
@@ -82,7 +83,7 @@ impl CodegenBackend {
         linkage: Linkage,
         callcov: codegen::isa::CallConv,
     ) -> Option<(FuncId, codegen::ir::Function)> {
-        let fn_name = func.name_as_string()?;
+        let fn_name = func.name_as_string(self.global_context)?;
 
         let mut sig = Signature::new(callcov);
 
@@ -127,7 +128,7 @@ impl CodegenBackend {
     fn build_function(&self, fid: FuncId, func: &Function, cl_func: &mut codegen::ir::Function) {
         use cranelift_codegen::ir::InstBuilder;
 
-        log::trace!("codegen::build_function {:?} = {}", fid, func.kind.inner);
+        log::trace!("codegen::build_function {:?} = {}", fid, Formattable { gctx: self.global_context, inner: &func.kind.inner });
 
         let layout = func.lower_and_then(|_, mut layout| {
             // discard all comment nodes
@@ -168,7 +169,7 @@ impl CodegenBackend {
         for var in func.vars.iter() {
             let (var, ty) = (var.key().clone().unwrap(), (var.0));
 
-            let size = func.kind.inner.resolver.type_map.size_of(ty).unwrap();
+            let size = self.global_context.resolver.type_map.size_of(ty).unwrap();
 
             let data = StackSlotData::new(StackSlotKind::ExplicitSlot, size as u32);
             let ss = builder.create_stack_slot(data);
@@ -279,7 +280,7 @@ impl CodegenBackend {
             .unwrap();
     }
 
-    pub fn new(isa: Option<target_lexicon::Triple>) -> Self {
+    pub fn new(global_context: &'global GlobalContext, isa: Option<target_lexicon::Triple>) -> Self {
         let mut flags_builder = settings::builder();
 
         // allow creating shared libraries
@@ -319,6 +320,7 @@ impl CodegenBackend {
         }
 
         Self {
+            global_context,
             object_module,
             types,
             flags,

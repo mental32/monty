@@ -21,7 +21,6 @@ impl<'a> From<(&LocalContext<'a>, &ClassDef)> for crate::class::Class {
                 type_map.insert(crate::typing::TypeDescriptor::Class(crate::typing::ClassType {
                     name: def.name.inner.name(),
                     mref: ctx.module_ref.clone(),
-                    resolver: ctx.global_context.resolver.clone(),
                 }))
             }
         };

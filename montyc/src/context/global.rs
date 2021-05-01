@@ -13,6 +13,7 @@ use crate::{
         class::ClassDef,
         import::{Import, ImportDecl},
         module::Module,
+        primary::Primary,
         stmt::Statement,
     },
     class::Class,
@@ -22,7 +23,12 @@ use crate::{
     CompilerOptions,
 };
 
-use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
+use super::{
+    local::LocalContext,
+    module::{ModuleContext},
+    resolver::InternalResolver,
+    ModuleRef,
+};
 
 fn shorten(path: &Path) -> String {
     let mut c = path
@@ -141,7 +147,6 @@ impl From<CompilerOptions> for GlobalContext {
                                     ret: $ret,
                                     args: vec![$($arg,)*],
                                     decl: None,
-                                    resolver: ctx.resolver.clone(),
                                     module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
                                 };
 
@@ -221,7 +226,7 @@ impl Default for GlobalContext {
 impl GlobalContext {
     pub fn is_builtin(&self, t: &dyn AstObject, t_mref: &ModuleRef) -> Option<LocalTypeId> {
         log::trace!(
-            "is_builtin: checking if object is a builtin ({:?})",
+            "context:is_builtin: checking if object is a builtin ({:?})",
             t.name()
         );
 
@@ -282,6 +287,41 @@ impl GlobalContext {
         }
 
         None
+    }
+
+    pub fn access_from_module(
+        &self,
+        module: &Rc<Spanned<Primary>>,
+        _item: &Rc<Spanned<Primary>>,
+        source: &str,
+    ) -> Option<Rc<dyn AstObject>> {
+        let parts = module.inner.components();
+
+        let qualname: Vec<&str> = parts
+            .into_iter()
+            .map(|atom| match atom {
+                Atom::Name(n) => self.span_ref.borrow().resolve_ref(n, source).unwrap(),
+                _ => unreachable!(),
+            })
+            .collect();
+
+        if qualname[0] == "__monty" {
+
+            // its a magical builtin
+            todo!();
+
+        } else {
+            let path = self.resolve_import_to_path(qualname)?;
+            let mref = ModuleRef(path);
+    
+            let _mctx = self.modules.get(&mref)?;
+    
+            todo!();
+        }
+    }
+
+    pub fn resolve_module(&self, _module: &Rc<Spanned<Primary>>) -> Option<Rc<dyn AstObject>> {
+        todo!()
     }
 
     fn preload_module_literal(

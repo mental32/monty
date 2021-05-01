@@ -46,7 +46,7 @@ pub fn while_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
             };
 
             if let Ok((remaining, _)) =
-                dbg!(expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(remaining))
+                expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(remaining)
             {
                 let (remaining, part) = statement_unstripped(remaining)?;
 

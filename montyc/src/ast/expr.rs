@@ -196,14 +196,8 @@ impl TypedObject for Expr {
                 let left_ty = ctx.with(Rc::clone(left), |ctx, this| this.infer_type(&ctx))?;
                 let right_ty = ctx.with(Rc::clone(right), |ctx, this| this.infer_type(&ctx))?;
 
-                ctx.global_context
-                    .type_map
-                    .cache
-                    .insert((ctx.module_ref.clone(), left.span.clone()), left_ty);
-                ctx.global_context
-                    .type_map
-                    .cache
-                    .insert((ctx.module_ref.clone(), right.span.clone()), right_ty);
+                ctx.cache_type(left, left_ty);
+                ctx.cache_type(right, right_ty);
 
                 let ltr_name_str = format!("__{}__", op.as_ref());
                 let rtl_name_str = format!("__r{}__", op.as_ref());
@@ -221,7 +215,6 @@ impl TypedObject for Expr {
                     args: vec![right_ty],
                     ret: TypeMap::UNKNOWN,
                     decl: None,
-                    resolver: ctx.global_context.resolver.clone(),
                     module_ref: name_ref.clone(),
                 };
 
@@ -231,7 +224,6 @@ impl TypedObject for Expr {
                     args: vec![left_ty],
                     ret: TypeMap::UNKNOWN,
                     decl: None,
-                    resolver: ctx.global_context.resolver.clone(),
                     module_ref: name_ref,
                 };
 
@@ -403,9 +395,9 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
             Expr::If { test, body, orelse } => todo!(),
 
             Expr::BinOp { left, op, right } => {
-                let left_ty = func
-                    .kind
-                    .inner
+                let left_ty = ctx
+                    .codegen_backend
+                    .global_context
                     .resolver
                     .type_map
                     .cache
@@ -417,9 +409,9 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                     .value()
                     .clone();
 
-                let right_ty = func
-                    .kind
-                    .inner
+                let right_ty = ctx
+                    .codegen_backend
+                    .global_context
                     .resolver
                     .type_map
                     .cache
