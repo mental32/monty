@@ -120,10 +120,22 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         body.push(Rc::new(stmt) as Rc<_>);
         stream = s;
     } else {
-        loop {
-            let (remainaing, _) = expect_many_n::<0>(PyToken::Newline)(stream)?;
+        let mut indent_level = None;
 
-            if let Ok((remaining, _)) = expect_many_n::<4>(PyToken::Whitespace)(remainaing) {
+        loop {
+            let (remaining, _) = expect_many_n::<0>(PyToken::Newline)(stream)?;
+
+            let remaining = if indent_level.is_none() {
+                let (_, indent) = expect_many_n::<0>(PyToken::Whitespace)(remaining)?;
+
+                indent_level.replace(indent.len());
+
+                remaining
+            } else {
+                remaining
+            };
+
+            if let Ok((remaining, _)) = expect_many_n::<4>(PyToken::Whitespace)(remaining) {
                 let (remaining, part) = match statement(remaining) {
                     Ok(i) => i,
                     Err(err) => {
