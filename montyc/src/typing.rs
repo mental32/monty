@@ -1,9 +1,4 @@
-use std::{
-    any::{TypeId},
-    cell::Cell,
-    num::NonZeroUsize,
-    rc::Rc,
-};
+use std::{any::TypeId, cell::Cell, num::NonZeroUsize, rc::Rc};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -66,6 +61,21 @@ impl std::fmt::Display for FunctionType {
         };
 
         write!(f, "<function {}({}) -> {}>", name, args, ret)
+    }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum Generic {
+    Pointer { inner: LocalTypeId },
+    Union { inner: Vec<LocalTypeId> },
+}
+
+impl std::fmt::Display for Generic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Generic::Pointer { inner } => write!(f, "Pointer({:?})", inner),
+            Generic::Union { inner } => write!(f, "Union[{}]", inner.iter().map(|l| format!("{:?}", l)).collect::<Vec<_>>().join(", "))
+        }
     }
 }
 
@@ -141,6 +151,7 @@ pub enum TypeDescriptor {
     Simple(BuiltinTypeId),
     Function(FunctionType),
     Class(ClassType),
+    Generic(Generic),
 }
 
 impl std::fmt::Display for TypeDescriptor {
@@ -149,6 +160,7 @@ impl std::fmt::Display for TypeDescriptor {
             TypeDescriptor::Simple(s) => write!(f, "{}", s),
             TypeDescriptor::Function(ft) => write!(f, "{}", ft),
             TypeDescriptor::Class(k) => write!(f, "{}", k),
+            TypeDescriptor::Generic(g) => write!(f, "{}", g),
         }
     }
 }
@@ -159,6 +171,7 @@ impl TypeDescriptor {
             TypeDescriptor::Simple(s) => s.size_of(),
             TypeDescriptor::Function(_) => todo!(),
             TypeDescriptor::Class(_) => todo!(),
+            TypeDescriptor::Generic(_) => 8, // TODO: we're assuming its all 64-bit sized pointers.
         }
     }
 
@@ -167,6 +180,7 @@ impl TypeDescriptor {
             Self::Simple(_) => TypeId::of::<BuiltinTypeId>(),
             Self::Function(_) => TypeId::of::<FunctionType>(),
             Self::Class(_) => TypeId::of::<ClassType>(),
+            Self::Generic(_) => TypeId::of::<Generic>(),
         }
     }
 
@@ -175,13 +189,20 @@ impl TypeDescriptor {
             Self::Simple(s) => s as *const _ as *const (),
             Self::Function(f) => f as *const _ as *const (),
             Self::Class(c) => c as *const _ as *const (),
+            Self::Generic(g) => g as *const _ as *const (),
         }
     }
 }
 
 use dashmap::DashMap;
 
-use crate::{MontyError, ast::{funcdef::FunctionDef}, context::{resolver::InternalResolver, LocalContext, ModuleRef}, parser::SpanEntry, prelude::Span};
+use crate::{
+    ast::funcdef::FunctionDef,
+    context::{resolver::InternalResolver, LocalContext, ModuleRef},
+    parser::SpanEntry,
+    prelude::Span,
+    MontyError,
+};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId>;
@@ -300,7 +321,10 @@ impl TypeMap {
     }
 
     #[inline]
-    pub fn get(&self, type_id: LocalTypeId) -> Option<dashmap::mapref::one::Ref<'_, LocalTypeId, TypeDescriptor>> {
+    pub fn get(
+        &self,
+        type_id: LocalTypeId,
+    ) -> Option<dashmap::mapref::one::Ref<'_, LocalTypeId, TypeDescriptor>> {
         self.inner.get(&type_id)
     }
 

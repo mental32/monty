@@ -173,7 +173,12 @@ impl TypedObject for Primary {
             Primary::Subscript { value: _, index: _ } => todo!(),
 
             Primary::Call { func, args } => {
-                let func_t = func.infer_type(ctx).unwrap_or_compiler_error(ctx);
+                let func_t = {
+                    let mut ctx = ctx.clone();
+                    ctx.this = Some(func.clone());
+        
+                    func.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
+                };
 
                 let callsite = args
                     .as_ref()

@@ -1,9 +1,6 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{
-    context::codegen::{CodegenContext, CodegenLowerArg},
-    prelude::*,
-};
+use crate::{context::codegen::{CodegenContext, CodegenLowerArg}, prelude::*, typing::TypeDescriptor};
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -247,26 +244,28 @@ impl TypedObject for Expr {
                 let type_map = &ctx.global_context.type_map;
 
                 let left_class = match type_map.get(left_ty).unwrap().value() {
-                    crate::typing::TypeDescriptor::Simple(_) => {
+                    TypeDescriptor::Simple(_) => {
                         ctx.global_context.builtins.get(&left_ty).unwrap().0.clone()
                     }
-                    crate::typing::TypeDescriptor::Function(_) => todo!(),
-                    crate::typing::TypeDescriptor::Class(klass) => ctx
+                    TypeDescriptor::Function(_) => todo!(),
+                    TypeDescriptor::Generic(_) => todo!(),
+                    TypeDescriptor::Class(klass) => ctx
                         .global_context
                         .get_class_from_module(klass.mref.clone(), klass.name)
                         .unwrap(),
                 };
 
                 let right_class = match type_map.get(right_ty).unwrap().value() {
-                    crate::typing::TypeDescriptor::Simple(_) => ctx
+                    TypeDescriptor::Simple(_) => ctx
                         .global_context
                         .builtins
                         .get(&right_ty)
                         .unwrap()
                         .0
                         .clone(),
-                    crate::typing::TypeDescriptor::Function(_) => todo!(),
-                    crate::typing::TypeDescriptor::Class(klass) => ctx
+                    TypeDescriptor::Generic(_) => todo!(),
+                    TypeDescriptor::Function(_) => todo!(),
+                    TypeDescriptor::Class(klass) => ctx
                         .global_context
                         .get_class_from_module(klass.mref.clone(), klass.name)
                         .unwrap(),
@@ -278,7 +277,7 @@ impl TypedObject for Expr {
                     if *name == ltr.name.unwrap() {
                         if type_map.unify_func(kind.clone(), &ltr) {
                             let ret = match type_map.get(kind.clone()).map(|i| i.value().clone()) {
-                                Some(crate::typing::TypeDescriptor::Function(f)) => f.ret,
+                                Some(TypeDescriptor::Function(f)) => f.ret,
                                 _ => todo!(),
                             };
 
@@ -293,7 +292,7 @@ impl TypedObject for Expr {
                     if *name == rtl.name.unwrap() {
                         if type_map.unify_func(kind.clone(), &rtl) {
                             let ret = match type_map.get(kind.clone()).map(|i| i.value().clone()) {
-                                Some(crate::typing::TypeDescriptor::Function(f)) => f.ret,
+                                Some(TypeDescriptor::Function(f)) => f.ret,
                                 _ => todo!(),
                             };
 
