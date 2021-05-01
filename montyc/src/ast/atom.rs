@@ -159,7 +159,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
             },
 
             Atom::Float(_) => todo!(),
-            Atom::Comment(_) => todo!(),
+            Atom::Comment(_) => ctx.builder.borrow_mut().ins().null(cranelift_codegen::ir::types::R64),
             Atom::Name(n) => {
                 let ss = ctx.vars.get(&n.unwrap()).unwrap();
                 let ty = ctx.func

@@ -1,10 +1,14 @@
+#![allow(warnings)]
+
 use std::rc::Rc;
 
-use nom::{IResult, sequence::tuple};
+use nom::{sequence::tuple, IResult};
 
 use crate::{ast::while_::While, parser::TokenSlice, prelude::*};
 
-use super::{expect, expect_, expect_many_n, expression, stmt::statement};
+use super::{
+    expect, expect_, expect_many_n, expect_many_n_var, expression, stmt::statement_unstripped,
+};
 
 #[inline]
 pub fn while_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<While>> {
@@ -22,28 +26,31 @@ pub fn while_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
 
     let mut body = vec![];
 
-    if let Ok((s, stmt)) = statement(stream) {
+    if let Ok((s, stmt)) = statement_unstripped(stream) {
         body.push(Rc::new(stmt) as Rc<_>);
         stream = s;
     } else {
+        let mut indent_level = None;
+
         loop {
-            let (remainaing, _) = expect_many_n::<0>(PyToken::Newline)(stream)?;
+            let (remaining, _) = expect_many_n::<0>(PyToken::Newline)(stream)?;
 
-            if let Ok((remaining, _)) = expect_many_n::<4>(PyToken::Whitespace)(remainaing) {
-                let (remaining, part) = match statement(remaining) {
-                    Ok(i) => i,
-                    Err(err) => {
-                        if let nom::Err::Error(err) = &err {
-                            if let Some((top, _)) = err.input.get(0) {
-                                if matches!(top, PyToken::Elif | PyToken::Else) {
-                                    break
-                                }
-                            }
-                        }
+            let remaining = if indent_level.is_none() {
+                let (_, indent) = expect_many_n::<0>(PyToken::Whitespace)(remaining)?;
 
-                        return Err(err);
-                    }
-                };
+                indent_level.replace(indent.len());
+
+                remaining
+            } else {
+                remaining
+            };
+
+            if let Ok((remaining, _)) =
+                dbg!(expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(remaining))
+            {
+                let (remaining, part) = statement_unstripped(remaining)?;
+
+                log::trace!("parse:while body ++ {:?}", part);
 
                 body.push(Rc::new(part) as Rc<_>);
                 stream = remaining;
@@ -52,10 +59,8 @@ pub fn while_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
             }
         }
     }
-    let while_ = While {
-        test,
-        body,
-    };
+
+    let while_ = While { test, body };
 
     let while_ = Spanned {
         inner: while_,

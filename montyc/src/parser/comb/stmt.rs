@@ -116,6 +116,11 @@ fn compound_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
 }
 
 #[inline]
+pub fn statement_unstripped<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
+    alt((small_stmt, compound_stmt))(stream)
+}
+
+#[inline]
 pub fn statement<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let stream = expect_many_n::<0>(PyToken::Whitespace)(stream)
         .map(|(stream, _)| stream)

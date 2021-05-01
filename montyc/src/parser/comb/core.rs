@@ -19,6 +19,19 @@ pub fn expect_many_n<const N: usize>(
 }
 
 #[inline]
+pub fn expect_many_n_var(
+    n: usize,
+    value: PyToken,
+) -> impl for<'a> Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Spanned<PyToken>>> {
+    move |stream| match n {
+        0 => many0(expect_(value))(stream),
+        1 => many1(expect_(value))(stream),
+        m => many_m_n(m, m.saturating_add(1), expect_(value))(stream),
+    }
+}
+
+
+#[inline]
 pub fn expect_(
     value: PyToken,
 ) -> impl for<'a> Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {

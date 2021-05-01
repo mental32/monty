@@ -195,8 +195,6 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                 for (branch_blocks_idx, ifstmt) in ifstmt.branches.iter().enumerate() {
                     let (head_block, body_block, local_escape_block) = branch_blocks[branch_blocks_idx];
 
-                    dbg!(&ctx.builder.borrow().func);
-
                     ctx.builder.borrow_mut().ins().jump(head_block, &[]);
 
                     ctx.builder.borrow_mut().switch_to_block(head_block);

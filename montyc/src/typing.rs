@@ -91,7 +91,7 @@ impl BuiltinTypeId {
             BuiltinTypeId::Int => 8,
             BuiltinTypeId::Float => todo!(),
             BuiltinTypeId::Str => todo!(),
-            BuiltinTypeId::Bool => todo!(),
+            BuiltinTypeId::Bool => 8,
             BuiltinTypeId::None => todo!(),
             BuiltinTypeId::Ellipsis => todo!(),
             BuiltinTypeId::Module => todo!(),
