@@ -2,7 +2,7 @@ use std::{path::PathBuf, rc::Rc};
 
 use crate::{ast::module::Module, scope::Scope};
 
-use super::{ModuleRef, global::GlobalContext, local::LocalContext};
+use super::{global::GlobalContext, local::LocalContext, ModuleRef};
 
 use bitflags::bitflags;
 
@@ -15,9 +15,9 @@ bitflags! {
 
 #[derive(Debug, Clone)]
 pub struct ModuleContext {
-    pub(in super) path: PathBuf,
-    pub(in super) module: Rc<Module>,
-    pub(in super) scope: Rc<dyn Scope>,
+    pub(super) path: PathBuf,
+    pub(crate) module: Rc<Module>,
+    pub(super) scope: Rc<dyn Scope>,
     pub source: Rc<str>,
     pub flags: ModuleFlags,
 }
@@ -30,5 +30,9 @@ impl ModuleContext {
             scope: self.scope.clone(),
             this: None,
         }
+    }
+
+    pub fn module_ref(&self) -> ModuleRef {
+        ModuleRef(self.path.clone())
     }
 }

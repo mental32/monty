@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use crate::prelude::*;
 
-
 // -- ScopeObject
 
 pub struct ScopedObject {
@@ -16,18 +15,18 @@ impl ScopedObject {
         F: Fn(LocalContext, Rc<dyn AstObject>) -> T,
     {
         let scope = Rc::new(WrappedScope {
-            inner: self.scope.clone(),
+            inner: Rc::clone(&self.scope),
             parent: self.scope.parent(),
         });
 
         let ctx = LocalContext {
             scope,
-            this: Some(self.object.clone()),
+            this: Some(Rc::clone(&self.object)),
             global_context,
             module_ref: self.scope.module_ref(),
         };
 
-        f(ctx, self.object.clone())
+        f(ctx, Rc::clone(&self.object))
     }
 }
 

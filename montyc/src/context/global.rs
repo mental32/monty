@@ -7,28 +7,16 @@ use std::{
 
 use log::*;
 
-use crate::{
-    ast::{
+use crate::{CompilerOptions, ast::{
         atom::Atom,
         class::ClassDef,
         import::{Import, ImportDecl},
         module::Module,
         primary::Primary,
         stmt::Statement,
-    },
-    class::Class,
-    func::Function,
-    prelude::*,
-    typing::{LocalTypeId, TypeDescriptor},
-    CompilerOptions,
-};
+    }, class::Class, database::AstDatabase, func::Function, prelude::*, typing::{LocalTypeId, TypeDescriptor}};
 
-use super::{
-    local::LocalContext,
-    module::{ModuleContext},
-    resolver::InternalResolver,
-    ModuleRef,
-};
+use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
 
 fn shorten(path: &Path) -> String {
     let mut c = path
@@ -52,6 +40,7 @@ pub struct GlobalContext {
     pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,
     pub libstd: PathBuf,
     pub resolver: Rc<InternalResolver>,
+    pub database: AstDatabase,
 }
 
 const MAGICAL_NAMES: &str = include_str!("../magical_names.py");
@@ -78,19 +67,12 @@ impl From<CompilerOptions> for GlobalContext {
 
         // pre-emptively load in core modules i.e. builtins, ctypes, and typing.
 
-        // TODO: Figure out a way to either special case a `__monty` module reference everywhere or
-        //       have a `ModuleContext` that can represent magical builtin modules like `__monty`.
-        //
-        // ctx.modules.insert(ModuleRef("__monty".into()), SPECIAL_MONTY_MODULE);
-
         // HACK: Synthesize a module so that our `SpanRef` string/ident/comment interner is aware of certain builtin
         //       method names this is necessary when resolving binary expressions using builtin types (since they have)
-        //       no module, hence "builin", the name resolution logic fails.
-        ctx.preload_module_literal(MAGICAL_NAMES, "__monty:magical_names", |_ctx, _mref| {
-            // panic!("{:#?}", ctx);
-        });
+        //       no module, hence "builtin", the name resolution logic fails.
+        ctx.load_module_literal(MAGICAL_NAMES, "__monty:magical_names", |_, _| {});
 
-        ctx.preload_module(libstd.join("builtins.py"), |ctx, mref| {
+        ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.
             //
             // This is necessary as most of the types are actually magical and the compiler decides what
@@ -104,21 +86,27 @@ impl From<CompilerOptions> for GlobalContext {
                 .expect("failed to get pre-loaded module.");
 
             for item in module_context.scope.iter() {
-                let _object_original = item.object.clone();
                 let object_unspanned = item.object.unspanned();
 
                 // associate opaque class definitions of builtin types...
                 if let Some(Statement::Class(class_def)) = object_unspanned.as_ref().downcast_ref() {
-                    let dec_name = match class_def.decorator_list.as_slice() {
+                    let (dec_name, dec_span) = match class_def.decorator_list.as_slice() {
                         [] => continue,
-                        [dec] => dec.reveal(&module_context.source).unwrap(),
+                        [dec] => (dec.reveal(&module_context.source).unwrap(), dec.span.clone()),
                         _ => panic!("Multiple decorators are not supported."),
                     };
 
-                    assert_eq!(
-                        dec_name, "@extern",
-                        "only `@extern` (opaque type decorators) are supported."
-                    );
+                    if dec_name != "extern" {
+                        module_context
+                            .local_context(ctx)
+                            .exit_with_error(
+                                MontyError::Unsupported {
+                                        span: dec_span,
+                                        message: String::from("only `extern` decorators are supported here.")
+                                    })
+                    }
+
+                    // assume "montyc" linkage
 
                     let klass_name = class_def.name.reveal(&module_context.source).unwrap();
 
@@ -219,6 +207,7 @@ impl Default for GlobalContext {
             builtins: HashMap::new(),
             libstd: PathBuf::default(),
             resolver,
+            database: Default::default(),
         }
     }
 }
@@ -306,16 +295,14 @@ impl GlobalContext {
             .collect();
 
         if qualname[0] == "__monty" {
-
             // its a magical builtin
             todo!();
-
         } else {
             let path = self.resolve_import_to_path(qualname)?;
             let mref = ModuleRef(path);
-    
+
             let _mctx = self.modules.get(&mref)?;
-    
+
             todo!();
         }
     }
@@ -324,25 +311,20 @@ impl GlobalContext {
         todo!()
     }
 
-    fn preload_module_literal(
-        &mut self,
-        source: &str,
-        path: &str,
-        f: impl Fn(&mut Self, ModuleRef),
-    ) {
-        debug!("Preloading module ({:?})", path);
+    fn load_module_literal(&mut self, source: &str, path: &str, f: impl Fn(&mut Self, ModuleRef)) {
+        debug!("Loading module ({:?})", path);
 
         let module = self.parse_and_register_module(source.to_string().into_boxed_str(), path);
 
         f(self, module);
 
-        debug!("Finished preloading module ({:?})", path);
+        debug!("Loading loading module ({:?})", path);
     }
 
-    pub fn preload_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
+    pub fn load_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
         let path = path.as_ref();
 
-        debug!("Preloading module ({:?})", shorten(path));
+        debug!("Loading module ({:?})", shorten(path));
 
         let source = match std::fs::read_to_string(&path) {
             Ok(st) => st.into_boxed_str(),
@@ -356,7 +338,7 @@ impl GlobalContext {
 
         f(self, module);
 
-        debug!("Finished preloading module ({:?})", shorten(path));
+        debug!("Finished loading module ({:?})", shorten(path));
     }
 
     fn resolve_import_to_path(&self, qualname: Vec<&str>) -> Option<PathBuf> {

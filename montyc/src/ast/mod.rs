@@ -230,65 +230,58 @@ where
     }
 }
 
+fn with_object_in_database_and_then<'a, T, U>(object: &Rc<T>, ctx: &LocalContext<'a>, f: impl Fn(&dyn AstObject) -> U) -> U
+where
+    T: AstObject,
+{
+    if ctx
+        .global_context
+        .database
+        .contains(Rc::as_ptr(object) as *const ())
+    {
+        // `object` is a `DefEntry` already.
+        return f(object.as_ref());
+    }
+
+    // lazily insert `object` into the database if it has a span (is well formed.)
+    if let Some(span) = object.span() {
+        let this = ctx.this.as_ref().expect("`ctx.this` must be set!");
+        let this_span = this.span().expect("`ctx.this` must be spanned!");
+
+        // NOTE: so like we're just assuming `this` and `object` are from the same module
+        //       since the caller is supposed to set `ctx.this = self` before interacting with us.
+
+        assert_eq!(span, this_span, "{:?} != {:?}", object, this);
+        assert_eq!(
+            Rc::as_ptr(object) as *const (),
+            Rc::as_ptr(&(Rc::clone(object) as Rc<dyn AstObject>)) as *const ()
+        );
+
+        let object = ctx
+            .global_context
+            .database
+            .insert(Rc::clone(object) as Rc<dyn AstObject>, &ctx.module_ref);
+
+        return f(object.as_ref());
+    }
+
+    f(object.as_ref())
+}
+
 impl<T> TypedObject for Rc<T>
 where
-    T: TypedObject + fmt::Debug,
+    T: AstObject,
 {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        self.as_ref().infer_type(ctx)
+        with_object_in_database_and_then(self, ctx, |object| object.infer_type(ctx))
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        self.as_ref().typecheck(ctx)
+        with_object_in_database_and_then(self, ctx, |object| object.typecheck(ctx))
     }
 }
 
 impl<T: 'static> LookupTarget for Rc<T>
-where
-    T: AstObject + fmt::Debug,
-{
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        self.as_ref().is_named(target)
-    }
-
-    fn name(&self) -> crate::parser::SpanEntry {
-        self.as_ref().name()
-    }
-}
-
-// Arc<T> trait impls
-
-impl<T: 'static> AstObject for Arc<T>
-where
-    T: AstObject + fmt::Debug,
-{
-    fn walk(&self) -> Option<ObjectIter> {
-        self.as_ref().walk()
-    }
-
-    fn span(&self) -> Option<Span> {
-        self.as_ref().span()
-    }
-
-    fn unspanned(&self) -> Rc<dyn AstObject> {
-        self.as_ref().unspanned()
-    }
-}
-
-impl<T> TypedObject for Arc<T>
-where
-    T: TypedObject + fmt::Debug,
-{
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        self.as_ref().infer_type(ctx)
-    }
-
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        self.as_ref().typecheck(ctx)
-    }
-}
-
-impl<T: 'static> LookupTarget for Arc<T>
 where
     T: AstObject + fmt::Debug,
 {
