@@ -217,7 +217,9 @@ impl TypeMap {
         for (idx, (actual, expected)) in callsite.cloned().zip(func.inner.args).enumerate() {
             if actual == Self::UNKNOWN {
                 continue;
-            } else if expected != actual {
+            }
+
+            if expected != actual {
                 return Err((expected, actual, idx));
             }
         }

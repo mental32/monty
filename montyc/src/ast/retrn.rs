@@ -81,7 +81,7 @@ impl TypedObject for Return {
                     let fndef = object.as_ref().downcast_ref::<FunctionDef>().unwrap();
                     let fndef = Spanned {
                         span: fndef.name.span.start
-                            ..fndef.returns.span().unwrap_or(fndef.name.span.clone()).end,
+                            ..fndef.returns.clone().unwrap().span().unwrap_or(fndef.name.span.clone()).end,
                         inner: fndef.clone(),
                     };
 

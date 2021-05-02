@@ -12,7 +12,7 @@ pub enum Primary {
     /// `<value:primary>[<index?>]`
     Subscript {
         value: Rc<Spanned<Primary>>,
-        index: Option<Rc<Spanned<Primary>>>,
+        index: Rc<Spanned<Expr>>,
     },
 
     /// `<func:primary>(<args?>)`
@@ -71,11 +71,7 @@ impl AstObject for Primary {
 
             Primary::Subscript { value, index } => {
                 let mut v = vec![value.clone() as Rc<dyn AstObject>];
-
-                if index.is_some() {
-                    v.push(Rc::new(index.clone()) as Rc<dyn AstObject>)
-                }
-
+                v.push(Rc::new(index.clone()) as Rc<dyn AstObject>);
                 v
             }
 

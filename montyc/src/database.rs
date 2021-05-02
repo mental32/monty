@@ -105,7 +105,7 @@ impl AstDatabase {
         let key = self.last_def_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let key = DefId(key);
 
-        log::trace!("database:insert {:?} = {:?}", key, entry);
+        log::trace!("database:insert_directly {:?} = {:?}", key, entry);
 
         assert!(self.entries.insert(key, Rc::new(entry)).is_none());
 
@@ -132,7 +132,7 @@ impl AstDatabase {
 
     pub fn insert(&self, entry: Rc<dyn AstObject>, mref: &ModuleRef) -> Rc<dyn AstObject>
     {
-        log::trace!("database:spanned_entry {:?}", entry);
+        log::trace!("database:insert {:?}", entry);
 
         let span = entry.span().expect("AstDatabase entries must be spanned!");
 
@@ -160,6 +160,14 @@ impl AstDatabase {
         });
 
         self.by_span.entry((mref.clone(), span.clone())).or_default().push(id);
+
+        if let Some(mut result) = self.by_module.get_mut(mref) {
+            let (_, v) = result.value_mut();
+
+            if !v.contains(&id) {
+                v.push(id);
+            }
+        }
 
         let entry = self.entries.get(&id).unwrap();
 

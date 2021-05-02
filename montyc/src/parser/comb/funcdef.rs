@@ -187,6 +187,12 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
     };
 
     let name = Spanned { span, inner: name };
+    let reciever = reciever.map(|recv| {
+        recv.map(|tok| match tok {
+            PyToken::Ident(n) => Atom::Name(n),
+            _ => unreachable!(),
+        })
+    });
 
     let funcdef = FunctionDef {
         reciever,

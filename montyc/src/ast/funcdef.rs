@@ -48,7 +48,7 @@ impl TypedObject for TypedFuncArg {
 
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
-    pub reciever: Option<Spanned<PyToken>>,
+    pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
     pub args: Option<Vec<(SpanEntry, Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
@@ -95,12 +95,13 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         }
 
         let reciever = if let Some(Spanned {
-            inner: PyToken::Ident(r),
+            inner: Atom::Name(r),
             ..
         }) = def.reciever
         {
             let mut ctx = ctx.clone();
-            ctx.this = Some(Rc::new(def.reciever.clone()));
+            ctx.this = def.reciever.clone().map(|rec| Rc::new(rec) as Rc<dyn AstObject>);
+
             Some(
                 Atom::Name(r)
                     .infer_type(&ctx)
@@ -155,7 +156,7 @@ impl TypedObject for FunctionDef {
         } else {
             match this.as_ref().downcast_ref::<Statement>() {
                 Some(Statement::FnDef(f)) => Spanned {
-                    span: f.returns.span().unwrap().clone(),
+                    span: f.returns.clone().unwrap().span().unwrap().clone(),
                     inner: f.clone(),
                 },
 

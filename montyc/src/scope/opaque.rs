@@ -189,13 +189,11 @@ impl<'a> LookupIter<'a> {
                         results.push(object.clone())
                     }
                 }
-            } else {
-                if item.is_named(target) {
+            } else if item.is_named(target) {
                     log::trace!("lookup:search_unordered {:?}", item);
 
                     results.push(object.clone());
                 }
-            }
         }
 
         // inspect parent scope or the builtins

@@ -199,7 +199,8 @@ impl MontyError {
                     def_node
                         .inner
                         .returns
-                        .span()
+                        .clone()
+                        .and_then(|ret| ret.span())
                         .unwrap_or(def_node.span.clone()),
                 )
                 .with_message(if def_node.inner.returns.is_some() {
@@ -231,7 +232,7 @@ impl MontyError {
                 .with_labels(vec![
                     Label::primary((), def_node.span().unwrap())
                         .with_message("This function will implicitly return `None`"),
-                    Label::secondary((), def_node.inner.returns.span().unwrap())
+                    Label::secondary((), def_node.inner.returns.clone().unwrap().span().unwrap())
                         .with_message("But it has been annotated to return this instead."),
                 ]),
 

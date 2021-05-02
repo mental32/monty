@@ -9,10 +9,7 @@ use nom::{
 use crate::ast::{primary::Primary, Spanned};
 use crate::parser::{token::PyToken, TokenSlice};
 
-use super::{
-    atom::atom,
-    core::{expect, expect_, expect_many_n},
-};
+use super::{atom::atom, core::{expect, expect_, expect_many_n}, expression};
 
 #[inline]
 fn primary_subscript<'a>(
@@ -21,13 +18,15 @@ fn primary_subscript<'a>(
 ) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
     let (stream, _) = expect(stream, PyToken::LBracket)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, index) = expression(stream)?;
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, rbracket) = expect(stream, PyToken::RBracket)?;
 
     let obj = Spanned {
         span: base.span.start..rbracket.span.end,
         inner: Primary::Subscript {
             value: Rc::new(base.clone()),
-            index: None,
+            index: Rc::new(index),
         },
     };
 

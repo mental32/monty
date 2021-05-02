@@ -9,7 +9,7 @@ use typing::TypedObject;
 
 use crate::{
     context::LocalContext,
-    parser::token::PyToken,
+    // parser::token::PyToken,
     scope::LookupTarget,
     typing::{self, LocalTypeId},
 };
@@ -36,7 +36,7 @@ pub type ObjectIter = Iter<Rc<dyn AstObject>>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spanned<T>
 where
-    T: AstObject + Clone,
+    T: Clone,
 {
     pub span: Span,
     pub inner: T,
@@ -44,7 +44,7 @@ where
 
 impl<T> Spanned<T>
 where
-    T: AstObject + Clone,
+    T: Clone,
 {
     pub fn reveal<'a>(&self, source: &'a str) -> Option<&'a str> {
         source.get(self.span.clone())
@@ -53,12 +53,12 @@ where
 
 impl<T> Spanned<T>
 where
-    T: AstObject + Clone,
+    T: Clone,
 {
     pub fn map<U, F>(self, f: F) -> Spanned<U>
     where
         F: FnOnce(T) -> U,
-        U: AstObject + Clone,
+        U: Clone,
     {
         Spanned {
             span: self.span,
@@ -68,7 +68,7 @@ where
 
     pub fn transparent<U>(&self, u: U) -> Spanned<U>
     where
-        U: AstObject + Clone,
+        U: Clone,
     {
         Spanned {
             span: self.span.clone(),
@@ -79,7 +79,7 @@ where
     pub fn transparent_with<U, F>(&self, f: F) -> Spanned<U>
     where
         F: FnOnce(Spanned<T>) -> U,
-        U: AstObject + Clone,
+        U: Clone,
     {
         Spanned {
             span: self.span.clone(),
@@ -122,48 +122,6 @@ impl dyn AstObject {
 #[inline(always)]
 pub(in crate) fn _downcast_ref<T: Any>(o: &dyn AstObject) -> Option<&T> {
     o.downcast_ref::<T>()
-}
-
-// PyToken trait impls
-
-impl AstObject for PyToken {
-    fn span(&self) -> Option<Span> {
-        unreachable!()
-    }
-
-    fn unspanned(&self) -> Rc<dyn AstObject> {
-        Rc::new(self.clone())
-    }
-
-    fn walk(&self) -> Option<ObjectIter> {
-        None
-    }
-}
-
-impl LookupTarget for PyToken {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        match self {
-            Self::Ident(n) => n.clone() == target,
-            _ => false,
-        }
-    }
-
-    fn name(&self) -> crate::parser::SpanEntry {
-        match self {
-            Self::Ident(n) => n.clone(),
-            _ => None,
-        }
-    }
-}
-
-impl TypedObject for PyToken {
-    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        unreachable!()
-    }
-
-    fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {
-        unreachable!()
-    }
 }
 
 // Spanned<T> trait impls
@@ -262,10 +220,10 @@ where
             .database
             .insert(Rc::clone(object) as Rc<dyn AstObject>, &ctx.module_ref);
 
-        return f(object.as_ref());
+        f(object.as_ref())
+    } else {
+        f(object.as_ref())
     }
-
-    f(object.as_ref())
 }
 
 impl<T> TypedObject for Rc<T>
@@ -291,50 +249,5 @@ where
 
     fn name(&self) -> crate::parser::SpanEntry {
         self.as_ref().name()
-    }
-}
-
-// Option<T> trait impls
-
-impl<T: 'static> AstObject for Option<T>
-where
-    T: AstObject + fmt::Debug,
-{
-    fn walk(&self) -> Option<ObjectIter> {
-        self.as_ref()?.walk()
-    }
-
-    fn span(&self) -> Option<Span> {
-        self.as_ref()?.span()
-    }
-
-    fn unspanned(&self) -> Rc<dyn AstObject> {
-        self.as_ref().unwrap().unspanned()
-    }
-}
-
-impl<T> TypedObject for Option<T>
-where
-    T: TypedObject + fmt::Debug,
-{
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        self.as_ref().unwrap().infer_type(ctx)
-    }
-
-    fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        self.as_ref().unwrap().typecheck(ctx)
-    }
-}
-
-impl<T: 'static> LookupTarget for Option<T>
-where
-    T: AstObject + fmt::Debug,
-{
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        self.as_ref().unwrap().is_named(target)
-    }
-
-    fn name(&self) -> crate::parser::SpanEntry {
-        self.as_ref().unwrap().name()
     }
 }
