@@ -1,14 +1,9 @@
 use std::rc::Rc;
 
-use nom::{IResult};
+use nom::IResult;
 
 use crate::ast::{
-    atom::Atom,
-    expr::Expr,
-    module::{Module},
-    primary::Primary,
-    retrn::Return,
-    stmt::Statement,
+    atom::Atom, expr::Expr, module::Module, primary::Primary, retrn::Return, stmt::Statement,
     Spanned,
 };
 
@@ -32,7 +27,6 @@ pub mod while_;
 
 pub use {self::core::*, assign::*, atom::*, expr::*, ifelse::*, primary::*};
 
-
 #[inline]
 pub fn return_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Return> {
     let (stream, Spanned { inner, .. }) = return_stmt(stream)?;
@@ -49,7 +43,9 @@ pub fn return_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanne
         Err(_) => (stream, ret.span.end, None),
     };
 
-    let inner = Return { value: value.map(Rc::new) };
+    let inner = Return {
+        value: value.map(Rc::new),
+    };
 
     let ret = Spanned {
         span: ret.span.start..span_end,

@@ -49,10 +49,13 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
             body,
         });
 
-        (s, IfChain {
-            branches: vec![Rc::new(if_obj)],
-            orelse: None,
-        })
+        (
+            s,
+            IfChain {
+                branches: vec![Rc::new(if_obj)],
+                orelse: None,
+            },
+        )
     } else {
         loop {
             if let Ok((remaining, _)) = terminated(
@@ -138,7 +141,8 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
         }
 
         let (stream, nl) = expect_many_n::<0>(PyToken::Newline)(stream).unwrap_or((stream, vec![]));
-        let (mut stream, ws) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+        let (mut stream, ws) =
+            expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
 
         if let Ok((else_stream, else_)) = (expect(stream, PyToken::Else)) {
             let (mut else_stream, (_, _, _)) = tuple((

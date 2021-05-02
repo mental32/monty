@@ -30,7 +30,6 @@ pub fn expect_many_n_var(
     }
 }
 
-
 #[inline]
 pub fn expect_(
     value: PyToken,

@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use super::{AstObject, assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain, import::Import, retrn::Return, while_::While};
+use super::{
+    assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain,
+    import::Import, retrn::Return, while_::While, AstObject,
+};
 
 use crate::{
     context::codegen::CodegenLowerArg, parser::comb::stmt::statement_unspanned, prelude::*,
@@ -188,12 +191,17 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                     .iter()
                     .map(|_| {
                         let mut builder = ctx.builder.borrow_mut();
-                        (builder.create_block(), builder.create_block(), builder.create_block())  // (head, body, escape)
+                        (
+                            builder.create_block(),
+                            builder.create_block(),
+                            builder.create_block(),
+                        ) // (head, body, escape)
                     })
                     .collect();
 
                 for (branch_blocks_idx, ifstmt) in ifstmt.branches.iter().enumerate() {
-                    let (head_block, body_block, local_escape_block) = branch_blocks[branch_blocks_idx];
+                    let (head_block, body_block, local_escape_block) =
+                        branch_blocks[branch_blocks_idx];
 
                     ctx.builder.borrow_mut().ins().jump(head_block, &[]);
 
@@ -219,9 +227,14 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                     ctx.builder.borrow_mut().switch_to_block(local_escape_block);
                 }
 
-                ctx.builder.borrow_mut().ins().jump(global_escape_block, &[]);
+                ctx.builder
+                    .borrow_mut()
+                    .ins()
+                    .jump(global_escape_block, &[]);
 
-                ctx.builder.borrow_mut().switch_to_block(global_escape_block);
+                ctx.builder
+                    .borrow_mut()
+                    .switch_to_block(global_escape_block);
 
                 if let Some(orelse) = &ifstmt.orelse {
                     for stmt in orelse {
@@ -234,7 +247,11 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                 let (head, body, escape) = {
                     let mut builder = ctx.builder.borrow_mut();
 
-                    (builder.create_block(), builder.create_block(), builder.create_block())
+                    (
+                        builder.create_block(),
+                        builder.create_block(),
+                        builder.create_block(),
+                    )
                 };
 
                 ctx.builder.borrow_mut().ins().jump(head, &[]);
@@ -263,7 +280,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                 }
 
                 return ret;
-            },
+            }
         }
 
         None

@@ -128,7 +128,14 @@ impl<'global> CodegenBackend<'global> {
     fn build_function(&self, fid: FuncId, func: &Function, cl_func: &mut codegen::ir::Function) {
         use cranelift_codegen::ir::InstBuilder;
 
-        log::trace!("codegen::build_function {:?} = {}", fid, Formattable { gctx: self.global_context, inner: &func.kind.inner });
+        log::trace!(
+            "codegen::build_function {:?} = {}",
+            fid,
+            Formattable {
+                gctx: self.global_context,
+                inner: &func.kind.inner
+            }
+        );
 
         let layout = func.lower_and_then(|_, mut layout| {
             // discard all comment nodes
@@ -280,7 +287,10 @@ impl<'global> CodegenBackend<'global> {
             .unwrap();
     }
 
-    pub fn new(global_context: &'global GlobalContext, isa: Option<target_lexicon::Triple>) -> Self {
+    pub fn new(
+        global_context: &'global GlobalContext,
+        isa: Option<target_lexicon::Triple>,
+    ) -> Self {
         let mut flags_builder = settings::builder();
 
         // allow creating shared libraries

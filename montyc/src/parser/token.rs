@@ -184,8 +184,8 @@ pub enum PyToken {
     Digits(isize),
 
     // -- SpanRef tokens
-
-    #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]  // the inner identifier is lazily generated.
+    #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]
+    // the inner identifier is lazily generated.
     Ident(SpanEntry),
 
     StringRef(SpanEntry),

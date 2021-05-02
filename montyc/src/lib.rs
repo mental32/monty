@@ -24,9 +24,9 @@ use typing::LocalTypeId;
 pub mod ast;
 pub mod class;
 pub mod context;
+pub mod fmt;
 pub mod func;
 pub mod layout;
-pub mod fmt;
 
 pub mod lowering {
     pub trait Lower<Output> {
@@ -55,6 +55,7 @@ pub mod lowering {
 pub mod parser;
 pub mod scope;
 pub mod typing;
+pub mod database;
 
 use thiserror::Error;
 
@@ -64,15 +65,15 @@ pub type Result<T> = std::result::Result<T, MontyError>;
 macro_rules! isinstance {
     ($e:expr, $t:ident) => {{
         if let Some($crate::ast::Spanned { inner, .. }) =
-            $crate::scope::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
+            $crate::ast::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
         {
             Some(inner)
-        } else if let Some(inner) = $crate::scope::_downcast_ref::<$crate::scope::Renamed>($e)
+        } else if let Some(inner) = $crate::ast::_downcast_ref::<$crate::scope::Renamed>($e)
             .and_then(|rn| rn.inner.as_ref().downcast_ref::<$t>())
         {
             Some(inner)
         } else {
-            $crate::scope::_downcast_ref::<$t>($e)
+            $crate::ast::_downcast_ref::<$t>($e)
         }
     }};
 
@@ -86,7 +87,7 @@ macro_rules! isinstance {
     }};
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum MontyError {
     #[error("Local variable referenced before assignment.")]
     UnboundLocal {
@@ -154,6 +155,9 @@ pub enum MontyError {
         right: LocalTypeId,
         op: InfixOp,
     },
+
+    #[error("Unsupported feature")]
+    Unsupported { span: Span, message: String },
 }
 
 impl MontyError {
@@ -162,9 +166,12 @@ impl MontyError {
         ctx: &LocalContext<'_>,
     ) -> codespan_reporting::diagnostic::Diagnostic<()> {
         macro_rules! fmt_type {
-            ($t:expr) => ({
-                $crate::fmt::Formattable { gctx: ctx.global_context, inner: $t }
-            }) 
+            ($t:expr) => {{
+                $crate::fmt::Formattable {
+                    gctx: ctx.global_context,
+                    inner: $t,
+                }
+            }};
         }
 
         match self {
@@ -361,7 +368,9 @@ impl MontyError {
 
             MontyError::NotCallable { kind, callsite } => Diagnostic::error().with_message("Object is not callable.").with_labels(vec![
                 Label::primary((), callsite).with_message(format!("Attempted to call a non-callable object of type: {}", fmt_type!(kind))),
-            ])
+            ]),
+
+            MontyError::Unsupported { span, message } => Diagnostic::error().with_message("Unsupported feature").with_labels(vec![Label::primary((), span).with_message(message)])
         }
     }
 }
@@ -381,12 +390,12 @@ pub mod prelude {
     pub use crate::{
         ast::{AstObject, Spanned},
         context::{GlobalContext, LocalContext, ModuleContext, ModuleFlags, ModuleRef},
+        func::{DataRef, Function},
         layout::{BlockId, Layout},
         lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanEntry, SpanRef},
         scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
         typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject},
-        func::{Function, DataRef},
         MontyError,
     };
 }

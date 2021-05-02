@@ -7,7 +7,9 @@ use crate::{
     parser::{token::PyToken, SpanEntry, TokenSlice},
 };
 
-use super::{expect, expect_, expect_ident, expect_many_n, primary, stmt::statement};
+use super::{
+    class::decorator_list, expect, expect_, expect_ident, expect_many_n, primary, stmt::statement,
+};
 
 #[inline]
 fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {
@@ -78,6 +80,11 @@ fn arguments<'a>(
 
 #[inline]
 pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<FunctionDef>> {
+    let (stream, dec) = match decorator_list(stream) {
+        Ok((stream, dec)) => (stream, Some(dec)),
+        Err(_) => (stream, None),
+    };
+
     let (stream, _def) = expect(stream, PyToken::FnDef)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, ident) = expect_ident(stream)?;
@@ -142,7 +149,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
                         if let nom::Err::Error(err) = &err {
                             if let Some((top, _)) = err.input.get(0) {
                                 if matches!(top, PyToken::Elif | PyToken::Else) {
-                                    break
+                                    break;
                                 }
                             }
                         }
@@ -187,6 +194,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         args,
         body,
         returns,
+        decorator_list: dec.unwrap_or(vec![]),
     };
 
     let funcdef = Spanned {

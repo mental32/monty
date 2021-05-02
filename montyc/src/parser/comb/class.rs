@@ -70,26 +70,24 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
     Ok((stream, def))
 }
 
-fn decorator<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
-    let (stream, at) = expect(stream, PyToken::At)?;
+pub(super) fn decorator<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+    let (stream, _at) = expect(stream, PyToken::At)?;
     let (stream, dec) = super::primary(stream)?;
 
     match &dec.inner {
-        crate::ast::primary::Primary::Atomic(Spanned { inner: Atom::Name(_), .. })
+        crate::ast::primary::Primary::Atomic(Spanned {
+            inner: Atom::Name(_),
+            ..
+        })
         | crate::ast::primary::Primary::Attribute { .. } => {}
+        crate::ast::primary::Primary::Call { .. } => {}
         _ => unreachable!(),
     }
 
-    Ok((
-        stream,
-        Spanned {
-            span: at.span.start..dec.span.end,
-            inner: dec.inner,
-        },
-    ))
+    Ok((stream, dec))
 }
 
-fn decorator_list<'a>(
+pub(super) fn decorator_list<'a>(
     stream: TokenSlice<'a>,
 ) -> IResult<TokenSlice<'a>, Vec<Rc<Spanned<Primary>>>> {
     let mut list = vec![];

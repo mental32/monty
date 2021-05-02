@@ -104,7 +104,10 @@ impl TypedObject for Function {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        log::trace!("typecheck:function {}", ctx.as_formattable(&self.kind.inner));
+        log::trace!(
+            "typecheck:function {}",
+            ctx.as_formattable(&self.kind.inner)
+        );
 
         assert_matches!(ctx.scope.root(), ScopeRoot::Func(_));
 

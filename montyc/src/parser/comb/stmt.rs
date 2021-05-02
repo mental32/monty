@@ -116,7 +116,9 @@ fn compound_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
 }
 
 #[inline]
-pub fn statement_unstripped<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
+pub fn statement_unstripped<'a>(
+    stream: TokenSlice<'a>,
+) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     alt((small_stmt, compound_stmt))(stream)
 }
 

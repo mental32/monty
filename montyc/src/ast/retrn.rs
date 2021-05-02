@@ -39,7 +39,7 @@ impl TypedObject for Return {
                     Some(func) => {
                         let kind: FunctionType = (func, ctx).into();
                         kind.ret
-                    },
+                    }
 
                     None => unreachable!("{:?}", ctx.scope.root()),
                 }
@@ -54,7 +54,7 @@ impl TypedObject for Return {
                 let mut ctx = ctx.clone();
                 ctx.this = Some(value.clone() as Rc<_>);
                 value.infer_type(&ctx)?
-            },
+            }
 
             None => TypeMap::NONE_TYPE,
         };
@@ -101,7 +101,6 @@ impl TypedObject for Return {
         Ok(())
     }
 }
-
 
 impl Parseable for Return {
     const PARSER: ParserT<Self> = return_unspanned;

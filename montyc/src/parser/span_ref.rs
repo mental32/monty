@@ -7,7 +7,7 @@ pub type SpanEntry = Option<NonZeroUsize>;
 #[derive(Debug)]
 pub struct SpanRef {
     ptr: usize,
-    pub(in super) seq: Vec<Range<usize>>,
+    pub(super) seq: Vec<Range<usize>>,
 }
 
 impl Default for SpanRef {

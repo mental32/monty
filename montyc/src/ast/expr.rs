@@ -193,8 +193,8 @@ impl TypedObject for Expr {
             } => body.infer_type(ctx),
 
             Expr::BinOp { left, op, right } => {
-                let left_ty = ctx.with(Rc::clone(left), |ctx, this| this.infer_type(&ctx))?;
-                let right_ty = ctx.with(Rc::clone(right), |ctx, this| this.infer_type(&ctx))?;
+                let left_ty = ctx.with(Rc::clone(left) as Rc<_>, |ctx, this| this.infer_type(&ctx))?;
+                let right_ty = ctx.with(Rc::clone(right) as Rc<_>, |ctx, this| this.infer_type(&ctx))?;
 
                 ctx.cache_type(left, left_ty);
                 ctx.cache_type(right, right_ty);

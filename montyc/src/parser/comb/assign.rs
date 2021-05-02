@@ -3,7 +3,11 @@ use nom::{sequence::terminated, IResult};
 use crate::ast::{assign::Assign, Spanned};
 use crate::parser::{token::PyToken, TokenSlice};
 
-use super::{atom::{name}, core::{expect_, expect_many_n}, expression};
+use super::{
+    atom::name,
+    core::{expect_, expect_many_n},
+    expression,
+};
 
 #[inline]
 #[inline]

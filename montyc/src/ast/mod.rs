@@ -1,5 +1,8 @@
-use std::{any::Any, rc::Rc};
-use std::{fmt, sync::Arc};
+use std::fmt;
+use std::{
+    any::{Any, TypeId},
+    rc::Rc,
+};
 
 use logos::Span;
 use typing::TypedObject;
@@ -10,6 +13,8 @@ use crate::{
     scope::LookupTarget,
     typing::{self, LocalTypeId},
 };
+
+use self::{funcdef::FunctionDef, stmt::Statement};
 
 pub mod assign;
 pub mod atom;
@@ -91,6 +96,32 @@ pub trait AstObject: fmt::Debug + TypedObject + LookupTarget + Any {
     fn unspanned(&self) -> Rc<dyn AstObject>;
 
     fn walk(&self) -> Option<ObjectIter>;
+}
+
+impl dyn AstObject {
+    pub fn downcast_ref<'a, T: Any>(&'a self) -> Option<&'a T> {
+        if self.type_id() == TypeId::of::<T>() {
+            // SAFETY: This is the exact same logic present in
+            //         `std::any::Any::downcast_ref` minus the
+            //         'static lifetime bound on the trait.
+            //
+            //         If this is unsound then that one probably is too.
+            unsafe { Some(&*(self as *const _ as *const T)) }
+        } else {
+            None
+        }
+    }
+
+    pub fn as_function(&self) -> Option<&FunctionDef> {
+        crate::isinstance!(self, FunctionDef)
+            .or_else(|| crate::isinstance!(self, Statement, Statement::FnDef(f) => f))
+    }
+}
+
+#[doc(hidden)]
+#[inline(always)]
+pub(in crate) fn _downcast_ref<T: Any>(o: &dyn AstObject) -> Option<&T> {
+    o.downcast_ref::<T>()
 }
 
 // PyToken trait impls

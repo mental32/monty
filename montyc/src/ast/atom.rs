@@ -149,24 +149,20 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
             Atom::Ellipsis => todo!(),
             Atom::Int(n) => ctx.builder.borrow_mut().ins().iconst(
                 cranelift_codegen::ir::types::I64,
-                cranelift_codegen::ir::immediates::Imm64::new(
-                    *n as i64,
-                ),
+                cranelift_codegen::ir::immediates::Imm64::new(*n as i64),
             ),
             Atom::Str(_) => todo!(),
-            Atom::Bool(b) => {
-                ctx.builder.borrow_mut().ins().iconst(ctx.codegen_backend.types[&TypeMap::INTEGER], *b as i64)
-            },
+            Atom::Bool(b) => ctx
+                .builder
+                .borrow_mut()
+                .ins()
+                .iconst(ctx.codegen_backend.types[&TypeMap::INTEGER], *b as i64),
 
             Atom::Float(_) => todo!(),
             Atom::Comment(_) => unreachable!(),
             Atom::Name(n) => {
                 let ss = ctx.vars.get(&n.unwrap()).unwrap();
-                let ty = ctx.func
-                    .vars
-                    .get(n)
-                    .map(|r| r.value().0)
-                    .unwrap();
+                let ty = ctx.func.vars.get(n).map(|r| r.value().0).unwrap();
 
                 let ty = ctx.codegen_backend.types[&ty];
 

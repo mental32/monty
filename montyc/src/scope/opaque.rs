@@ -1,6 +1,14 @@
 use std::rc::Rc;
 
-use crate::{ast::{class::ClassDef, funcdef::{FunctionDef, TypedFuncArg}, import::Import, stmt::Statement}, prelude::*};
+use crate::{
+    ast::{
+        class::ClassDef,
+        funcdef::{FunctionDef, TypedFuncArg},
+        import::Import,
+        stmt::Statement,
+    },
+    prelude::*,
+};
 
 use super::{collect_subnodes, LookupOrder, Renamed, ScopeIter, ScopeRoot, ScopedObject};
 
@@ -149,12 +157,17 @@ impl<'a> LookupIter<'a> {
             }
         }
 
-        let source = global_context.resolver.sources.get(self.0.module_ref.as_ref().unwrap());
+        let source = global_context
+            .resolver
+            .sources
+            .get(self.0.module_ref.as_ref().unwrap());
 
         for object in self.0.nodes.iter().map(|o| o.unspanned()) {
             let item = object.as_ref();
 
-            if let Some(import) = crate::isinstance!(object.as_ref(), Statement, Statement::Import(i) => i) {
+            if let Some(import) =
+                crate::isinstance!(object.as_ref(), Statement, Statement::Import(i) => i)
+            {
                 let (module, item) = match import {
                     Import::Names(names) => (None, names.iter().find(|name| name.is_named(target))),
                     Import::From { module, names, .. } => (

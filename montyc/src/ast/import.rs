@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use crate::prelude::*;
 use super::{atom::Atom, primary::Primary, AstObject, Spanned};
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct ImportDecl {

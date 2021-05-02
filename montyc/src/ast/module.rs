@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use crate::prelude::*;
 use super::{stmt::Statement, AstObject, Spanned};
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct Module {

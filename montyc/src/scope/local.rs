@@ -2,8 +2,7 @@ use std::{marker::PhantomData, rc::Rc};
 
 use crate::prelude::*;
 
-use super::{LookupOrder, ScopeIter, ScopeRoot, ScopedObject, collect_subnodes};
-
+use super::{collect_subnodes, LookupOrder, ScopeIter, ScopeRoot, ScopedObject};
 
 // -- LocalScope
 

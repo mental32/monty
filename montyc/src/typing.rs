@@ -35,7 +35,6 @@ pub enum Generic {
     Union { inner: Vec<LocalTypeId> },
 }
 
-
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
 pub enum BuiltinTypeId {
@@ -99,7 +98,6 @@ pub enum TypeDescriptor {
     Generic(Generic),
 }
 
-
 impl TypeDescriptor {
     fn size_of(&self) -> usize {
         match self {
@@ -131,7 +129,13 @@ impl TypeDescriptor {
 
 use dashmap::DashMap;
 
-use crate::{MontyError, ast::funcdef::FunctionDef, context::{LocalContext, ModuleRef}, parser::SpanEntry, prelude::Span};
+use crate::{
+    ast::funcdef::FunctionDef,
+    context::{LocalContext, ModuleRef},
+    parser::SpanEntry,
+    prelude::Span,
+    MontyError,
+};
 
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId>;

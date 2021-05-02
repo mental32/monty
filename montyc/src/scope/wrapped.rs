@@ -4,7 +4,6 @@ use crate::prelude::*;
 
 use super::{LookupOrder, ScopeIter, ScopeRoot, ScopedObject};
 
-
 // -- WrappedScope
 
 #[derive(Debug)]
@@ -38,7 +37,7 @@ impl Scope for WrappedScope {
         &self,
         target: SpanEntry,
         global_context: &GlobalContext,
-        order: LookupOrder
+        order: LookupOrder,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
         self.inner.lookup_any(target, global_context, order)
     }

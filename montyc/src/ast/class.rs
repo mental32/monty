@@ -18,10 +18,12 @@ impl<'a> From<(&LocalContext<'a>, &ClassDef)> for crate::class::Class {
             None => {
                 let type_map = &ctx.global_context.type_map;
 
-                type_map.insert(crate::typing::TypeDescriptor::Class(crate::typing::ClassType {
-                    name: def.name.inner.name(),
-                    mref: ctx.module_ref.clone(),
-                }))
+                type_map.insert(crate::typing::TypeDescriptor::Class(
+                    crate::typing::ClassType {
+                        name: def.name.inner.name(),
+                        mref: ctx.module_ref.clone(),
+                    },
+                ))
             }
         };
 

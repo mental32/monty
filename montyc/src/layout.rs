@@ -257,10 +257,7 @@ impl<T> Layout<T> {
         while let Some((left, right)) = self.blocks.iter().find_map(|(b1, pred)| {
             if pred.succs.len() == 1 && *b1 != self.start {
                 let (b2, succ) = self.blocks.get_key_value(pred.succs.iter().next()?)?;
-                if succ.succs.len() == 1
-                    && *b2 != self.end
-                    && f(pred, succ)
-                {
+                if succ.succs.len() == 1 && *b2 != self.end && f(pred, succ) {
                     Some((*b1, *b2))
                 } else {
                     None

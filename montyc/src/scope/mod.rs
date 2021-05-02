@@ -1,17 +1,10 @@
-use std::{
-    any::{Any, TypeId},
-    fmt,
-    rc::Rc,
-};
-
-use fmt::Debug;
+use std::{fmt::Debug, rc::Rc};
 
 use crate::{
     ast::{
         assign::Assign,
         class::ClassDef,
         funcdef::{FunctionDef, TypedFuncArg},
-        // import::Import,
         stmt::Statement,
         AstObject,
     },
@@ -59,32 +52,6 @@ fn collect_subnodes(object: &dyn AstObject) -> Vec<Rc<dyn AstObject>> {
     });
 
     nodes
-}
-
-impl dyn AstObject {
-    pub fn downcast_ref<'a, T: Any>(&'a self) -> Option<&'a T> {
-        if self.type_id() == TypeId::of::<T>() {
-            // SAFETY: This is the exact same logic present in
-            //         `std::any::Any::downcast_ref` minus the
-            //         'static lifetime bound on the trait.
-            //
-            //         If this is unsound then that one probably is too.
-            unsafe { Some(&*(self as *const _ as *const T)) }
-        } else {
-            None
-        }
-    }
-
-    pub fn as_function(&self) -> Option<&FunctionDef> {
-        crate::isinstance!(self, FunctionDef)
-            .or_else(|| crate::isinstance!(self, Statement, Statement::FnDef(f) => f))
-    }
-}
-
-#[doc(hidden)]
-#[inline(always)]
-pub(in crate) fn _downcast_ref<T: Any>(o: &dyn AstObject) -> Option<&T> {
-    o.downcast_ref::<T>()
 }
 
 #[derive(Debug)]

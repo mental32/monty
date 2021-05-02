@@ -52,7 +52,7 @@ pub struct FunctionDef {
     pub name: Spanned<Atom>,
     pub args: Option<Vec<(SpanEntry, Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
-    // pub decorator_list: Vec<Rc<Spanned<Primary>>>,
+    pub decorator_list: Vec<Rc<Spanned<Primary>>>,
     pub returns: Option<Spanned<Primary>>,
     // type_comment: Option<Rc<Expr>>,
 }

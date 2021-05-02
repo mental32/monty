@@ -15,8 +15,9 @@ fn main() {
 
     let mut global_context = GlobalContext::from(opts);
 
-    global_context.preload_module(file.unwrap(), |ctx, mref| {
+    global_context.load_module(file.unwrap(), |ctx, mref| {
         for (obj, lctx) in ctx.walk(mref.clone()) {
+
             if let Some(Statement::FnDef(_)) = obj.as_ref().downcast_ref() {
                 let func = Function::new(obj.clone(), &lctx).unwrap_or_compiler_error(&lctx);
 

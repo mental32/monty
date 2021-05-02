@@ -1,6 +1,9 @@
 use std::{fmt, ops::Deref};
 
-use crate::{prelude::*, typing::{BuiltinTypeId, ClassType, Generic, TypeDescriptor}};
+use crate::{
+    prelude::*,
+    typing::{BuiltinTypeId, ClassType, Generic, TypeDescriptor},
+};
 
 pub struct Formattable<'a, T> {
     pub(crate) gctx: &'a GlobalContext,
@@ -15,7 +18,6 @@ impl<T> Deref for Formattable<'_, T> {
     }
 }
 
-
 impl fmt::Display for Formattable<'_, &FunctionType> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let args = self
@@ -23,7 +25,13 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
             .iter()
             .map(|arg| {
                 if let Some(inner) = self.gctx.resolver.type_map.get(*arg) {
-                    format!("{}", Formattable { inner: inner.value(), gctx: self.gctx })
+                    format!(
+                        "{}",
+                        Formattable {
+                            inner: inner.value(),
+                            gctx: self.gctx
+                        }
+                    )
                 } else {
                     format!("{}", BuiltinTypeId::Unknown)
                 }
@@ -32,7 +40,8 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
             .join(", ");
 
         let source = self.gctx.resolver.sources.get(&self.module_ref).unwrap();
-        let name = self.gctx
+        let name = self
+            .gctx
             .resolver
             .span_ref
             .borrow()
@@ -40,7 +49,13 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
             .unwrap();
 
         let ret = if let Some(inner) = self.gctx.resolver.type_map.get(self.ret) {
-            format!("{}", Formattable { inner: inner.value(), gctx: self.gctx })
+            format!(
+                "{}",
+                Formattable {
+                    inner: inner.value(),
+                    gctx: self.gctx
+                }
+            )
         } else {
             format!("{}", BuiltinTypeId::Unknown)
         };
@@ -48,7 +63,6 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
         write!(f, "<function {}({}) -> {}>", name, args, ret)
     }
 }
-
 
 impl fmt::Display for Formattable<'_, &ClassType> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -61,30 +75,57 @@ impl fmt::Display for Formattable<'_, &ClassType> {
     }
 }
 
-
 impl fmt::Display for Formattable<'_, &TypeDescriptor> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.inner {
             TypeDescriptor::Simple(s) => write!(f, "{}", s),
-            TypeDescriptor::Function(ft) => write!(f, "{}", Formattable { inner: ft, gctx: self.gctx }),
-            TypeDescriptor::Class(k) => write!(f, "{}", Formattable { inner: k, gctx: self.gctx }),
+            TypeDescriptor::Function(ft) => write!(
+                f,
+                "{}",
+                Formattable {
+                    inner: ft,
+                    gctx: self.gctx
+                }
+            ),
+            TypeDescriptor::Class(k) => write!(
+                f,
+                "{}",
+                Formattable {
+                    inner: k,
+                    gctx: self.gctx
+                }
+            ),
             TypeDescriptor::Generic(g) => write!(f, "{}", g),
         }
     }
 }
 
-
 impl fmt::Display for Generic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Generic::Pointer { inner } => write!(f, "Pointer({:?})", inner),
-            Generic::Union { inner } => write!(f, "Union[{}]", inner.iter().map(|l| format!("{:?}", l)).collect::<Vec<_>>().join(", "))
+            Generic::Union { inner } => write!(
+                f,
+                "Union[{}]",
+                inner
+                    .iter()
+                    .map(|l| format!("{:?}", l))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }
 
 impl fmt::Display for Formattable<'_, LocalTypeId> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Formattable { gctx: self.gctx, inner: self.gctx.type_map.get(self.inner).unwrap().value() })
+        write!(
+            f,
+            "{}",
+            Formattable {
+                gctx: self.gctx,
+                inner: self.gctx.type_map.get(self.inner).unwrap().value()
+            }
+        )
     }
 }

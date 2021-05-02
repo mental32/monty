@@ -75,7 +75,10 @@ impl TypedObject for Assign {
                 }
             }
         } else {
-            log::warn!("typecheck:assign unbound assignment in non-function scope {:?}", self);
+            log::warn!(
+                "typecheck:assign unbound assignment in non-function scope {:?}",
+                self
+            );
         }
 
         if let Some(expected) = expected {

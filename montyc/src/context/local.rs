@@ -1,6 +1,13 @@
 use std::{path::PathBuf, rc::Rc};
 
-use crate::{MontyError, ast::{AstObject, Spanned}, class::Class, fmt::Formattable, scope::Scope, typing::{LocalTypeId, TypeDescriptor}};
+use crate::{
+    ast::{AstObject, Spanned},
+    class::Class,
+    fmt::Formattable,
+    scope::Scope,
+    typing::{LocalTypeId, TypeDescriptor},
+    MontyError,
+};
 
 use super::{global::GlobalContext, ModuleRef};
 
@@ -15,7 +22,9 @@ pub struct LocalContext<'a> {
 impl<'a> LocalContext<'a> {
     pub fn try_get_class_of_type(&self, type_id: LocalTypeId) -> Option<Rc<Class>> {
         match self.global_context.type_map.get(type_id).unwrap().value() {
-            TypeDescriptor::Simple(_) => Some(self.global_context.builtins.get(&type_id)?.0.clone()),
+            TypeDescriptor::Simple(_) => {
+                Some(self.global_context.builtins.get(&type_id)?.0.clone())
+            }
 
             TypeDescriptor::Class(klass) => self
                 .global_context
@@ -39,7 +48,7 @@ impl<'a> LocalContext<'a> {
     /// Invoke `f` with a context which sets `ctx.this` to `object`.
     pub fn with<T>(
         &self,
-        object: Rc<impl AstObject>,
+        object: Rc<dyn AstObject>,
         f: impl Fn(Self, Rc<dyn AstObject>) -> T,
     ) -> T {
         let mut object_context = self.clone();
@@ -50,7 +59,10 @@ impl<'a> LocalContext<'a> {
     }
 
     pub fn as_formattable<T>(&self, t: T) -> Formattable<'_, T> {
-        Formattable { gctx: self.global_context, inner: t }
+        Formattable {
+            gctx: self.global_context,
+            inner: t,
+        }
     }
 
     /// Format and emit the error to stderr then call [std::process::exit]

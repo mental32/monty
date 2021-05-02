@@ -66,13 +66,12 @@ fn primary_call<'a>(
             rparen = r;
             stream = s;
             break;
-        } else
-        {
+        } else {
             unreachable!("{:?}", stream);
         }
     }
 
-    let _ = rparen;  // TODO: figure out how to span the func name and whole call expr appropriately.
+    let _ = rparen; // TODO: figure out how to span the func name and whole call expr appropriately.
 
     let obj = Spanned {
         span: base.span.start..base.span.end,

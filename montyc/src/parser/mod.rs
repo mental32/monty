@@ -6,7 +6,7 @@ use logos::Logos;
 use nom::IResult;
 use regex::Regex;
 
-use crate::{ast::{AstObject, Spanned}};
+use crate::ast::{AstObject, Spanned};
 
 pub mod comb;
 pub mod token;
@@ -30,13 +30,9 @@ pub struct Parser {
     span_ref: Rc<RefCell<SpanRef>>,
 }
 
-impl From<(Rc<str>, Rc<RefCell<SpanRef>>)> for Parser
-{
+impl From<(Rc<str>, Rc<RefCell<SpanRef>>)> for Parser {
     fn from((source, span_ref): (Rc<str>, Rc<RefCell<SpanRef>>)) -> Self {
-        Self {
-            source,
-            span_ref,
-        }
+        Self { source, span_ref }
     }
 }
 
@@ -114,7 +110,8 @@ impl Parser {
                                     .find(rest)
                                     .or_else(|| MULTI_SQ_STRING.find(rest))
                                     .or_else(|| SINGLE_SQ_STRING.find(rest))
-                                    .or_else(|| SINGLE_DQ_STRING.find(rest)), false
+                                    .or_else(|| SINGLE_DQ_STRING.find(rest)),
+                                false,
                             ),
 
                             '#' => (COMMENT.find(rest), true),
@@ -164,7 +161,10 @@ where
 {
     let parser = match span_ref {
         Some(span_ref) => Parser::from((source, span_ref)),
-        None => Parser { source, span_ref: Default::default() },
+        None => Parser {
+            source,
+            span_ref: Default::default(),
+        },
     };
 
     let seq = parser.token_sequence();
@@ -181,7 +181,10 @@ pub trait Parseable: AstObject {
     const PARSER: ParserT<Self>;
 }
 
-impl<R> From<(Rc<str>, Rc<RefCell<SpanRef>>)> for Spanned<R> where R: Parseable + Clone {
+impl<R> From<(Rc<str>, Rc<RefCell<SpanRef>>)> for Spanned<R>
+where
+    R: Parseable + Clone,
+{
     fn from((st, sr): (Rc<str>, Rc<RefCell<SpanRef>>)) -> Self {
         let output = parse(st.clone(), R::PARSER, Some(sr));
 
@@ -191,4 +194,3 @@ impl<R> From<(Rc<str>, Rc<RefCell<SpanRef>>)> for Spanned<R> where R: Parseable 
         }
     }
 }
-
