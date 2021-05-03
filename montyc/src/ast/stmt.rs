@@ -232,15 +232,18 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                     .ins()
                     .jump(global_escape_block, &[]);
 
-                ctx.builder
-                    .borrow_mut()
-                    .switch_to_block(global_escape_block);
+                let orelse = ctx.builder.borrow_mut().create_block();
+                ctx.builder.borrow_mut().switch_to_block(orelse);
 
                 if let Some(orelse) = &ifstmt.orelse {
                     for stmt in orelse {
                         stmt.inner.lower_with(ctx.clone());
                     }
                 }
+
+                ctx.builder
+                    .borrow_mut()
+                    .switch_to_block(global_escape_block);
             }
 
             Statement::While(w) => {
