@@ -3,20 +3,22 @@
 float
 str
 int
-__rshift__  # type: ignore
-__rrshift__  # type: ignore
-__eq__  # type: ignore
 __mul__  # type: ignore
 __rmul__  # type: ignore
-__add__  # type: ignore
-__radd__  # type: ignore
+__eq__  # type: ignore
+__or__  # type: ignore
+__ror__  # type: ignore
+__rshift__  # type: ignore
+__rrshift__  # type: ignore
 __lshift__  # type: ignore
 __rlshift__  # type: ignore
+__div__  # type: ignore
+__rdiv__  # type: ignore
 __sub__  # type: ignore
 __rsub__  # type: ignore
 __pow__  # type: ignore
 __rpow__  # type: ignore
-__or__  # type: ignore
-__ror__  # type: ignore
+__add__  # type: ignore
+__radd__  # type: ignore
 __and__  # type: ignore
 __rand__  # type: ignore
