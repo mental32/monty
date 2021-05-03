@@ -18,6 +18,7 @@ mod object;
 mod opaque;
 mod renamed;
 mod wrapped;
+mod search;
 
 pub use self::{local::*, object::*, opaque::*, renamed::*, wrapped::*};
 
