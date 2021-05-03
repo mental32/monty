@@ -1,7 +1,7 @@
 use std::{path::PathBuf, rc::Rc};
 
 use crate::{
-    ast::{AstObject, Spanned},
+    ast::AstObject,
     class::Class,
     fmt::Formattable,
     scope::Scope,
@@ -35,25 +35,28 @@ impl<'a> LocalContext<'a> {
     }
 
     /// Associate a span of the current module with a type used for later codegen.
-    pub fn cache_type<T>(&self, t: &Spanned<T>, type_id: LocalTypeId)
-    where
-        T: AstObject + Clone + ?Sized,
-    {
-        self.global_context
-            .type_map
-            .cache
-            .insert((self.module_ref.clone(), t.span.clone()), type_id);
+    pub fn cache_type(&self, t: &Rc<dyn AstObject>, type_id: LocalTypeId) {
+        let entry = self
+            .global_context
+            .database
+            .entry(Rc::clone(&t), &self.module_ref);
+        let def_id = self.global_context.database.id_of(&entry).unwrap();
+
+        let _ = self
+            .global_context
+            .database
+            .set_type_of(def_id, type_id)
+            .unwrap();
     }
 
     /// Invoke `f` with a context which sets `ctx.this` to `object`.
-    pub fn with<T>(
-        &self,
-        object: Rc<dyn AstObject>,
-        f: impl Fn(Self, Rc<dyn AstObject>) -> T,
-    ) -> T {
+    pub fn with<T, A>(&self, object: Rc<A>, f: impl Fn(Self, Rc<A>) -> T) -> T
+    where
+        A: AstObject,
+    {
         let mut object_context = self.clone();
 
-        object_context.this = Some(object.clone());
+        object_context.this = Some(Rc::clone(&object) as Rc<_>);
 
         f(object_context, object)
     }

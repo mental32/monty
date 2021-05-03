@@ -133,7 +133,6 @@ use crate::{
     ast::funcdef::FunctionDef,
     context::{LocalContext, ModuleRef},
     parser::SpanEntry,
-    prelude::Span,
     MontyError,
 };
 
@@ -147,7 +146,6 @@ pub trait TypedObject {
 pub struct TypeMap {
     last_id: Cell<usize>,
     inner: DashMap<LocalTypeId, TypeDescriptor>,
-    pub cache: DashMap<(ModuleRef, Span), LocalTypeId>,
 }
 
 impl TypeMap {
@@ -183,7 +181,6 @@ impl TypeMap {
 
         Self {
             inner: mapping,
-            cache: DashMap::new(),
             last_id: Cell::new(255),
         }
     }

@@ -14,7 +14,7 @@ use crate::{CompilerOptions, ast::{
         module::Module,
         primary::Primary,
         stmt::Statement,
-    }, class::Class, database::AstDatabase, func::Function, prelude::*, typing::{LocalTypeId, TypeDescriptor}};
+    }, class::Class, database::AstDatabase, func::Function, prelude::*, scope::ScopedObject, typing::{LocalTypeId, TypeDescriptor}};
 
 use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
 
@@ -318,7 +318,7 @@ impl GlobalContext {
 
         f(self, module);
 
-        debug!("Loading loading module ({:?})", path);
+        debug!("Finished loading module ({:?})", path);
     }
 
     pub fn load_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
@@ -477,14 +477,13 @@ impl GlobalContext {
         let mut it = module_context.scope.iter();
 
         std::iter::from_fn(move || {
-            let scoped = it.next()?;
+            let ScopedObject { scope, object } = it.next()?;
 
-            let object = scoped.object.unspanned();
             let ctx = LocalContext {
                 global_context: self,
                 module_ref: module_ref.clone(),
-                scope: scoped.scope,
-                this: Some(object.clone()),
+                scope,
+                this: Some(Rc::clone(&object)),
             };
 
             Some((object, ctx))

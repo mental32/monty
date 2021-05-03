@@ -1,9 +1,15 @@
-use std::{cell::RefCell, rc::{Rc, Weak}, sync::atomic::AtomicUsize};
+#![allow(warnings)]
+
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+    sync::atomic::AtomicUsize,
+};
 
 use dashmap::DashMap;
 
 use crate::{
-    ast::{AstObject},
+    ast::AstObject,
     context::{LocalContext, ModuleContext, ModuleRef},
     prelude::Span,
     scope::LookupTarget,
@@ -14,7 +20,7 @@ use crate::{
 pub struct DefId(usize);
 
 #[derive(Debug)]
-struct DefEntry {
+pub struct DefEntry {
     object: Weak<dyn AstObject>,
     span: Span,
     infered_type: RefCell<Option<crate::Result<LocalTypeId>>>,
@@ -31,9 +37,10 @@ impl DefEntry {
         f: impl Fn(LocalContext, Rc<dyn AstObject>) -> T,
     ) -> T
     where
-        T: Clone,
+        T: Clone + std::fmt::Debug,
     {
         if let Some(result) = field.borrow().clone() {
+            log::trace!("database:update DefEntry cache hit! {:?}", result);
             return result;
         }
 
@@ -46,7 +53,13 @@ impl DefEntry {
             )
         };
 
-        let result = ctx.with(Rc::clone(&this), f);
+        let result = {
+            let mut ctx = ctx.clone();
+
+            ctx.this = Some(Rc::clone(&this));
+
+            f(ctx, this)
+        };
 
         field.borrow_mut().replace(result.clone());
 
@@ -56,10 +69,12 @@ impl DefEntry {
 
 impl TypedObject for DefEntry {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        log::trace!("infer_type:defentry {:?}", self);
         self.update(ctx, &self.infered_type, |ctx, this| this.infer_type(&ctx))
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+        log::trace!("typecheck:defentry {:?}", self);
         self.update(ctx, &self.typechecked, |ctx, this| this.typecheck(&ctx))
     }
 }
@@ -102,7 +117,9 @@ pub struct AstDatabase {
 
 impl AstDatabase {
     fn insert_directly(&self, entry: DefEntry) -> DefId {
-        let key = self.last_def_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let key = self
+            .last_def_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let key = DefId(key);
 
         log::trace!("database:insert_directly {:?} = {:?}", key, entry);
@@ -112,7 +129,63 @@ impl AstDatabase {
         key
     }
 
-    pub fn enumerate(&mut self, mctx: &ModuleContext) -> DefId {
+    fn find(&self, entry: &Rc<dyn AstObject>) -> Option<DefId> {
+        let ptr = Rc::as_ptr(entry) as *const ();
+        let entry  = self.entries.iter().find(|refm| Rc::as_ptr(refm.value()) as *const () == ptr)?;
+
+        Some(entry.key().clone())
+    }
+
+    fn find_by_span(&self, mref: &ModuleRef, span: Span) -> Option<DefId> {
+        let entry = self.entries.iter().find(|refm| {
+            let entry = refm.value();
+
+            entry.module == *mref && entry.span == span
+        })?;
+
+        Some(entry.key().clone())
+    }
+
+    pub fn id_of(&self, object: &Rc<dyn AstObject>) -> Option<DefId> {
+        self.find(object)
+    }
+
+    pub fn type_of(&self, object: &Rc<dyn AstObject>, mref: Option<&ModuleRef>) -> Option<LocalTypeId> {
+        let id = self.find(object).or_else(|| {
+            let mref = mref?;
+            let span = object.span()?;
+
+            self.find_by_span(mref, span)
+        })?;
+
+        let entry = self.entries.get(&id)?;
+
+        let x = entry.value().infered_type.borrow().clone()?.ok(); x
+    }
+
+    pub fn set_type_of(&self, id: DefId, ty: LocalTypeId) -> Option<LocalTypeId> {
+        let mut entry = self.entries.get_mut(&id)?;
+
+        let previous = entry.value_mut().infered_type.borrow_mut().replace(Ok(ty));
+
+        previous?.ok()
+    }
+
+    pub fn size_of(
+        &self,
+        mref: ModuleRef,
+        thing: Rc<dyn AstObject>,
+        type_map: &TypeMap,
+    ) -> Option<usize> {
+        let id = self.find_by_span(&mref, thing.span()?)?;
+        let entry = self.entries.get(&id)?;
+
+        let kind = entry.infered_type.borrow().clone()?.ok()?;
+
+        type_map.size_of(kind)
+    }
+
+    pub fn insert_module(&mut self, mctx: &ModuleContext) -> DefId {
         let module = Rc::downgrade(&mctx.module);
 
         let entry = DefEntry {
@@ -123,33 +196,38 @@ impl AstDatabase {
             module: mctx.module_ref(),
         };
 
-        self.insert_directly(entry)
+        let key = self.insert_directly(entry);
+
+        self.by_module.insert(mctx.module_ref(), (key, vec![]));
+
+        key
     }
 
     pub fn contains(&self, ptr: *const ()) -> bool {
-        self.entries.iter().any(|refm| Rc::as_ptr(refm.value()) as *const () == ptr)
+        self.entries
+            .iter()
+            .any(|refm| Rc::as_ptr(refm.value()) as *const () == ptr)
     }
 
-    pub fn insert(&self, entry: Rc<dyn AstObject>, mref: &ModuleRef) -> Rc<dyn AstObject>
-    {
-        log::trace!("database:insert {:?}", entry);
-
+    pub fn entry(&self, entry: Rc<dyn AstObject>, mref: &ModuleRef) -> Rc<dyn AstObject> {
         let span = entry.span().expect("AstDatabase entries must be spanned!");
 
         if let Some(entry) = self.by_span.get(&(mref.clone(), span.clone())) {
             let value = entry.value();
 
-            if !value.is_empty() {
-                assert_eq!(value.len(), 1, "multiple spanned entries!");
+            match value.as_slice() {
+                [] => (),
+                [def_id] => {
+                    let entry = self.entries.get(&def_id).unwrap();
 
-                let def_id = value.last().unwrap();
+                    return Rc::clone(entry.value()) as Rc<_>;
+                },
 
-                let entry = self.entries.get(&def_id).unwrap();
-
-                return Rc::clone(entry.value()) as Rc<_>;
+                [_, ..] => panic!("multiple spanned entries!"),
             }
         }
 
+        log::trace!("database:insert {:?}", entry);
 
         let id = self.insert_directly(DefEntry {
             object: Rc::downgrade(&entry),
@@ -159,7 +237,10 @@ impl AstDatabase {
             module: mref.clone(),
         });
 
-        self.by_span.entry((mref.clone(), span.clone())).or_default().push(id);
+        self.by_span
+            .entry((mref.clone(), span.clone()))
+            .or_default()
+            .push(id);
 
         if let Some(mut result) = self.by_module.get_mut(mref) {
             let (_, v) = result.value_mut();
@@ -179,6 +260,7 @@ impl AstDatabase {
             database: self,
             module: None,
             span: None,
+            filters: vec![],
         }
     }
 }
@@ -200,11 +282,12 @@ impl<'a> Iterator for LazyDefEntries<'a> {
     }
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct QueryIter<'a> {
     database: &'a AstDatabase,
     module: Option<ModuleRef>,
     span: Option<Span>,
+    filters: Vec<Box<dyn Fn(&dyn AstObject) -> bool>>,
 }
 
 impl<'a> QueryIter<'a> {
@@ -218,14 +301,20 @@ impl<'a> QueryIter<'a> {
         self
     }
 
+    pub fn filter(mut self, f: impl Fn(&dyn AstObject) -> bool + 'static) -> Self {
+        self.filters.push(Box::new(f));
+        self
+    }
+
     pub fn finish(self) -> impl Iterator<Item = Rc<dyn AstObject>> + 'a {
         let Self {
             database,
             module,
             span,
+            filters,
         } = self;
 
-        let defs = if let Some(mref) = module {
+        let mut defs = if let Some(mref) = module {
             if let Some(span) = span {
                 let entry = database.by_span.get(&(mref, span));
                 entry.as_ref().unwrap().value().clone()
@@ -246,6 +335,14 @@ impl<'a> QueryIter<'a> {
                 .map(|r| r.key().clone())
                 .collect::<Vec<_>>()
         };
+
+        let _ = defs.drain_filter(|def_id| match database.entries.get(def_id) {
+            None => true,
+            Some(def_entry) => match def_entry.value().object.upgrade() {
+                Some(object) => !filters.iter().all(move |f| (f)(object.as_ref())),
+                None => false,
+            },
+        });
 
         LazyDefEntries {
             inner: defs,

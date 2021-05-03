@@ -218,7 +218,7 @@ where
         let object = ctx
             .global_context
             .database
-            .insert(Rc::clone(object) as Rc<dyn AstObject>, &ctx.module_ref);
+            .entry(Rc::clone(object) as Rc<dyn AstObject>, &ctx.module_ref);
 
         f(object.as_ref())
     } else {

@@ -1,5 +1,7 @@
 use std::{path::PathBuf, rc::Rc};
 
+use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
+
 use crate::{
     context::codegen::{CodegenContext, CodegenLowerArg},
     prelude::*,
@@ -190,24 +192,18 @@ impl TypedObject for Expr {
                 test: _,
                 body,
                 orelse: _,
-            } => body.infer_type(ctx),
+            } => ctx.with(Rc::clone(body), |ctx, body| body.infer_type(&ctx)),
 
             Expr::BinOp { left, op, right } => {
-                let left_ty = ctx.with(Rc::clone(left) as Rc<_>, |ctx, this| this.infer_type(&ctx))?;
-                let right_ty = ctx.with(Rc::clone(right) as Rc<_>, |ctx, this| this.infer_type(&ctx))?;
-
-                ctx.cache_type(left, left_ty);
-                ctx.cache_type(right, right_ty);
-
-                let ltr_name_str = format!("__{}__", op.as_ref());
-                let rtl_name_str = format!("__r{}__", op.as_ref());
+                let left_ty = ctx.with(Rc::clone(left), |ctx, this| this.infer_type(&ctx))?;
+                let right_ty = ctx.with(Rc::clone(right), |ctx, this| this.infer_type(&ctx))?;
 
                 let name_ref = ModuleRef(PathBuf::from(format!("__monty:magical_names")));
 
                 let m = ctx.global_context.resolver.sources.get(&name_ref).unwrap();
 
-                let ltr_name = ctx.global_context.span_ref.borrow().find(&ltr_name_str, &m);
-                let rtl_name = ctx.global_context.span_ref.borrow().find(&rtl_name_str, &m);
+                let ltr_name = ctx.global_context.span_ref.borrow().find(&format!("__{}__", op.as_ref()), &m);
+                let rtl_name = ctx.global_context.span_ref.borrow().find(&format!("__r{}__", op.as_ref()), &m);
 
                 let ltr = FunctionType {
                     reciever: Some(left_ty),
@@ -258,7 +254,7 @@ impl TypedObject for Expr {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         match self {
             Expr::If { test, body, orelse } => {
-                let test_type = test.infer_type(ctx)?;
+                let test_type = ctx.with(Rc::clone(&test), |ctx, test| test.infer_type(&ctx))?;
 
                 if test_type != TypeMap::BOOL {
                     ctx.exit_with_error(MontyError::BadConditionalType {
@@ -267,8 +263,11 @@ impl TypedObject for Expr {
                     });
                 }
 
-                let immediate_body_type = body.infer_type(ctx)?;
-                let adjacent_branch_type = orelse.infer_type(ctx)?;
+                let immediate_body_type =
+                    ctx.with(Rc::clone(&body), |ctx, body| body.infer_type(&ctx))?;
+
+                let adjacent_branch_type =
+                    ctx.with(Rc::clone(&orelse), |ctx, orelse| orelse.infer_type(&ctx))?;
 
                 if immediate_body_type != adjacent_branch_type {
                     ctx.exit_with_error(MontyError::IncompatibleTypes {
@@ -288,13 +287,7 @@ impl TypedObject for Expr {
                 right: _,
             } => {
                 let ty = self.infer_type(ctx)?;
-                ctx.global_context.type_map.cache.insert(
-                    (
-                        ctx.module_ref.clone(),
-                        ctx.this.clone().unwrap().span().unwrap(),
-                    ),
-                    ty,
-                );
+                ctx.cache_type(ctx.this.as_ref().unwrap(), ty);
                 Ok(())
             }
 
@@ -392,36 +385,70 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
         #[allow(warnings)]
         match self {
-            Expr::If { test, body, orelse } => todo!(),
+            Expr::If { test, body, orelse } => {
+                let escape_block = ctx.builder.borrow_mut().create_block();
+                let body_block = ctx.builder.borrow_mut().create_block();
+                let orelse_block = ctx.builder.borrow_mut().create_block();
+
+                let size = ctx
+                    .codegen_backend
+                    .global_context
+                    .database
+                    .size_of(
+                        func.scope.module_ref(),
+                        Rc::clone(&test) as Rc<_>,
+                        &ctx.codegen_backend.global_context.type_map,
+                    )
+                    .unwrap();
+
+                let ss = ctx
+                    .builder
+                    .borrow_mut()
+                    .create_stack_slot(StackSlotData::new(
+                        StackSlotKind::ExplicitSlot,
+                        size as u32,
+                    ));
+
+                let cc = test.inner.lower_with(ctx.clone());
+
+                ctx.builder.borrow_mut().ins().brnz(cc, body_block, &[]);
+                ctx.builder.borrow_mut().ins().jump(orelse_block, &[]);
+
+                ctx.builder.borrow_mut().switch_to_block(body_block);
+                let body_v = body.inner.lower_with(ctx.clone());
+
+                ctx.builder.borrow_mut().ins().stack_store(body_v, ss, 0);
+                ctx.builder.borrow_mut().ins().jump(escape_block, &[]);
+
+                ctx.builder.borrow_mut().switch_to_block(orelse_block);
+                let orelse_v = orelse.inner.lower_with(ctx.clone());
+
+                ctx.builder.borrow_mut().ins().stack_store(orelse_v, ss, 0);
+                ctx.builder.borrow_mut().ins().jump(escape_block, &[]);
+
+                ctx.builder.borrow_mut().switch_to_block(escape_block);
+
+                let ty = ctx.builder.borrow().func.dfg.value_type(body_v);
+
+                ctx.builder.borrow_mut().ins().stack_load(ty, ss, 0)
+            }
 
             Expr::BinOp { left, op, right } => {
+                let mref = ctx.func.scope.module_ref();
+
                 let left_ty = ctx
                     .codegen_backend
                     .global_context
-                    .resolver
-                    .type_map
-                    .cache
-                    .get(&(
-                        func.scope.inner.module_ref.clone().unwrap(),
-                        left.span.clone(),
-                    ))
-                    .unwrap()
-                    .value()
-                    .clone();
+                    .database
+                    .type_of(&(Rc::clone(left) as Rc<_>), Some(&mref))
+                    .unwrap();
 
                 let right_ty = ctx
                     .codegen_backend
                     .global_context
-                    .resolver
-                    .type_map
-                    .cache
-                    .get(&(
-                        func.scope.inner.module_ref.clone().unwrap(),
-                        right.span.clone(),
-                    ))
-                    .unwrap()
-                    .value()
-                    .clone();
+                    .database
+                    .type_of(&(Rc::clone(left) as Rc<_>), Some(&mref))
+                    .unwrap();
 
                 if left_ty.is_builtin() && right_ty.is_builtin() {
                     let lvalue = left.inner.lower_with(ctx.clone());

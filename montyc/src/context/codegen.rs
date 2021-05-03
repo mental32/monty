@@ -49,12 +49,12 @@ where
 }
 
 pub struct CodegenBackend<'a> {
-    // functions: Vec<(FuncId, codegen::ir::Function)>,
     pub(crate) global_context: &'a GlobalContext,
     pub(crate) object_module: ObjectModule,
     pub(crate) flags: settings::Flags,
     pub(crate) names: HashMap<ModuleRef, ModuleNames>,
     pub(crate) types: HashMap<LocalTypeId, codegen::ir::Type>,
+    pub(crate) pending: Vec<(usize, Linkage, codegen::isa::CallConv)>
 }
 
 impl<'global> CodegenBackend<'global> {
@@ -256,9 +256,10 @@ impl<'global> CodegenBackend<'global> {
 
     pub fn declare_functions<'a>(
         &mut self,
-        it: impl Iterator<Item = (&'a Function, &'a ModuleRef, Linkage, CallConv)>,
+        it: impl Iterator<Item = (usize, &'a Function, &'a ModuleRef, Linkage, CallConv)>,
     ) {
-        for (func, mref, linkage, callcov) in it {
+        for (idx, func, mref, linkage, callcov) in it {
+            self.pending.push((idx, linkage.clone(), callcov.clone()));
             self.declare_function(func, mref, linkage, callcov);
         }
     }
@@ -335,13 +336,23 @@ impl<'global> CodegenBackend<'global> {
             types,
             flags,
             names: HashMap::default(),
+            pending: vec![],
         }
     }
 
-    pub fn finish<P>(self, output: Option<P>)
+    pub fn finish<P>(mut self, output: Option<P>)
     where
         P: AsRef<Path>,
     {
+        let pending = self.pending.clone();
+
+        for (idx, linkage, callcov) in pending.iter().cloned() {
+            let func = self.global_context.functions.borrow();
+            let (func, mref) = func.get(idx).unwrap();
+
+            self.add_function_to_module(func, &mref, linkage, callcov)
+        }
+
         let product = self.object_module.finish();
         let bytes = product.emit().unwrap();
 

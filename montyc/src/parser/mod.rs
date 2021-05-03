@@ -48,16 +48,6 @@ impl Parser {
         Some(&self.source[range])
     }
 
-    // #[inline]
-    // pub fn parse_module(&self) -> AstObject {
-    //     let stream = self.token_sequence();
-    //     let (stream, object) = comb::statements(&stream).unwrap();
-
-    //     assert!(stream.is_empty(), "{:?}", stream);
-
-    //     object
-    // }
-
     #[inline]
     fn token_sequence(&self) -> Box<[Token]> {
         self.token_stream()

@@ -1,10 +1,8 @@
 use std::rc::Rc;
 
-use dashmap::DashMap;
+use crate::{func::Function, prelude::*};
 
-use crate::{func::Function, prelude::*, scope::ScopeRoot};
-
-use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
+use super::{atom::Atom, primary::Primary, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct TypedFuncArg {
@@ -144,71 +142,16 @@ impl TypedObject for FunctionDef {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        let type_id = self.infer_type(&ctx).unwrap();
+        let func = Function::new(ctx.this.clone().unwrap(), ctx).unwrap_or_compiler_error(ctx);
 
-        let this = ctx.this.as_ref().unwrap().unspanned();
-
-        let this = if let Some(f) = this.as_ref().downcast_ref::<FunctionDef>() {
-            Spanned {
-                span: f.name.span().unwrap(),
-                inner: f.clone(),
-            }
-        } else {
-            match this.as_ref().downcast_ref::<Statement>() {
-                Some(Statement::FnDef(f)) => Spanned {
-                    span: f.returns.clone().unwrap().span().unwrap().clone(),
-                    inner: f.clone(),
-                },
-
-                _ => panic!("{:?}", &ctx.this),
-            }
-        };
-
-        let mut scope: LocalScope<FunctionDef> = LocalScope::from(self.clone()).into();
-
-        scope.inner.module_ref.replace(ctx.module_ref.clone());
-        scope.inner.parent = Some(ctx.scope.clone());
-
-        let kind = ctx
-            .global_context
-            .type_map
-            .get_tagged::<FunctionType>(type_id)
-            .unwrap()
-            .unwrap();
-
-        let vars = DashMap::default();
-
-        if let Some(args) = &this.inner.args {
-            for (name, ann) in args.iter() {
-                vars.insert(name.clone(), (ann.infer_type(ctx)?, ann.span.clone()));
-            }
-        }
-
-        let mut func = Rc::new(Function {
-            scope,
-            kind,
-            vars,
-            def: Rc::new(this),
-            refs: Default::default(),
-        });
-
-        let mut root = ScopeRoot::Func(Rc::clone(&func));
-
-        // SAFETY: The only other reference to `func` is in the scope root.
-        //         which doesn't get dereferenced in the call to `std::mem::swap`.
-        unsafe {
-            let func = Rc::get_mut_unchecked(&mut func);
-            std::mem::swap(&mut func.scope.inner.root, &mut root);
-        }
-
-        let ctx = LocalContext {
+        let lctx = LocalContext {
             global_context: ctx.global_context,
             module_ref: ctx.module_ref.clone(),
             scope: Rc::new(func.scope.clone()) as Rc<_>,
             this: ctx.this.clone(),
         };
 
-        func.typecheck(&ctx)
+        func.typecheck(&lctx)
     }
 }
 
@@ -228,7 +171,7 @@ impl Lower<Layout<Rc<dyn AstObject>>> for FunctionDef {
         let mut prev = layout.start.clone();
 
         for object in self.body.iter() {
-            let new = layout.insert_into_new_block(object.clone());
+            let new = layout.insert_into_new_block(Rc::clone(&object));
 
             layout.succeed(prev, new);
 

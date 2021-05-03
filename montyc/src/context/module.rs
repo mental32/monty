@@ -35,4 +35,8 @@ impl ModuleContext {
     pub fn module_ref(&self) -> ModuleRef {
         ModuleRef(self.path.clone())
     }
+
+    pub fn scope(&self) -> Rc<dyn Scope> {
+        Rc::clone(&self.scope)
+    }
 }
