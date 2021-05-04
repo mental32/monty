@@ -3,7 +3,7 @@ use std::{fmt::Debug, rc::Rc};
 use crate::{ast::{
         assign::Assign,
         class::ClassDef,
-        funcdef::{FunctionDef, TypedFuncArg},
+        funcdef::{TypedFuncArg},
         stmt::Statement,
         AstObject,
     }, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, parser::SpanEntry, phantom::PhantomObject};
@@ -100,15 +100,14 @@ pub trait Scope: core::fmt::Debug {
 
         let dropped = results
             .drain_filter(|o| {
+                let o = o.unspanned();
+
                 !(crate::isinstance!(o.as_ref(), Assign).is_some()
-                    || crate::isinstance!(o.as_ref(), FunctionDef).is_some()
                     || o.as_ref().downcast_ref::<Function>().is_some()
                     || crate::isinstance!(o.as_ref(), ClassDef).is_some()
-                    || crate::isinstance!(o.as_ref(), Statement, Statement::FnDef(f) => f)
-                        .is_some()
-                    || crate::isinstance!(o.as_ref(), Statement, Statement::Asn(a) => a).is_some()
                     || crate::isinstance!(o.as_ref(), TypedFuncArg).is_some()
-                    || crate::isinstance!(o.as_ref(), PhantomObject).is_some())
+                    || crate::isinstance!(o.as_ref(), PhantomObject).is_some()
+                    || o.as_ref().as_function().is_some())
             })
             .collect::<Vec<_>>();
 

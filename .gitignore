@@ -154,3 +154,5 @@ static
 /target
 
 cpython/
+
+*.out

@@ -45,8 +45,7 @@ impl<'a> LocalContext<'a> {
         let _ = self
             .global_context
             .database
-            .set_type_of(def_id, type_id)
-            .unwrap();
+            .set_type_of(def_id, type_id);
     }
 
     /// Invoke `f` with a context which sets `ctx.this` to `object`.

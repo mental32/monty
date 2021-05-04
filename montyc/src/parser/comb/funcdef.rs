@@ -108,7 +108,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
                 PyToken::Ident(n) => Atom::Name(n),
                 _ => unreachable!(),
             })
-            .transparent_with(Primary::Atomic);
+            .transparent_with(|atom| Primary::Atomic(Rc::new(atom)));
 
         (stream, Some(ret))
     } else {
@@ -204,7 +204,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
     };
 
     let funcdef = Spanned {
-        span: 0..0,
+        span: funcdef.name.span.start..funcdef.body.last().unwrap().span().unwrap().end,
         inner: funcdef,
     };
 

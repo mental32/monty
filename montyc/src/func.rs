@@ -2,7 +2,16 @@ use std::{cell::RefCell, marker::PhantomData, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement}, database::DefId, prelude::*, scope::ScopeRoot, typing::TaggedType};
+use crate::{
+    ast::{
+        atom::Atom, expr::Expr, funcdef::FunctionDef, primary::Primary, retrn::Return,
+        stmt::Statement,
+    },
+    database::DefId,
+    prelude::*,
+    scope::ScopeRoot,
+    typing::TaggedType,
+};
 
 #[derive(Debug)]
 pub enum DataRef {
@@ -32,19 +41,31 @@ impl Function {
     }
 
     pub fn name_as_string(&self, gctx: &GlobalContext) -> Option<String> {
-        let def = self.def(gctx).unwrap().as_ref().as_function().unwrap().name();
+        let def = self
+            .def(gctx)
+            .unwrap()
+            .as_ref()
+            .as_function()
+            .unwrap()
+            .name();
 
-        gctx.resolver.resolve(
-            self.scope.inner.module_ref.clone().unwrap(),
-            def,
-        )
+        gctx.resolver
+            .resolve(self.scope.inner.module_ref.clone().unwrap(), def)
     }
 
     pub fn new(def: &Rc<dyn AstObject>, ctx: &LocalContext) -> crate::Result<Rc<Self>> {
-        let def = ctx.global_context.database.entry(Rc::clone(def), &ctx.module_ref);
+        let def = ctx
+            .global_context
+            .database
+            .entry(Rc::clone(def), &ctx.module_ref);
         let id = ctx.global_context.database.id_of(&def).unwrap();
-        let def = ctx.global_context.database.as_weak_object(id).unwrap();
-        let func = def.as_ref().as_function().unwrap();
+        let def = ctx
+            .global_context
+            .database
+            .as_weak_object(id)
+            .unwrap()
+            .unspanned();
+        let func = crate::isinstance!(def.as_ref(), Statement, Statement::FnDef(f) => f).unwrap();
 
         let mut scope = OpaqueScope::from(Rc::clone(&def) as Rc<_>);
 
@@ -70,7 +91,9 @@ impl Function {
 
         if let Some(args) = &func.args {
             for (name, ann) in args.iter() {
-                vars.insert(name.clone(), (ann.infer_type(ctx)?, ann.span.clone()));
+                let ty = ctx.with(Rc::clone(&ann), |ctx, ann| ann.infer_type(&ctx))?;
+
+                vars.insert(name.clone(), (ty, ann.span.clone()));
             }
         }
 
@@ -95,6 +118,70 @@ impl Function {
 
         Ok(func)
     }
+
+    pub fn is_externaly_defined(&self, global_context: &GlobalContext, callcov: Option<&str>) -> bool {
+        let def = self.def(global_context).unwrap().unspanned();
+
+        let def: &FunctionDef = def.as_function().unwrap();
+
+        let source = global_context
+            .modules
+            .get(&self.scope.module_ref())
+            .as_ref()
+            .unwrap()
+            .source
+            .clone();
+
+        // checks if the function has a decorator "extern"
+        // "extern" may be called with zero or exactly one arguments
+        // and the argument if present must be a string literal that matches `callcov`
+        let has_extern_tag = def
+            .decorator_list
+            .as_slice()
+            .iter()
+            .any(|dec| match &dec.inner {
+                Primary::Atomic(atom) => atom
+                    .reveal(&source)
+                    .map(|st| st == "extern")
+                    .unwrap_or(false),
+
+                Primary::Call { func, args } => {
+                    source
+                        .get(func.span.clone())
+                        .map(|st| st == "extern")
+                        .unwrap_or(false)
+                        && args
+                        .as_ref()
+                            .map(|args| {
+                                args.len() == 1
+                                    && args
+                                        .get(0)
+                                        .map(|arg| {
+                                            matches!(
+                                                &arg.as_ref().inner,
+                                                Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) if matches!(atom.as_ref(), Spanned { inner: Atom::Str(n), ..} if matches!(global_context.span_ref.borrow().resolve_ref(*n, &source), Some(st) if callcov.map(|cc| cc == st).unwrap_or(true))
+                                            ))
+                                        })
+                                        .unwrap_or(false)
+                            })
+                            .unwrap_or(true)
+                }
+                _ => false,
+            });
+
+        let body_is_ellipsis = match def.body.as_slice() {
+            [] => unreachable!(),
+
+            [obj]
+            | [_, obj] => {
+                crate::isinstance!(obj.as_ref(), Statement, Statement::Expression(Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. })) => matches!(atom.as_ref(), Spanned { inner: Atom::Ellipsis, ..})).unwrap_or(false)
+            },
+
+            _ => false,
+        };
+
+        has_extern_tag && body_is_ellipsis
+    }
 }
 
 impl TypedObject for Function {
@@ -107,6 +194,10 @@ impl TypedObject for Function {
             "typecheck:function {}",
             ctx.as_formattable(&self.kind.inner)
         );
+
+        if self.is_externaly_defined(ctx.global_context, None) {
+            return Ok(());
+        }
 
         assert_matches!(self.scope.root(), ScopeRoot::Func(_));
 
@@ -133,7 +224,12 @@ impl TypedObject for Function {
             })?;
         }
 
-        if implicit_return && !ctx.global_context.type_map.type_eq(self.kind.inner.ret, TypeMap::NONE_TYPE) {
+        if implicit_return
+            && !ctx
+                .global_context
+                .type_map
+                .type_eq(self.kind.inner.ret, TypeMap::NONE_TYPE)
+        {
             let def_node = match self.scope.root() {
                 ScopeRoot::Func(f) => f.def(ctx.global_context).unwrap(),
                 _ => unreachable!(),
@@ -143,7 +239,14 @@ impl TypedObject for Function {
                 expected: TypeMap::NONE_TYPE,
                 actual: self.kind.inner.ret,
                 def_span: def_node.span().unwrap(),
-                ret_span: def_node.as_ref().as_function().cloned().unwrap().returns.map(|ret| ret.span.clone()).unwrap_or(def_node.span().unwrap())
+                ret_span: def_node
+                    .as_ref()
+                    .as_function()
+                    .cloned()
+                    .unwrap()
+                    .returns
+                    .map(|ret| ret.span.clone())
+                    .unwrap_or(def_node.span().unwrap()),
             });
         }
 

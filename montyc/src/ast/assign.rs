@@ -40,7 +40,7 @@ impl AstObject for Assign {
 
 impl TypedObject for Assign {
     fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        Ok(TypeMap::NEVER) // assignments do not have types, their values do however.
+        unreachable!()
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {

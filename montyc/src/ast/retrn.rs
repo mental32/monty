@@ -27,7 +27,7 @@ impl AstObject for Return {
 
 impl TypedObject for Return {
     fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        Ok(TypeMap::NEVER)
+        unreachable!()
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
@@ -52,12 +52,13 @@ impl TypedObject for Return {
         let actual = match &self.value {
             Some(value) => {
                 let mut ctx = ctx.clone();
-                ctx.this = Some(value.clone() as Rc<_>);
+                ctx.this = Some(Rc::clone(value) as Rc<_>);
                 value.infer_type(&ctx)?
             }
 
             None => TypeMap::NONE_TYPE,
         };
+
 
         if !ctx.global_context.type_map.type_eq(expected, actual) {
             let ret_node = ctx
@@ -83,15 +84,10 @@ impl TypedObject for Return {
                         .cloned()
                         .unwrap();
 
+                    let span = f.def(ctx.global_context).and_then(|o| o.span()).unwrap();
+
                     let fndef = Spanned {
-                        span: fndef.name.span.start
-                            ..fndef
-                                .returns
-                                .clone()
-                                .unwrap()
-                                .span()
-                                .unwrap_or(fndef.name.span.clone())
-                                .end,
+                        span,
                         inner: fndef.clone(),
                     };
 
@@ -100,15 +96,10 @@ impl TypedObject for Return {
 
                 ScopeRoot::AstObject(object) => {
                     let fndef = object.as_ref().downcast_ref::<FunctionDef>().unwrap();
+                    let span = object.span().unwrap();
+
                     let fndef = Spanned {
-                        span: fndef.name.span.start
-                            ..fndef
-                                .returns
-                                .clone()
-                                .unwrap()
-                                .span()
-                                .unwrap_or(fndef.name.span.clone())
-                                .end,
+                        span,
                         inner: fndef.clone(),
                     };
 

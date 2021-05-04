@@ -100,6 +100,14 @@ pub trait AstObject: fmt::Debug + TypedObject + LookupTarget + Any {
 
 impl dyn AstObject {
     pub fn downcast_ref<'a, T: Any>(&'a self) -> Option<&'a T> {
+        // log::trace!(
+        //     "ast:downcast_ref ({:?}){:?} == ({:?}){:?}",
+        //     std::any::type_name::<T>(),
+        //     TypeId::of::<T>(),
+        //     self.type_name(),
+        //     self.type_id(),
+        // );
+
         if self.type_id() == TypeId::of::<T>() {
             // SAFETY: This is the exact same logic present in
             //         `std::any::Any::downcast_ref` minus the
@@ -188,42 +196,56 @@ where
     }
 }
 
-fn with_object_in_database_and_then<'a, T, U>(object: &Rc<T>, ctx: &LocalContext<'a>, f: impl Fn(&dyn AstObject) -> U) -> U
+fn with_object_in_database_and_then<'a, T, U>(
+    object: &Rc<T>,
+    ctx: &LocalContext<'a>,
+    f: impl Fn(&dyn AstObject) -> U,
+) -> U
 where
     T: AstObject,
 {
-    if ctx
-        .global_context
-        .database
-        .contains(Rc::as_ptr(object) as *const ())
-    {
+    log::trace!("ast:with_object_in_database_and_then {:?}", object);
+
+    let that = Rc::clone(object) as Rc<_>;
+
+    assert_eq!(
+        Rc::as_ptr(object) as *const (),
+        Rc::as_ptr(&that) as *const ()
+    );
+
+    if ctx.global_context.database.contains_entry(&that) {
         // `object` is a `DefEntry` already.
         return f(object.as_ref());
     }
 
-    // lazily insert `object` into the database if it has a span (is well formed.)
-    if let Some(span) = object.span() {
-        let this = ctx.this.as_ref().expect("`ctx.this` must be set!");
-        let this_span = this.span().expect("`ctx.this` must be spanned!");
+    if !ctx.global_context.database.contains_object(&that) {
+        // lazily insert `object` into the database if it has a span (is well formed.)
+        if let Some(span) = object.span() {
+            let this = ctx.this.as_ref().expect("`ctx.this` must be set!");
+            let this_span = this.span().expect("`ctx.this` must be spanned!");
 
-        // NOTE: so like we're just assuming `this` and `object` are from the same module
-        //       since the caller is supposed to set `ctx.this = self` before interacting with us.
+            // NOTE: so like we're just assuming `this` and `object` are from the same module
+            //       since the caller is supposed to set `ctx.this = self` before interacting with us.
 
-        assert_eq!(span, this_span, "{:?} != {:?}", object, this);
-        assert_eq!(
-            Rc::as_ptr(object) as *const (),
-            Rc::as_ptr(&(Rc::clone(object) as Rc<dyn AstObject>)) as *const ()
-        );
+            assert_eq!(span, this_span, "{:?} != {:?}", object, this);
+            assert_eq!(format!("{:?}", this), format!("{:?}", object), "ctx.this is not the object!");
 
-        let object = ctx
-            .global_context
-            .database
-            .entry(Rc::clone(object) as Rc<dyn AstObject>, &ctx.module_ref);
+            let object_entry = ctx
+                .global_context
+                .database
+                .entry(Rc::clone(&that), &ctx.module_ref);
 
-        f(object.as_ref())
-    } else {
-        f(object.as_ref())
+            assert!(
+                ctx.global_context.database.contains_object(&that),
+                "{:?}",
+                Rc::as_ptr(&that)
+            );
+
+            return f(object_entry.as_ref());
+        }
     }
+
+    f(object.as_ref())
 }
 
 impl<T> TypedObject for Rc<T>

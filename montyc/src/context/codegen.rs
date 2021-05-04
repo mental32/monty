@@ -17,7 +17,7 @@ use crate::{
     typing::{LocalTypeId, TypeMap},
 };
 
-use codegen::isa::CallConv;
+use codegen::{ir::{ExtFuncData, FuncRef}, isa::CallConv};
 use cranelift_codegen::{
     self as codegen,
     ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind},
@@ -50,11 +50,12 @@ where
 
 pub struct CodegenBackend<'a> {
     pub(crate) global_context: &'a GlobalContext,
-    pub(crate) object_module: ObjectModule,
+    pub(crate) object_module: RefCell<ObjectModule>,
     pub(crate) flags: settings::Flags,
     pub(crate) names: HashMap<ModuleRef, ModuleNames>,
     pub(crate) types: HashMap<LocalTypeId, codegen::ir::Type>,
-    pub(crate) pending: Vec<(usize, Linkage, codegen::isa::CallConv)>
+    pub(crate) pending: Vec<(usize, Linkage, codegen::isa::CallConv)>,
+    pub(crate) external_functions: HashMap<FuncId, Signature>,
 }
 
 impl<'global> CodegenBackend<'global> {
@@ -97,7 +98,14 @@ impl<'global> CodegenBackend<'global> {
                 .push(codegen::ir::AbiParam::new(self.types[param]));
         }
 
-        let func_def_name = func.def(self.global_context).unwrap().as_function().unwrap().name().clone().unwrap();
+        let func_def_name = func
+            .def(self.global_context)
+            .unwrap()
+            .as_function()
+            .unwrap()
+            .name()
+            .clone()
+            .unwrap();
 
         let name = if let Some((name, fid)) = self
             .names
@@ -114,6 +122,7 @@ impl<'global> CodegenBackend<'global> {
 
         let fid = self
             .object_module
+            .borrow_mut()
             .declare_function(&fn_name, linkage, &clfn.signature)
             .ok()?;
 
@@ -139,7 +148,13 @@ impl<'global> CodegenBackend<'global> {
             }
         );
 
-        let func_def = func.def(self.global_context).unwrap().as_function().cloned().unwrap();
+
+        let func_def = func
+            .def(self.global_context)
+            .unwrap()
+            .as_function()
+            .cloned()
+            .unwrap();
 
         let layout = func_def.lower_and_then(|_, mut layout| {
             // discard all comment nodes
@@ -277,6 +292,11 @@ impl<'global> CodegenBackend<'global> {
     ) {
         let (fid, mut cl_func) = self.declare_function(func, mref, linkage, callcov).unwrap();
 
+        if func.is_externaly_defined(self.global_context, None) {
+            self.external_functions.insert(fid, cl_func.signature.clone());
+            return;
+        }
+
         self.build_function(fid, func, &mut cl_func);
 
         if let Err(e) = verify_function(&cl_func, &self.flags) {
@@ -288,6 +308,7 @@ impl<'global> CodegenBackend<'global> {
         let mut ss = codegen::binemit::NullStackMapSink {};
 
         self.object_module
+        .borrow_mut()
             .define_function(fid, &mut ctx, &mut ts, &mut ss)
             .unwrap();
     }
@@ -299,9 +320,9 @@ impl<'global> CodegenBackend<'global> {
         let mut flags_builder = settings::builder();
 
         // allow creating shared libraries
-        flags_builder
-            .enable("is_pic")
-            .expect("is_pic should be a valid option");
+        // flags_builder
+        //     .enable("is_pic")
+        //     .expect("is_pic should be a valid option");
 
         // use debug assertions
         flags_builder
@@ -332,15 +353,22 @@ impl<'global> CodegenBackend<'global> {
         {
             types.insert(TypeMap::INTEGER, codegen::ir::types::I64);
             types.insert(TypeMap::BOOL, codegen::ir::types::I64);
+            types.insert(
+                global_context.type_map.entry(TypeDescriptor::Generic(
+                    crate::typing::Generic::Pointer { inner: TypeMap::U8 },
+                )),
+                codegen::ir::types::I64,
+            );
         }
 
         Self {
             global_context,
-            object_module,
+            object_module: RefCell::new(object_module),
             types,
             flags,
             names: HashMap::default(),
             pending: vec![],
+            external_functions: HashMap::default(),
         }
     }
 
@@ -357,7 +385,7 @@ impl<'global> CodegenBackend<'global> {
             self.add_function_to_module(func, &mref, linkage, callcov)
         }
 
-        let product = self.object_module.finish();
+        let product = self.object_module.into_inner().finish();
         let bytes = product.emit().unwrap();
 
         let mut file = tempfile::NamedTempFile::new().unwrap();
@@ -378,6 +406,8 @@ impl<'global> CodegenBackend<'global> {
 
         cc_args.push("-o");
         cc_args.push(&output.to_str().unwrap());
+
+        cc_args.push("-no-pie");
 
         std::process::Command::new("cc")
             .args(&cc_args)

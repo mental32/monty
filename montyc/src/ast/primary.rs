@@ -1,13 +1,18 @@
 use std::rc::Rc;
 
+use cranelift_codegen::ir::ExtFuncData;
+
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{context::codegen::CodegenLowerArg, func::DataRef, prelude::*, scope::LookupOrder};
+use crate::{
+    context::codegen::CodegenLowerArg, fmt::Formattable, func::DataRef, prelude::*,
+    scope::LookupOrder,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
-    Atomic(Spanned<Atom>),
+    Atomic(Rc<Spanned<Atom>>),
 
     /// `<value:primary>[<index?>]`
     Subscript {
@@ -37,8 +42,8 @@ impl Primary {
         let mut names = vec![];
 
         match self {
-            Primary::Atomic(Spanned { inner, .. }) => {
-                names.push(inner.clone());
+            Primary::Atomic(atom) => {
+                names.push(atom.inner.clone());
             }
 
             Primary::Attribute { left, attr } => {
@@ -55,7 +60,7 @@ impl Primary {
     pub fn is_comment(&self) -> bool {
         matches!(
             self,
-            Self::Atomic(Spanned {
+            Self::Atomic(atom) if matches!(atom.as_ref(), Spanned {
                 inner: Atom::Comment(_),
                 ..
             })
@@ -110,12 +115,14 @@ impl TypedObject for Primary {
         log::trace!("infer_type:expr {:?}", self);
 
         match self {
-            Primary::Atomic(at) => at.infer_type(ctx),
+            Primary::Atomic(at) => ctx.with(Rc::clone(at), |ctx, at| at.infer_type(&ctx)),
             Primary::Subscript { value: _, index: _ } => todo!(),
             Primary::Call { func, args: _ } => {
                 log::trace!("infer_type:call {:?}", func);
 
-                let func_t = func.infer_type(ctx).unwrap_or_compiler_error(ctx);
+                let func_t = ctx.with(Rc::clone(func), |ctx, func| {
+                    func.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
+                });
                 let func_t = match ctx
                     .global_context
                     .type_map
@@ -130,14 +137,12 @@ impl TypedObject for Primary {
                 };
 
                 if let ScopeRoot::Func(host) = ctx.scope.root() {
-                    let func = if let Primary::Atomic(Spanned {
-                        inner: Atom::Name(n),
-                        ..
-                    }) = &func.inner
-                    {
-                        n.clone()
-                    } else {
-                        unreachable!();
+                    let func = match &func.inner {
+                        Primary::Atomic(atom) => match atom.as_ref().inner {
+                            Atom::Name(n) => n,
+                            _ => unreachable!(),
+                        },
+                        _ => unreachable!(),
                     };
 
                     let other = ctx
@@ -149,6 +154,7 @@ impl TypedObject for Primary {
                         )
                         .unwrap_or_compiler_error(ctx)
                         .iter()
+                        .map(|o| o.unspanned())
                         .find_map(|o| crate::isinstance!(o.as_ref(), FunctionDef).or_else(|| crate::isinstance!(o.as_ref(), Statement, Statement::FnDef(f) => f)).map(|f| f.name()))
                         .unwrap();
 
@@ -172,7 +178,7 @@ impl TypedObject for Primary {
         match self {
             Primary::Atomic(at) => {
                 let mut ctx = ctx.clone();
-                ctx.this = Some(Rc::new(at.clone()));
+                ctx.this = Some(Rc::clone(at) as Rc<_>);
                 at.typecheck(&ctx)
             }
 
@@ -181,7 +187,7 @@ impl TypedObject for Primary {
             Primary::Call { func, args } => {
                 let func_t = {
                     let mut ctx = ctx.clone();
-                    ctx.this = Some(func.clone());
+                    ctx.this = Some(Rc::clone(func) as Rc<_>);
 
                     func.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
                 };
@@ -211,18 +217,19 @@ impl TypedObject for Primary {
                             .unwrap_or_compiler_error(ctx);
 
                         for obj in results {
-                            if let Some(f) = obj.as_ref().downcast_ref::<Spanned<FunctionDef>>() {
-                                break 'outer f.clone();
+                            let span = obj.span().unwrap();
+                            let obj = obj.unspanned();
+
+                            if let Some(f) = obj.as_ref().downcast_ref::<FunctionDef>() {
+                                break 'outer Spanned {
+                                    span,
+                                    inner: f.clone(),
+                                };
                             } else if let Some(Statement::FnDef(f)) =
                                 obj.as_ref().downcast_ref::<Statement>()
                             {
                                 break 'outer Spanned {
-                                    span: f.name.span.start
-                                        ..f.body
-                                            .last()
-                                            .and_then(|l| l.span())
-                                            .unwrap_or(f.name.span.clone())
-                                            .end,
+                                    span,
                                     inner: f.clone(),
                                 };
                             }
@@ -252,7 +259,7 @@ impl TypedObject for Primary {
 
 impl LookupTarget for Primary {
     fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
-        matches!(self, Self::Atomic(Spanned { inner: Atom::Name(n), .. }) if n.clone() == target)
+        matches!(self, Self::Atomic(atom) if matches!(atom.as_ref(), Spanned { inner: Atom::Name(n), .. } if n.clone() == target))
     }
 
     fn name(&self) -> crate::parser::SpanEntry {
@@ -272,15 +279,29 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
             Primary::Atomic(at) => at.inner.lower_with(ctx),
             Primary::Subscript { value, index } => todo!(),
             Primary::Call { func, args } => {
-                let func = if let Primary::Atomic(Spanned {
-                    inner: Atom::Name(n),
-                    ..
-                }) = &func.inner
-                {
-                    n.clone()
-                } else {
-                    unreachable!();
+                let func_name = match &func.inner {
+                    Primary::Atomic(atom) => match atom.as_ref().inner {
+                        Atom::Name(Some(n)) => n,
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!(),
                 };
+
+                let mref = ctx.func.scope.module_ref();
+
+                let func_t = ctx
+                    .codegen_backend
+                    .global_context
+                    .database
+                    .type_of(&(Rc::clone(&func) as Rc<dyn AstObject>), Some(&mref))
+                    .unwrap();
+                let func_t = ctx
+                    .codegen_backend
+                    .global_context
+                    .type_map
+                    .get_tagged::<FunctionType>(func_t)
+                    .unwrap()
+                    .unwrap();
 
                 let module = ctx
                     .codegen_backend
@@ -288,13 +309,30 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                     .get(&ctx.func.scope.module_ref())
                     .unwrap();
 
-                let (target_name, target_fid) =
-                    module.functions.get(func.as_ref().unwrap()).unwrap();
+                let (target_name, target_fid) = module.functions.get(&func_name).unwrap();
 
                 let args = match args {
                     Some(args) => args
                         .iter()
-                        .map(|arg| arg.inner.lower_with(ctx.clone()))
+                        .zip(func_t.inner.args.iter())
+                        .map(|(arg, param_t)| {
+                            let arg_t = ctx
+                                .codegen_backend
+                                .global_context
+                                .database
+                                .type_of(&(Rc::clone(arg) as Rc<dyn AstObject>), Some(&mref))
+                                .unwrap();
+
+                            if arg_t == *param_t {
+                                arg.inner.lower_with(ctx.clone())
+                            } else {
+                                ctx.codegen_backend
+                                    .global_context
+                                    .type_map
+                                    .coerce(arg_t, *param_t, ctx.clone(), Rc::clone(&arg) as Rc<_>)
+                                    .unwrap()
+                            }
+                        })
                         .collect(),
 
                     None => vec![],
@@ -302,11 +340,22 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                 let mut builder = ctx.builder.borrow_mut();
 
-                let func_ref = cranelift_module::Module::declare_func_in_func(
-                    &ctx.codegen_backend.object_module,
-                    *target_fid,
-                    &mut builder.func,
-                );
+                let func_ref = if let Some(signature) = ctx.codegen_backend.external_functions.get(target_fid) {
+                    let sigref = ctx.builder.borrow_mut().import_signature(signature.clone());
+
+                    ctx.builder.borrow_mut().import_function(ExtFuncData {
+                        name: target_name.clone(),
+                        signature: sigref,
+                        colocated: false,
+                    })
+
+                } else {
+                    cranelift_module::Module::declare_func_in_func(
+                        &*ctx.codegen_backend.object_module.borrow(),
+                        *target_fid,
+                        &mut builder.func,
+                    )
+                };
 
                 let result = builder.ins().call(func_ref, args.as_slice());
 

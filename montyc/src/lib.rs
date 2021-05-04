@@ -5,7 +5,7 @@
     assert_matches,
     get_mut_unchecked
 )]
-#![deny(warnings)]
+// #![deny(warnings)]
 
 use std::rc::Rc;
 

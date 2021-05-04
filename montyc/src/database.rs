@@ -56,7 +56,7 @@ impl DefEntry {
         let result = {
             let mut ctx = ctx.clone();
 
-            ctx.this = Some(Rc::clone(&this));
+            // ctx.this = Some(Rc::clone(&this));
 
             f(ctx, this)
         };
@@ -110,7 +110,7 @@ impl LookupTarget for DefEntry {
 pub struct AstDatabase {
     last_def_id: AtomicUsize,
     entries: DashMap<DefId, Rc<DefEntry>>,
-
+    by_pointer: DashMap<*const (), DefId>,
     by_module: DashMap<ModuleRef, (DefId, Vec<DefId>)>,
     by_span: DashMap<(ModuleRef, Span), Vec<DefId>>,
 }
@@ -124,6 +124,7 @@ impl AstDatabase {
 
         log::trace!("database:insert_directly {:?} = {:?}", key, entry);
 
+        assert!(self.by_pointer.insert(Weak::as_ptr(&entry.object) as *const (), key).is_none(), "{:?}", Weak::as_ptr(&entry.object) as *const ());
         assert!(self.entries.insert(key, Rc::new(entry)).is_none());
 
         key
@@ -207,31 +208,28 @@ impl AstDatabase {
         key
     }
 
-    pub fn contains(&self, ptr: *const ()) -> bool {
+    pub fn contains_entry(&self, object: &Rc<dyn AstObject>) -> bool {
         self.entries
             .iter()
-            .any(|refm| Rc::as_ptr(refm.value()) as *const () == ptr)
+            .any(|refm| Rc::as_ptr(refm.value()) as *const () == Rc::as_ptr(object) as *const ())
+    }
+
+    pub fn contains_object(&self, object: &Rc<dyn AstObject>) -> bool {
+        self.by_pointer.get(&(Rc::as_ptr(object) as *const ())).is_some()
     }
 
     pub fn entry(&self, entry: Rc<dyn AstObject>, mref: &ModuleRef) -> Rc<dyn AstObject> {
         let span = entry.span().expect("AstDatabase entries must be spanned!");
 
-        if let Some(entry) = self.by_span.get(&(mref.clone(), span.clone())) {
-            let value = entry.value();
+        assert_eq!(self.entries.len(), self.by_pointer.len());
 
-            match value.as_slice() {
-                [] => (),
-                [def_id] => {
-                    let entry = self.entries.get(&def_id).unwrap();
+        if let Some(id) = self.by_pointer.get(&(Rc::as_ptr(&entry) as *const ())) {
+            let entry = self.entries.get(id.value()).unwrap();
 
-                    return Rc::clone(entry.value()) as Rc<_>;
-                },
-
-                [_, ..] => panic!("multiple spanned entries!"),
-            }
+            return Rc::clone(entry.value()) as Rc<_>;
         }
 
-        log::trace!("database:insert {:?}", entry);
+        log::trace!("database:entry Inserting new DefEntry = {:?}", entry);
 
         let id = self.insert_directly(DefEntry {
             object: Rc::downgrade(&entry),
@@ -240,6 +238,8 @@ impl AstDatabase {
             typechecked: RefCell::new(None),
             module: mref.clone(),
         });
+
+        assert!(self.contains_object(&entry));
 
         self.by_span
             .entry((mref.clone(), span.clone()))

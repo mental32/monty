@@ -96,7 +96,7 @@ impl LookupTarget for Import {
 
         names
             .iter()
-            .any(|name| matches!(name.inner, Primary::Atomic(Spanned { inner: Atom::Name(n), .. }) if n == target))
+            .any(|name| matches!(&name.inner, Primary::Atomic(atom) if matches!(atom.as_ref(), Spanned { inner: Atom::Name(n), .. } if *n == target)))
     }
 
     fn name(&self) -> SpanEntry {

@@ -87,7 +87,7 @@ pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
         .drain(..)
         .map(|tok| {
             let a = tok.transparent_with(|_| Atom::from(tok.inner));
-            let b = a.transparent_with(|_| Primary::Atomic(a.clone()));
+            let b = a.transparent_with(|_| Primary::Atomic(Rc::new(a.clone())));
             let c = b.transparent_with(|_| Expr::Primary(b.clone()));
             let d = c.map(|c| Statement::Expression(c));
 
@@ -109,7 +109,7 @@ pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
 
     body.extend(tail.drain(..).map(|tok| {
         let a = tok.transparent_with(|_| Atom::from(tok.inner));
-        let b = a.transparent_with(|_| Primary::Atomic(a.clone()));
+        let b = a.transparent_with(|_| Primary::Atomic(Rc::new(a.clone())));
         let c = b.transparent_with(|_| Expr::Primary(b.clone()));
         let d = c.map(|c| Statement::Expression(c));
 

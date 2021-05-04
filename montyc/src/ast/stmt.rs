@@ -177,7 +177,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                     let value_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(&asn.value) as Rc<_>), Some(&mref)).unwrap();
                     let kind_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(&ann) as Rc<_>), Some(&mref)).unwrap();
 
-                    ctx.codegen_backend.global_context.type_map.coerce(value_ty, kind_ty, ctx.clone()).unwrap()
+                    ctx.codegen_backend.global_context.type_map.coerce(value_ty, kind_ty, ctx.clone(), Rc::clone(&asn.value) as Rc<_>).unwrap()
                 } else {
                     asn.value.inner.lower_with(ctx.clone())                    
                 };

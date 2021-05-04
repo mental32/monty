@@ -25,7 +25,9 @@ use crate::{
     CompilerOptions,
 };
 
-use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
+use super::{
+    codegen, local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef,
+};
 
 fn shorten(path: &Path) -> String {
     let mut c = path
@@ -103,14 +105,47 @@ impl From<CompilerOptions> for GlobalContext {
         use cranelift_codegen::ir::InstBuilder;
 
         ctx.type_map
-            .add_coercion_rule(c_char_p, TypeMap::NONE_TYPE, |_ctx| todo!());
+            .add_coercion_rule(c_char_p, TypeMap::NONE_TYPE, |_ctx, _value| todo!());
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |ctx| {
+            .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |ctx, _value| {
                 ctx.builder
                     .borrow_mut()
                     .ins()
                     .null(cranelift_codegen::ir::types::R64)
+            });
+
+        ctx.type_map
+            .add_coercion_rule(TypeMap::STRING, c_char_p, |ctx, value| {
+                use cranelift_module::Module;
+
+                let data_id = ctx
+                    .codegen_backend
+                    .object_module
+                    .borrow_mut()
+                    .declare_data("string", cranelift_module::Linkage::Export, false, false)
+                    .unwrap();
+
+                let mut dctx = cranelift_module::DataContext::new();
+                let st = ctx.codegen_backend.global_context.get_string_literal(value, ctx.func.scope.module_ref());
+
+                let st = std::ffi::CString::new(st.as_str()).unwrap();
+                let st = st.into_bytes_with_nul();
+                let st = st.into_boxed_slice();
+
+                dctx.define(st);
+
+                let _ = ctx.codegen_backend.object_module.borrow_mut().define_data(data_id, &dctx).unwrap();
+
+                let gv = ctx.codegen_backend.object_module.borrow_mut().declare_data_in_func(data_id, &mut ctx.builder.borrow_mut().func);
+
+                let ptr = ctx.builder
+                    .borrow_mut()
+                    .ins()
+                    .global_value(cranelift_codegen::ir::types::I64, gv);
+
+                // ctx.builder.borrow_mut().ins().bitcast(cranelift_codegen::ir::types::R64, ptr)
+                ptr
             });
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
@@ -330,6 +365,13 @@ impl GlobalContext {
         }
 
         None
+    }
+
+    pub fn get_string_literal(&self, value: Rc<dyn AstObject>, mref: ModuleRef) -> String {
+        let span = value.span().unwrap();
+        let mctx = self.modules.get(&mref).unwrap();
+
+        mctx.source.get((span.start + 1)..(span.end - 1)).unwrap().to_string()
     }
 
     pub fn access_from_module(

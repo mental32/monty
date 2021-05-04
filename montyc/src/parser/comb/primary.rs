@@ -127,7 +127,7 @@ fn primary_left_recurse<'a>(
 #[inline]
 pub fn primary<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
     let (stream, atom) = atom(stream)?;
-    let base = atom.transparent_with(Primary::Atomic);
+    let base = atom.transparent_with(|at| Primary::Atomic(Rc::new(at)));
 
     primary_left_recurse(stream, &base).or(Ok((stream, base)))
 }

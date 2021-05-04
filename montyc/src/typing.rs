@@ -1,11 +1,8 @@
-use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize};
+use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{
-    context::{codegen::CodegenLowerArg, LocalContext, ModuleRef},
-    parser::SpanEntry,
-};
+use crate::{ast::AstObject, context::{codegen::CodegenLowerArg, LocalContext, ModuleRef}, parser::SpanEntry};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -166,7 +163,7 @@ pub trait TypedObject {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()>;
 }
 
-pub type CoercionRule = for<'a, 'b> fn(CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value;
+pub type CoercionRule = for<'a, 'b> fn(CodegenLowerArg<'a, 'b>, Rc<dyn AstObject>) -> cranelift_codegen::ir::Value;
 
 pub struct TypeMap {
     last_id: Cell<usize>,
@@ -234,21 +231,23 @@ impl TypeMap {
 
         Self {
             inner: mapping,
-            last_id: Cell::new(255),
+            last_id: Cell::new(256),
             coercion_rules: DashMap::default(),
         }
     }
 
     #[inline]
     pub fn add_coercion_rule(&self, from: LocalTypeId, to: LocalTypeId, rule: CoercionRule) {
+        log::trace!("typing:add_coercion_rule from={:?} to={:?}", from, to);
+
         self.coercion_rules.insert((from, to), rule);
     }
 
     #[inline]
-    pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId, ctx: CodegenLowerArg<'a, 'b>) -> Option<cranelift_codegen::ir::Value> {
+    pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId, ctx: CodegenLowerArg<'a, 'b>, value: Rc<dyn AstObject>) -> Option<cranelift_codegen::ir::Value> {
         let rule = self.coercion_rules.get(&(from, to))?;
 
-        Some((rule.value())(ctx))
+        Some((rule.value())(ctx, value))
     }
 
     #[inline]
@@ -275,6 +274,8 @@ impl TypeMap {
         func_t: LocalTypeId,
         callsite: impl Iterator<Item = &'a LocalTypeId>,
     ) -> Result<LocalTypeId, (LocalTypeId, LocalTypeId, usize)> {
+        log::trace!("typing:unify_call {:?}", func_t);
+
         let func = self.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
 
         for (idx, (actual, expected)) in callsite.cloned().zip(func.inner.args).enumerate() {
@@ -282,7 +283,7 @@ impl TypeMap {
                 continue;
             }
 
-            if self.type_eq(expected, actual) {
+            if !self.type_eq(actual, expected) {
                 return Err((expected, actual, idx));
             }
         }

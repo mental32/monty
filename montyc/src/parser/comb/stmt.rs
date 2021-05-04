@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use nom::{branch::alt, IResult};
 
 use crate::{
@@ -86,7 +88,7 @@ fn dyn_span_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<S
     })?;
 
     let a = tok.map(Atom::from);
-    let a = a.transparent_with(Primary::Atomic);
+    let a = a.transparent_with(|at| Primary::Atomic(Rc::new(at)));
     let a = a.transparent_with(Expr::Primary);
     let a = a.map(Statement::Expression);
 

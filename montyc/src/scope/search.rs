@@ -39,6 +39,7 @@ impl<'a> LookupIter<'a> {
                 .as_ref()
                 .def(global_context)
                 .unwrap()
+                .unspanned()
                 .as_ref()
                 .as_function()
                 .unwrap()
@@ -141,7 +142,7 @@ impl<'a> LookupIter<'a> {
                 }
             }
 
-            ScopeRoot::Func(f) => f.def(global_context).unwrap().as_ref().as_function().unwrap().args.clone().unwrap_or_default(),
+            ScopeRoot::Func(f) => f.def(global_context).unwrap().unspanned().as_ref().as_function().unwrap().args.clone().unwrap_or_default(),
             _ => vec![],
         };
 
@@ -167,7 +168,7 @@ impl<'a> LookupIter<'a> {
             .sources
             .get(self.0.module_ref.as_ref().unwrap());
 
-        for object in self.0.nodes.iter().map(|o| o.unspanned()) {
+        for (object, original) in self.0.nodes.iter().map(|o| (o.unspanned(), Rc::clone(&o))) {
             let item = object.as_ref();
 
             if let Some(import) =
@@ -200,9 +201,9 @@ impl<'a> LookupIter<'a> {
                     }
                 }
             } else if item.is_named(target) {
-                log::trace!("lookup:search_unordered {:?}", item);
+                log::trace!("lookup:search_unordered {:?}", original);
 
-                results.push(object.clone());
+                results.push(Rc::clone(&original));
             }
         }
 
