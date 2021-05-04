@@ -176,13 +176,13 @@ impl<'a> LookupIter<'a> {
 
                 if let Some(item) = item {
                     let object = if let Some(module) = module {
-                        global_context.access_from_module(module, item, source.as_ref().unwrap())
+                        global_context.access_from_module(module, item, source.as_ref().unwrap(), &self.0.module_ref())
                     } else {
                         global_context.resolve_module(item)
                     };
 
                     if let Some(object) = object {
-                        log::trace!("lookup:search_unordered {:?}", item);
+                        log::trace!("lookup:search_unordered:imported {:?}", item);
 
                         results.push(object.clone())
                     }

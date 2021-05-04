@@ -1,4 +1,4 @@
-from __monty import extern, typing  # type: ignore
+from __monty import extern  # type: ignore
 
 @extern
 class bool:

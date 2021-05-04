@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::rc::Rc;
 
 use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
 
@@ -198,12 +198,12 @@ impl TypedObject for Expr {
                 let left_ty = ctx.with(Rc::clone(left), |ctx, this| this.infer_type(&ctx))?;
                 let right_ty = ctx.with(Rc::clone(right), |ctx, this| this.infer_type(&ctx))?;
 
-                let name_ref = ModuleRef(PathBuf::from(format!("__monty:magical_names")));
-
-                let m = ctx.global_context.resolver.sources.get(&name_ref).unwrap();
-
-                let ltr_name = ctx.global_context.span_ref.borrow().find(&format!("__{}__", op.as_ref()), &m);
-                let rtl_name = ctx.global_context.span_ref.borrow().find(&format!("__r{}__", op.as_ref()), &m);
+                let ltr_name = ctx
+                    .global_context
+                    .magical_name_of(&format!("__{}__", op.as_ref()));
+                let rtl_name = ctx
+                    .global_context
+                    .magical_name_of(&format!("__{}__", op.as_ref()));
 
                 let ltr = FunctionType {
                     reciever: Some(left_ty),
@@ -211,7 +211,7 @@ impl TypedObject for Expr {
                     args: vec![right_ty],
                     ret: TypeMap::UNKNOWN,
                     decl: None,
-                    module_ref: name_ref.clone(),
+                    module_ref: "__monty:magical_names".into(),
                 };
 
                 let rtl = FunctionType {
@@ -220,7 +220,7 @@ impl TypedObject for Expr {
                     args: vec![left_ty],
                     ret: TypeMap::UNKNOWN,
                     decl: None,
-                    module_ref: name_ref,
+                    module_ref: "__monty:magical_names".into(),
                 };
 
                 let left_class = ctx.try_get_class_of_type(left_ty).unwrap();

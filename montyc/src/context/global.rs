@@ -1,20 +1,29 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     rc::Rc,
 };
 
-use log::*;
-
-use crate::{CompilerOptions, ast::{
+use crate::{
+    ast::{
         atom::Atom,
         class::ClassDef,
         import::{Import, ImportDecl},
         module::Module,
         primary::Primary,
         stmt::Statement,
-    }, class::Class, database::AstDatabase, func::Function, prelude::*, scope::ScopedObject, typing::{LocalTypeId, TypeDescriptor}};
+    },
+    class::Class,
+    database::AstDatabase,
+    func::Function,
+    phantom::PhantomObject,
+    prelude::*,
+    scope::ScopedObject,
+    typing::{Generic, LocalTypeId, TypeDescriptor},
+    CompilerOptions,
+};
 
 use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
 
@@ -41,25 +50,26 @@ pub struct GlobalContext {
     pub libstd: PathBuf,
     pub resolver: Rc<InternalResolver>,
     pub database: AstDatabase,
+    pub phantom_objects: Vec<Rc<PhantomObject>>,
 }
 
 const MAGICAL_NAMES: &str = include_str!("../magical_names.py");
 
 impl From<CompilerOptions> for GlobalContext {
     fn from(opts: CompilerOptions) -> Self {
-        debug!("Bootstrapping with {:?}", opts);
+        log::debug!("Bootstrapping with {:?}", opts);
 
         let CompilerOptions { libstd, input: _ } = opts;
 
         let libstd = match libstd.canonicalize() {
             Ok(path) => path,
             Err(why) => {
-                error!("Failed to canonicalize stdlib path! why={:?}", why);
+                log::error!("Failed to canonicalize stdlib path! why={:?}", why);
                 unreachable!();
             }
         };
 
-        debug!("libstd path is set to => {:?}", libstd);
+        log::debug!("libstd path is set to => {:?}", libstd);
 
         let mut ctx = Self::default();
 
@@ -71,6 +81,18 @@ impl From<CompilerOptions> for GlobalContext {
         //       method names this is necessary when resolving binary expressions using builtin types (since they have)
         //       no module, hence "builtin", the name resolution logic fails.
         ctx.load_module_literal(MAGICAL_NAMES, "__monty:magical_names", |_, _| {});
+
+        ctx.phantom_objects.push(Rc::new(PhantomObject {
+            name: ctx.magical_name_of("c_char_p").unwrap(),
+            infer_type: |ctx| {
+                Ok(ctx
+                    .global_context
+                    .type_map
+                    .insert(TypeDescriptor::Generic(Generic::Pointer {
+                        inner: TypeMap::U8,
+                    })))
+            },
+        }));
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.
@@ -147,11 +169,24 @@ impl From<CompilerOptions> for GlobalContext {
                             const_prop!(__add__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
                             const_prop!(__sub__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
                             const_prop!(__mul__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
+                            const_prop!(__div__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::FLOAT);
                         },
 
                         TypeMap::STRING => {
                             const_prop!(__add__(TypeMap::STRING) := (TypeMap::STRING) -> TypeMap::STRING);
                             const_prop!(__mul__(TypeMap::STRING) := (TypeMap::INTEGER) -> TypeMap::STRING);
+                        }
+
+                        TypeMap::BOOL => {
+                            const_prop!(__add__(TypeMap::BOOL) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
+                            const_prop!(__sub__(TypeMap::BOOL) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
+                            const_prop!(__add__(TypeMap::BOOL) := (TypeMap::BOOL) -> TypeMap::INTEGER);
+                            const_prop!(__sub__(TypeMap::BOOL) := (TypeMap::BOOL) -> TypeMap::INTEGER);
+                        }
+
+                        TypeMap::FLOAT => {
+                            const_prop!(__add__(TypeMap::FLOAT) := (TypeMap::FLOAT) -> TypeMap::FLOAT);
+                            const_prop!(__sub__(TypeMap::FLOAT) := (TypeMap::FLOAT) -> TypeMap::FLOAT);
                         }
 
                         _ => (),
@@ -160,7 +195,7 @@ impl From<CompilerOptions> for GlobalContext {
 
                     let _ = ctx.builtins.insert(type_id, (Rc::new(klass), mref.clone()));
 
-                    trace!(
+                    log::trace!(
                         "\tAssociated builtin with class definition! {:?}",
                         klass_name
                     );
@@ -205,6 +240,7 @@ impl Default for GlobalContext {
             span_ref,
             type_map,
             builtins: HashMap::new(),
+            phantom_objects: vec![],
             libstd: PathBuf::default(),
             resolver,
             database: Default::default(),
@@ -281,8 +317,9 @@ impl GlobalContext {
     pub fn access_from_module(
         &self,
         module: &Rc<Spanned<Primary>>,
-        _item: &Rc<Spanned<Primary>>,
+        item: &Rc<Spanned<Primary>>,
         source: &str,
+        mref: &ModuleRef,
     ) -> Option<Rc<dyn AstObject>> {
         let parts = module.inner.components();
 
@@ -294,16 +331,37 @@ impl GlobalContext {
             })
             .collect();
 
-        if qualname[0] == "__monty" {
-            // its a magical builtin
-            todo!();
-        } else {
-            let path = self.resolve_import_to_path(qualname)?;
-            let mref = ModuleRef(path);
+        match qualname.as_slice() {
+            [] => unreachable!(),
+            ["__monty"] => {
+                // its a magical builtin
+                let item = item.inner.components();
 
-            let _mctx = self.modules.get(&mref)?;
+                let item = if let [atom] = item.as_slice() {
+                    match atom {
+                        Atom::Name(n) => n.unwrap(),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    unreachable!();
+                };
 
-            todo!();
+                self.phantom_objects
+                    .iter()
+                    .find(|obj| self.name_eq((obj.name, &"__monty:magical_names".into()), (item, mref)))
+                    .map(|obj| Rc::clone(&obj) as Rc<_>)
+            }
+
+            ["__monty", ..] => unreachable!(),
+
+            _ => {
+                let path = self.resolve_import_to_path(qualname)?;
+                let mref = ModuleRef(path);
+
+                let _mctx = self.modules.get(&mref)?;
+
+                todo!();
+            }
         }
     }
 
@@ -311,25 +369,56 @@ impl GlobalContext {
         todo!()
     }
 
+    pub fn magical_name_of(&self, st: impl AsRef<str>) -> Option<NonZeroUsize> {
+        let name_ref = ModuleRef(PathBuf::from(format!("__monty:magical_names")));
+        let module = self.resolver.sources.get(&name_ref).unwrap();
+
+        self.span_ref.borrow().find(st.as_ref(), &module)
+    }
+
+    pub fn name_eq(
+        &self,
+        lhs: (NonZeroUsize, &ModuleRef),
+        rhs: (NonZeroUsize, &ModuleRef),
+    ) -> bool {
+        if lhs.1 == rhs.1 && lhs.0 == rhs.0 {
+            return true;
+        }
+
+        let lmsrc = self.resolver.sources.get(lhs.1).unwrap();
+        let rmsrc = self.resolver.sources.get(rhs.1).unwrap();
+
+        self.span_ref
+            .borrow()
+            .resolve_ref(Some(lhs.0), &lmsrc.value())
+            .and_then(|left| {
+                self.span_ref
+                    .borrow()
+                    .resolve_ref(Some(rhs.0), &rmsrc.value())
+                    .map(|right| left == right)
+            })
+            .unwrap_or(false)
+    }
+
     fn load_module_literal(&mut self, source: &str, path: &str, f: impl Fn(&mut Self, ModuleRef)) {
-        debug!("Loading module ({:?})", path);
+        log::debug!("Loading module ({:?})", path);
 
         let module = self.parse_and_register_module(source.to_string().into_boxed_str(), path);
 
         f(self, module);
 
-        debug!("Finished loading module ({:?})", path);
+        log::debug!("Finished loading module ({:?})", path);
     }
 
     pub fn load_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
         let path = path.as_ref();
 
-        debug!("Loading module ({:?})", shorten(path));
+        log::debug!("Loading module ({:?})", shorten(path));
 
         let source = match std::fs::read_to_string(&path) {
             Ok(st) => st.into_boxed_str(),
             Err(why) => {
-                error!("Failed to read module contents! why={:?}", why);
+                log::error!("Failed to read module contents! why={:?}", why);
                 unreachable!();
             }
         };
@@ -338,7 +427,7 @@ impl GlobalContext {
 
         f(self, module);
 
-        debug!("Finished loading module ({:?})", shorten(path));
+        log::debug!("Finished loading module ({:?})", shorten(path));
     }
 
     fn resolve_import_to_path(&self, qualname: Vec<&str>) -> Option<PathBuf> {
@@ -417,7 +506,7 @@ impl GlobalContext {
                 .collect();
 
             // the magical `__monty` module name is special.
-            if matches!(qualname.as_slice(), ["__monty"]) {
+            if matches!(qualname.as_slice(), ["__monty", ..]) {
                 modules.push(ModuleRef("__monty".into()));
                 continue;
             }
@@ -433,12 +522,12 @@ impl GlobalContext {
                 }
             };
 
-            trace!("Importing module ({:?})", shorten(&path));
+            log::trace!("Importing module ({:?})", shorten(&path));
 
             let source = match std::fs::read_to_string(&path) {
                 Ok(st) => st.into_boxed_str(),
                 Err(why) => {
-                    error!("Failed to read module contents! why={:?}", why);
+                    log::error!("Failed to read module contents! why={:?}", why);
                     unreachable!();
                 }
             };

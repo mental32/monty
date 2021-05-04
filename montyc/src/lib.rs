@@ -56,6 +56,7 @@ pub mod parser;
 pub mod scope;
 pub mod typing;
 pub mod database;
+pub mod phantom;
 
 use thiserror::Error;
 

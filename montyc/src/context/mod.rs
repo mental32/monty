@@ -15,6 +15,12 @@ pub use self::{
 #[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::From)]
 pub struct ModuleRef(pub(crate) PathBuf);
 
+impl From<&str> for ModuleRef {
+    fn from(s: &str) -> Self {
+        Self(s.into())
+    }
+}
+
 impl From<ModuleRef> for PathBuf {
     fn from(ModuleRef(inner): ModuleRef) -> Self {
         inner

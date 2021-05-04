@@ -47,6 +47,17 @@ pub enum BuiltinTypeId {
     Ellipsis = 6,
     Module = 7,
     Unknown = 8,
+
+    U8 = 100,
+    U16 = 101,
+    U32 = 102,
+    U64 = 103,
+
+    I8 = 104,
+    I16 = 105,
+    I32 = 106,
+    I64 = 107,
+
     Never = 255,
 }
 
@@ -63,6 +74,14 @@ impl BuiltinTypeId {
             BuiltinTypeId::Module => todo!(),
             BuiltinTypeId::Unknown => todo!(),
             BuiltinTypeId::Never => todo!(),
+            BuiltinTypeId::U8 => 1,
+            BuiltinTypeId::U16 => 2,
+            BuiltinTypeId::U32 => 4,
+            BuiltinTypeId::U64 => 8,
+            BuiltinTypeId::I8 => 1,
+            BuiltinTypeId::I16 => 2,
+            BuiltinTypeId::I32 => 4,
+            BuiltinTypeId::I64 => 8,
         }
     }
 }
@@ -80,6 +99,14 @@ impl std::fmt::Display for BuiltinTypeId {
             BuiltinTypeId::Module => write!(f, "{{module}}"),
             BuiltinTypeId::Unknown => write!(f, "{{unknown}}"),
             BuiltinTypeId::Never => write!(f, "{{never}}"),
+            BuiltinTypeId::U8 => write!(f, "{{u8}}"),
+            BuiltinTypeId::U16 => write!(f, "{{u16}}"),
+            BuiltinTypeId::U32 => write!(f, "{{u32}}"),
+            BuiltinTypeId::U64 => write!(f, "{{u64}}"),
+            BuiltinTypeId::I8 => write!(f, "{{i8}}"),
+            BuiltinTypeId::I16 => write!(f, "{{i16}}"),
+            BuiltinTypeId::I32 => write!(f, "{{i32}}"),
+            BuiltinTypeId::I64 => write!(f, "{{i64}}"),
         }
     }
 }
@@ -159,6 +186,15 @@ impl TypeMap {
     pub const UNKNOWN: LocalTypeId = LocalTypeId(8);
     pub const NEVER: LocalTypeId = LocalTypeId(255);
 
+    pub const U8: LocalTypeId = LocalTypeId(100);
+    pub const U16: LocalTypeId = LocalTypeId(101);
+    pub const U32: LocalTypeId = LocalTypeId(102);
+    pub const U64: LocalTypeId = LocalTypeId(103);
+    pub const I8: LocalTypeId = LocalTypeId(104);
+    pub const I16: LocalTypeId = LocalTypeId(105);
+    pub const I32: LocalTypeId = LocalTypeId(106);
+    pub const I64: LocalTypeId = LocalTypeId(107);
+
     #[inline]
     pub fn correctly_initialized() -> Self {
         let mapping = DashMap::with_capacity(std::mem::variant_count::<BuiltinTypeId>());
@@ -178,6 +214,15 @@ impl TypeMap {
             TypeDescriptor::Simple(BuiltinTypeId::Unknown),
         );
         mapping.insert(Self::NEVER, TypeDescriptor::Simple(BuiltinTypeId::Never));
+
+        mapping.insert(Self::U8, TypeDescriptor::Simple(BuiltinTypeId::U8));
+        mapping.insert(Self::U16, TypeDescriptor::Simple(BuiltinTypeId::U16));
+        mapping.insert(Self::U32, TypeDescriptor::Simple(BuiltinTypeId::U32));
+        mapping.insert(Self::U64, TypeDescriptor::Simple(BuiltinTypeId::U64));
+        mapping.insert(Self::I8, TypeDescriptor::Simple(BuiltinTypeId::I8));
+        mapping.insert(Self::I16, TypeDescriptor::Simple(BuiltinTypeId::I16));
+        mapping.insert(Self::I32, TypeDescriptor::Simple(BuiltinTypeId::I32));
+        mapping.insert(Self::I64, TypeDescriptor::Simple(BuiltinTypeId::I64));
 
         Self {
             inner: mapping,

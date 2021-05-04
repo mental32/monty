@@ -95,21 +95,36 @@ impl fmt::Display for Formattable<'_, &TypeDescriptor> {
                     gctx: self.gctx
                 }
             ),
-            TypeDescriptor::Generic(g) => write!(f, "{}", g),
+            TypeDescriptor::Generic(g) => write!(
+                f,
+                "{}",
+                Formattable {
+                    inner: g,
+                    gctx: self.gctx
+                }
+            ),
         }
     }
 }
 
-impl fmt::Display for Generic {
+impl fmt::Display for Formattable<'_, &Generic> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Generic::Pointer { inner } => write!(f, "Pointer({:?})", inner),
+        match self.inner {
+            Generic::Pointer { inner } => write!(
+                f,
+                "Pointer({})",
+                Formattable {
+                    gctx: self.gctx,
+                    inner: *inner
+                }
+            ),
+
             Generic::Union { inner } => write!(
                 f,
                 "Union[{}]",
                 inner
                     .iter()
-                    .map(|l| format!("{:?}", l))
+                    .map(|l| format!("{}", Formattable { gctx: self.gctx, inner: *l}))
                     .collect::<Vec<_>>()
                     .join(", ")
             ),

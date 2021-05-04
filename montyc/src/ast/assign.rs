@@ -45,7 +45,12 @@ impl TypedObject for Assign {
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         let expected = match self.kind.as_ref() {
-            Some(at) => Some(at.infer_type(ctx)?),
+            Some(at) => {
+                let mut ctx = ctx.clone();
+                ctx.this = Some(Rc::new(at.clone()) as Rc<_>);
+                Some(at.infer_type(&ctx)?)
+            },
+
             None => None,
         };
 

@@ -15,3 +15,9 @@ for dunder in DUNDERS:
 
     if dunder != "eq":
         print(f"__r{dunder}__  # type: ignore")
+
+CTYPES = {"char", "byte", "double", "longdouble", "float", "int", "int8", "int32", "int64", "long", "longlong", "size_t", "ssize_t", "ubyte", "uint", "uint8", "uint16", "uint32", "uint64", "ulong", "ulonglong", "ushort", "void", "wchar", "bool"}
+
+for ctype in CTYPES:
+    print(f"c_{ctype}  # type: ignore")
+    print(f"c_{ctype}_p # type: ignore")
