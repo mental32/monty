@@ -166,6 +166,7 @@ def whatever(blah: str, n: int):
 - [Peggen](https://github.com/gvanrossum/pegen)
 - [MyPy](https://github.com/python/mypy)
 - [PyPy](https://foss.heptapod.net/pypy/pypy)
+- [RPython](https://foss.heptapod.net/pypy/pypy/-/tree/branch/default/rpython)
 
 [cranelift]: https://github.com/bytecodealliance/wasmtime/tree/main/cranelift
 [llvm]: https://llvm.org/
