@@ -150,6 +150,10 @@ impl AstDatabase {
         self.find(object)
     }
 
+    pub fn as_weak_object(&self, id: DefId) -> Option<Rc<dyn AstObject>> {
+        self.entries.get(&id)?.value().object.upgrade()
+    }
+
     pub fn type_of(&self, object: &Rc<dyn AstObject>, mref: Option<&ModuleRef>) -> Option<LocalTypeId> {
         let id = self.find(object).or_else(|| {
             let mref = mref?;

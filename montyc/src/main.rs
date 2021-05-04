@@ -37,7 +37,9 @@ fn main() {
                 this: Some(Rc::clone(&object)),
             };
 
-            let func = Function::new(object, &lctx).unwrap_or_compiler_error(&lctx);
+            let func = Function::new(&object, &lctx).unwrap_or_compiler_error(&lctx);
+
+            func.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
 
             ctx.functions.borrow_mut().push((func, mref.clone()));
         }

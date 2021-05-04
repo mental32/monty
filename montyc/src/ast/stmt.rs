@@ -170,9 +170,17 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
             }
 
             Statement::Asn(asn) => {
-                let ss = ctx.vars.get(&asn.name().unwrap()).unwrap().value().clone();
+                let ss = ctx.vars.get(&asn.name.name().expect("atom name")).expect("unset var").value().clone();
+                let mref = ctx.func.scope.module_ref();
 
-                let value = asn.value.inner.lower_with(ctx.clone());
+                let value = if let Some(ann) = &asn.kind {
+                    let value_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(&asn.value) as Rc<_>), Some(&mref)).unwrap();
+                    let kind_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(&ann) as Rc<_>), Some(&mref)).unwrap();
+
+                    ctx.codegen_backend.global_context.type_map.coerce(value_ty, kind_ty, ctx.clone()).unwrap()
+                } else {
+                    asn.value.inner.lower_with(ctx.clone())                    
+                };
 
                 ctx.builder.borrow_mut().ins().stack_store(value, ss, 0);
             }

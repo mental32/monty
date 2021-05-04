@@ -59,9 +59,7 @@ impl TypedObject for Return {
             None => TypeMap::NONE_TYPE,
         };
 
-        let _type_map = &ctx.global_context.type_map;
-
-        if expected != actual {
+        if !ctx.global_context.type_map.type_eq(expected, actual) {
             let ret_node = ctx
                 .this
                 .as_ref()
@@ -76,12 +74,41 @@ impl TypedObject for Return {
                 .unwrap();
 
             let def_node = match ctx.scope.root() {
-                ScopeRoot::Func(f) => f.def.clone(),
+                ScopeRoot::Func(f) => {
+                    let fndef = f
+                        .def(ctx.global_context)
+                        .unwrap()
+                        .as_ref()
+                        .as_function()
+                        .cloned()
+                        .unwrap();
+
+                    let fndef = Spanned {
+                        span: fndef.name.span.start
+                            ..fndef
+                                .returns
+                                .clone()
+                                .unwrap()
+                                .span()
+                                .unwrap_or(fndef.name.span.clone())
+                                .end,
+                        inner: fndef.clone(),
+                    };
+
+                    Rc::new(fndef)
+                }
+
                 ScopeRoot::AstObject(object) => {
                     let fndef = object.as_ref().downcast_ref::<FunctionDef>().unwrap();
                     let fndef = Spanned {
                         span: fndef.name.span.start
-                            ..fndef.returns.clone().unwrap().span().unwrap_or(fndef.name.span.clone()).end,
+                            ..fndef
+                                .returns
+                                .clone()
+                                .unwrap()
+                                .span()
+                                .unwrap_or(fndef.name.span.clone())
+                                .end,
                         inner: fndef.clone(),
                     };
 

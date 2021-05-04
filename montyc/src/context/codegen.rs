@@ -97,15 +97,17 @@ impl<'global> CodegenBackend<'global> {
                 .push(codegen::ir::AbiParam::new(self.types[param]));
         }
 
+        let func_def_name = func.def(self.global_context).unwrap().as_function().unwrap().name().clone().unwrap();
+
         let name = if let Some((name, fid)) = self
             .names
             .get(mref)
-            .and_then(|mn| mn.functions.get(&func.def.name().clone().unwrap()))
+            .and_then(|mn| mn.functions.get(&func_def_name))
             .cloned()
         {
             return Some((fid, codegen::ir::Function::with_name_signature(name, sig)));
         } else {
-            self.produce_external_name(func.def.name().unwrap(), mref)
+            self.produce_external_name(func_def_name, mref)
         };
 
         let clfn = codegen::ir::Function::with_name_signature(name.clone(), sig);
@@ -119,7 +121,7 @@ impl<'global> CodegenBackend<'global> {
             .get_mut(mref)
             .unwrap()
             .functions
-            .insert(func.def.name().unwrap(), (name.clone(), fid));
+            .insert(func_def_name, (name.clone(), fid));
 
         Some((fid, clfn))
     }
@@ -137,7 +139,9 @@ impl<'global> CodegenBackend<'global> {
             }
         );
 
-        let layout = func.lower_and_then(|_, mut layout| {
+        let func_def = func.def(self.global_context).unwrap().as_function().cloned().unwrap();
+
+        let layout = func_def.lower_and_then(|_, mut layout| {
             // discard all comment nodes
             for block in layout.blocks.values_mut() {
                 let _ = block.nodes.retain(|node| {

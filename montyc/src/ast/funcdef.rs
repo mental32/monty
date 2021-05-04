@@ -114,7 +114,6 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
             name,
             args,
             ret,
-            decl: Some(Rc::new(def.clone())),
             module_ref: ctx.module_ref.clone(),
         }
     }
@@ -142,7 +141,10 @@ impl TypedObject for FunctionDef {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        let func = Function::new(ctx.this.clone().unwrap(), ctx).unwrap_or_compiler_error(ctx);
+
+        let this = ctx.this.as_ref().unwrap();
+
+        let func = Function::new(this, ctx).unwrap_or_compiler_error(ctx);
 
         let lctx = LocalContext {
             global_context: ctx.global_context,

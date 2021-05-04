@@ -121,7 +121,8 @@ pub enum MontyError {
     MissingReturn {
         expected: LocalTypeId,
         actual: LocalTypeId,
-        def_node: Rc<Spanned<FunctionDef>>,
+        def_span: Span,
+        ret_span: Span,
     },
 
     #[error("Object is not callable.")]
@@ -160,6 +161,40 @@ pub enum MontyError {
     #[error("Unsupported feature")]
     Unsupported { span: Span, message: String },
 }
+
+
+pub trait CompilerError {
+    type Success;
+
+    fn unwrap_or_compiler_error<'a>(self, ctx: &LocalContext<'a>) -> Self::Success;
+}
+
+impl CompilerError for Option<LocalTypeId> {
+    type Success = LocalTypeId;
+
+    fn unwrap_or_compiler_error<'a>(self, ctx: &LocalContext<'a>) -> Self::Success {
+        match self {
+            Some(t) => t,
+            None => {
+                ctx.exit_with_error(MontyError::UnknownType {
+                    node: ctx.this.as_ref().unwrap().clone(),
+                });
+            }
+        }
+    }
+}
+
+impl<T> CompilerError for std::result::Result<T, MontyError> {
+    type Success = T;
+
+    fn unwrap_or_compiler_error<'b>(self, ctx: &LocalContext<'b>) -> Self::Success {
+        match self {
+            Ok(t) => t,
+            Err(err) => ctx.exit_with_error(err),
+        }
+    }
+}
+
 
 impl MontyError {
     pub fn into_diagnostic(
@@ -227,13 +262,14 @@ impl MontyError {
             MontyError::MissingReturn {
                 expected: _,
                 actual: _,
-                def_node,
+                def_span,
+                ret_span,
             } => Diagnostic::error()
                 .with_message("missing return for annotated function.")
                 .with_labels(vec![
-                    Label::primary((), def_node.span().unwrap())
+                    Label::primary((), def_span)
                         .with_message("This function will implicitly return `None`"),
-                    Label::secondary((), def_node.inner.returns.clone().unwrap().span().unwrap())
+                    Label::secondary((), ret_span)
                         .with_message("But it has been annotated to return this instead."),
                 ]),
 
@@ -397,7 +433,8 @@ pub mod prelude {
         lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanEntry, SpanRef},
         scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
-        typing::{CompilerError, FunctionType, LocalTypeId, TypeMap, TypedObject},
+        typing::{FunctionType, TypeDescriptor, LocalTypeId, TypeMap, TypedObject},
         MontyError,
+        CompilerError,
     };
 }

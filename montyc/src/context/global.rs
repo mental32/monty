@@ -82,17 +82,36 @@ impl From<CompilerOptions> for GlobalContext {
         //       no module, hence "builtin", the name resolution logic fails.
         ctx.load_module_literal(MAGICAL_NAMES, "__monty:magical_names", |_, _| {});
 
+        let c_char_p = ctx
+            .type_map
+            .insert(TypeDescriptor::Generic(Generic::Pointer {
+                inner: TypeMap::U8,
+            }));
+
         ctx.phantom_objects.push(Rc::new(PhantomObject {
             name: ctx.magical_name_of("c_char_p").unwrap(),
             infer_type: |ctx| {
                 Ok(ctx
                     .global_context
                     .type_map
-                    .insert(TypeDescriptor::Generic(Generic::Pointer {
+                    .entry(TypeDescriptor::Generic(Generic::Pointer {
                         inner: TypeMap::U8,
                     })))
             },
         }));
+
+        use cranelift_codegen::ir::InstBuilder;
+
+        ctx.type_map
+            .add_coercion_rule(c_char_p, TypeMap::NONE_TYPE, |_ctx| todo!());
+
+        ctx.type_map
+            .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |ctx| {
+                ctx.builder
+                    .borrow_mut()
+                    .ins()
+                    .null(cranelift_codegen::ir::types::R64)
+            });
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.
@@ -156,7 +175,6 @@ impl From<CompilerOptions> for GlobalContext {
                                     name: $prop.clone(),
                                     ret: $ret,
                                     args: vec![$($arg,)*],
-                                    decl: None,
                                     module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
                                 };
 
@@ -348,7 +366,9 @@ impl GlobalContext {
 
                 self.phantom_objects
                     .iter()
-                    .find(|obj| self.name_eq((obj.name, &"__monty:magical_names".into()), (item, mref)))
+                    .find(|obj| {
+                        self.name_eq((obj.name, &"__monty:magical_names".into()), (item, mref))
+                    })
                     .map(|obj| Rc::clone(&obj) as Rc<_>)
             }
 

@@ -2,12 +2,7 @@ use std::{cell::RefCell, marker::PhantomData, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement},
-    prelude::*,
-    scope::ScopeRoot,
-    typing::TaggedType,
-};
+use crate::{ast::{funcdef::FunctionDef, retrn::Return, stmt::Statement}, database::DefId, prelude::*, scope::ScopeRoot, typing::TaggedType};
 
 #[derive(Debug)]
 pub enum DataRef {
@@ -24,7 +19,7 @@ pub enum DataRef {
 
 #[derive(Debug)]
 pub struct Function {
-    pub def: Rc<Spanned<FunctionDef>>,
+    def: DefId,
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
     pub vars: DashMap<SpanEntry, (LocalTypeId, Span)>,
@@ -32,17 +27,26 @@ pub struct Function {
 }
 
 impl Function {
+    pub fn def(&self, gctx: &GlobalContext) -> Option<Rc<dyn AstObject>> {
+        gctx.database.as_weak_object(self.def)
+    }
+
     pub fn name_as_string(&self, gctx: &GlobalContext) -> Option<String> {
+        let def = self.def(gctx).unwrap().as_ref().as_function().unwrap().name();
+
         gctx.resolver.resolve(
             self.scope.inner.module_ref.clone().unwrap(),
-            self.def.inner.name(),
+            def,
         )
     }
 
-    pub fn new(def: Rc<dyn AstObject>, ctx: &LocalContext) -> crate::Result<Rc<Self>> {
-        let fndef = def.as_ref().as_function().unwrap();
+    pub fn new(def: &Rc<dyn AstObject>, ctx: &LocalContext) -> crate::Result<Rc<Self>> {
+        let def = ctx.global_context.database.entry(Rc::clone(def), &ctx.module_ref);
+        let id = ctx.global_context.database.id_of(&def).unwrap();
+        let def = ctx.global_context.database.as_weak_object(id).unwrap();
+        let func = def.as_ref().as_function().unwrap();
 
-        let mut scope = OpaqueScope::from(def.clone());
+        let mut scope = OpaqueScope::from(Rc::clone(&def) as Rc<_>);
 
         scope.module_ref = Some(ctx.module_ref.clone());
         scope.parent = Some(ctx.scope.clone());
@@ -62,21 +66,16 @@ impl Function {
                 .unwrap()
         };
 
-        let def = Rc::new(Spanned {
-            inner: fndef.clone(),
-            span: fndef.name.span.clone(),
-        });
-
         let vars = DashMap::default();
 
-        if let Some(args) = &def.inner.args {
+        if let Some(args) = &func.args {
             for (name, ann) in args.iter() {
                 vars.insert(name.clone(), (ann.infer_type(ctx)?, ann.span.clone()));
             }
         }
 
         let func = Self {
-            def,
+            def: id,
             scope,
             kind,
             vars,
@@ -109,7 +108,7 @@ impl TypedObject for Function {
             ctx.as_formattable(&self.kind.inner)
         );
 
-        assert_matches!(ctx.scope.root(), ScopeRoot::Func(_));
+        assert_matches!(self.scope.root(), ScopeRoot::Func(_));
 
         let mut implicit_return = true;
 
@@ -134,16 +133,17 @@ impl TypedObject for Function {
             })?;
         }
 
-        if implicit_return && self.kind.inner.ret != TypeMap::NONE_TYPE {
-            let def_node = match ctx.scope.root() {
-                ScopeRoot::Func(f) => f.def.clone(),
+        if implicit_return && !ctx.global_context.type_map.type_eq(self.kind.inner.ret, TypeMap::NONE_TYPE) {
+            let def_node = match self.scope.root() {
+                ScopeRoot::Func(f) => f.def(ctx.global_context).unwrap(),
                 _ => unreachable!(),
             };
 
             ctx.exit_with_error(MontyError::MissingReturn {
                 expected: TypeMap::NONE_TYPE,
                 actual: self.kind.inner.ret,
-                def_node,
+                def_span: def_node.span().unwrap(),
+                ret_span: def_node.as_ref().as_function().cloned().unwrap().returns.map(|ret| ret.span.clone()).unwrap_or(def_node.span().unwrap())
             });
         }
 
@@ -151,8 +151,8 @@ impl TypedObject for Function {
     }
 }
 
-impl Lower<Layout<Rc<dyn AstObject>>> for &Function {
-    fn lower(&self) -> Layout<Rc<dyn AstObject>> {
-        self.def.inner.lower()
-    }
-}
+// impl Lower<Layout<Rc<dyn AstObject>>> for &Function {
+//     fn lower(&self) -> Layout<Rc<dyn AstObject>> {
+//         self.def.inner.lower()
+//     }
+// }

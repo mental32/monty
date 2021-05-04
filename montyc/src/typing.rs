@@ -1,4 +1,11 @@
-use std::{any::TypeId, cell::Cell, num::NonZeroUsize, rc::Rc};
+use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize};
+
+use dashmap::DashMap;
+
+use crate::{
+    context::{codegen::CodegenLowerArg, LocalContext, ModuleRef},
+    parser::SpanEntry,
+};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -19,13 +26,12 @@ pub struct TaggedType<T> {
     pub inner: T,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionType {
     pub reciever: Option<LocalTypeId>,
     pub name: SpanEntry,
     pub args: Vec<LocalTypeId>,
     pub ret: LocalTypeId,
-    pub decl: Option<Rc<FunctionDef>>,
     pub module_ref: ModuleRef,
 }
 
@@ -111,13 +117,13 @@ impl std::fmt::Display for BuiltinTypeId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClassType {
     pub name: SpanEntry,
     pub mref: ModuleRef,
 }
 
-#[derive(Debug, Clone, derive_more::From)]
+#[derive(Debug, Clone, PartialEq, derive_more::From)]
 pub enum TypeDescriptor {
     Simple(BuiltinTypeId),
     Function(FunctionType),
@@ -154,25 +160,27 @@ impl TypeDescriptor {
     }
 }
 
-use dashmap::DashMap;
-
-use crate::{
-    ast::funcdef::FunctionDef,
-    context::{LocalContext, ModuleRef},
-    parser::SpanEntry,
-    MontyError,
-};
-
 pub trait TypedObject {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId>;
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()>;
 }
 
-#[derive(Debug)]
+pub type CoercionRule = for<'a, 'b> fn(CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value;
+
 pub struct TypeMap {
     last_id: Cell<usize>,
     inner: DashMap<LocalTypeId, TypeDescriptor>,
+    coercion_rules: DashMap<(LocalTypeId, LocalTypeId), CoercionRule>,
+}
+
+impl fmt::Debug for TypeMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TypeMap")
+            .field("last_id", &self.last_id.get())
+            .field("inner", &self.inner)
+            .finish()
+    }
 }
 
 impl TypeMap {
@@ -227,7 +235,20 @@ impl TypeMap {
         Self {
             inner: mapping,
             last_id: Cell::new(255),
+            coercion_rules: DashMap::default(),
         }
+    }
+
+    #[inline]
+    pub fn add_coercion_rule(&self, from: LocalTypeId, to: LocalTypeId, rule: CoercionRule) {
+        self.coercion_rules.insert((from, to), rule);
+    }
+
+    #[inline]
+    pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId, ctx: CodegenLowerArg<'a, 'b>) -> Option<cranelift_codegen::ir::Value> {
+        let rule = self.coercion_rules.get(&(from, to))?;
+
+        Some((rule.value())(ctx))
     }
 
     #[inline]
@@ -261,7 +282,7 @@ impl TypeMap {
                 continue;
             }
 
-            if expected != actual {
+            if self.type_eq(expected, actual) {
                 return Err((expected, actual, idx));
             }
         }
@@ -298,6 +319,24 @@ impl TypeMap {
     }
 
     #[inline]
+    pub fn entry(&self, t: impl Into<TypeDescriptor>) -> LocalTypeId {
+        let ty = t.into();
+
+        for types in self.inner.iter() {
+            if *types.value() == ty {
+                return *types.key();
+            }
+        }
+
+        self.insert(ty)
+    }
+
+    #[inline]
+    pub fn type_eq(&self, left: LocalTypeId, right: LocalTypeId) -> bool {
+        left == right || self.coercion_rules.contains_key(&(left, right))
+    }
+
+    #[inline]
     pub fn get(
         &self,
         type_id: LocalTypeId,
@@ -326,37 +365,5 @@ impl TypeMap {
         let result = TaggedType { type_id, inner };
 
         Some(Ok(result))
-    }
-}
-
-pub trait CompilerError {
-    type Success;
-
-    fn unwrap_or_compiler_error<'a>(self, ctx: &LocalContext<'a>) -> Self::Success;
-}
-
-impl CompilerError for Option<LocalTypeId> {
-    type Success = LocalTypeId;
-
-    fn unwrap_or_compiler_error<'a>(self, ctx: &LocalContext<'a>) -> Self::Success {
-        match self {
-            Some(t) => t,
-            None => {
-                ctx.exit_with_error(MontyError::UnknownType {
-                    node: ctx.this.as_ref().unwrap().clone(),
-                });
-            }
-        }
-    }
-}
-
-impl<T> CompilerError for Result<T, MontyError> {
-    type Success = T;
-
-    fn unwrap_or_compiler_error<'b>(self, ctx: &LocalContext<'b>) -> Self::Success {
-        match self {
-            Ok(t) => t,
-            Err(err) => ctx.exit_with_error(err),
-        }
     }
 }

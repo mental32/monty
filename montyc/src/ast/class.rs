@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::prelude::*;
+use crate::{prelude::*, typing::TypeDescriptor};
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
@@ -18,7 +18,7 @@ impl<'a> From<(&LocalContext<'a>, &ClassDef)> for crate::class::Class {
             None => {
                 let type_map = &ctx.global_context.type_map;
 
-                type_map.insert(crate::typing::TypeDescriptor::Class(
+                type_map.insert(TypeDescriptor::Class(
                     crate::typing::ClassType {
                         name: def.name.inner.name(),
                         mref: ctx.module_ref.clone(),

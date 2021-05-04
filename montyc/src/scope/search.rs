@@ -35,7 +35,14 @@ impl<'a> LookupIter<'a> {
                     return Self(self.0).search_unordered(target, global_context);
                 }
             }
-            ScopeRoot::Func(func) => func.as_ref().lower(),
+            ScopeRoot::Func(func) => func
+                .as_ref()
+                .def(global_context)
+                .unwrap()
+                .as_ref()
+                .as_function()
+                .unwrap()
+                .lower(),
             ScopeRoot::Class(klass) => todo!(),
         };
 
@@ -134,7 +141,7 @@ impl<'a> LookupIter<'a> {
                 }
             }
 
-            ScopeRoot::Func(f) => f.def.inner.args.clone().unwrap_or_default(),
+            ScopeRoot::Func(f) => f.def(global_context).unwrap().as_ref().as_function().unwrap().args.clone().unwrap_or_default(),
             _ => vec![],
         };
 
@@ -176,7 +183,12 @@ impl<'a> LookupIter<'a> {
 
                 if let Some(item) = item {
                     let object = if let Some(module) = module {
-                        global_context.access_from_module(module, item, source.as_ref().unwrap(), &self.0.module_ref())
+                        global_context.access_from_module(
+                            module,
+                            item,
+                            source.as_ref().unwrap(),
+                            &self.0.module_ref(),
+                        )
                     } else {
                         global_context.resolve_module(item)
                     };

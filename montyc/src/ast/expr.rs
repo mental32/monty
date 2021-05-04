@@ -210,7 +210,6 @@ impl TypedObject for Expr {
                     name: ltr_name,
                     args: vec![right_ty],
                     ret: TypeMap::UNKNOWN,
-                    decl: None,
                     module_ref: "__monty:magical_names".into(),
                 };
 
@@ -219,7 +218,6 @@ impl TypedObject for Expr {
                     name: rtl_name,
                     args: vec![left_ty],
                     ret: TypeMap::UNKNOWN,
-                    decl: None,
                     module_ref: "__monty:magical_names".into(),
                 };
 

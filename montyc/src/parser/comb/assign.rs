@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use nom::{sequence::terminated, IResult};
 
 use crate::ast::{assign::Assign, Spanned};
@@ -28,7 +30,7 @@ pub fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
     let (stream, kind) = if let Ok((stream, _)) = parsed(stream) {
         let (stream, kind) = terminated(name, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
-        (stream, Some(kind))
+        (stream, Some(Rc::new(kind)))
     } else {
         (stream, None)
     };
@@ -41,6 +43,8 @@ pub fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
     let (stream, value) = expression(stream)?;
 
     let span = ident.span.start..value.span.end;
+
+    let value = Rc::new(value);
 
     let obj = Spanned {
         span,
