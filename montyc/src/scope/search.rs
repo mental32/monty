@@ -8,7 +8,7 @@ use crate::ast::{
 };
 use crate::prelude::*;
 
-use super::{LookupOrder, Renamed};
+use super::{LookupOrder};
 
 // -- LookupIter
 
@@ -18,7 +18,7 @@ impl<'a> LookupIter<'a> {
     #[allow(warnings)]
     pub fn search_ordered(
         self,
-        target: SpanEntry,
+        target: SpanRef,
         global_context: &GlobalContext,
         object: Rc<dyn AstObject>,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
@@ -121,7 +121,7 @@ impl<'a> LookupIter<'a> {
 
     pub fn search_unordered(
         self,
-        target: SpanEntry,
+        target: SpanRef,
         global_context: &GlobalContext,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
         log::trace!(
@@ -175,10 +175,10 @@ impl<'a> LookupIter<'a> {
                 crate::isinstance!(object.as_ref(), Statement, Statement::Import(i) => i)
             {
                 let (module, item) = match import {
-                    Import::Names(names) => (None, names.iter().find(|name| name.is_named(target))),
+                    Import::Names(names) => (None, names.iter().find(|name| global_context.span_ref.borrow().crosspan_eq(name.name().unwrap(), target))),
                     Import::From { module, names, .. } => (
                         Some(module),
-                        names.iter().find(|name| name.is_named(target)),
+                        names.iter().find(|name| global_context.span_ref.borrow().crosspan_eq(name.name().unwrap(), target)),
                     ),
                 };
 
@@ -215,20 +215,10 @@ impl<'a> LookupIter<'a> {
                 results.extend(n);
             }
         } else {
-            log::trace!("lookup: checking builtins for matches");
+            log::trace!("lookup:search_unordered checking builtins...");
 
-            let local_mref = self.0.module_ref.as_ref().unwrap();
-
-            let mctx = global_context.modules.get(local_mref).unwrap();
-            let st = global_context
-                .span_ref
-                .borrow()
-                .resolve_ref(target, mctx.source.as_ref())
-                .unwrap();
-
-            for (_type_id, (object, mref)) in global_context.builtins.iter() {
-                let _item = object.as_ref();
-                let object = Some(object.scope.root())
+            for (_, (object, _)) in global_context.builtins.iter() {
+                let classdef = Some(object.scope.root())
                     .and_then(|root| match root {
                         ScopeRoot::AstObject(obj) => Some(obj),
                         _ => None,
@@ -242,32 +232,8 @@ impl<'a> LookupIter<'a> {
                     })
                     .unwrap();
 
-                if local_mref != mref {
-                    let mctx = global_context.modules.get(mref).unwrap();
-                    let lst = global_context
-                        .span_ref
-                        .borrow()
-                        .resolve_ref(object.name(), mctx.source.as_ref())
-                        .unwrap();
-
-                    if lst == st {
-                        log::trace!(
-                            "lookup: renaming builtin object to={:?} from={:?}",
-                            target,
-                            object.name()
-                        );
-
-                        let renamed = Renamed {
-                            inner: object.clone(),
-                            name: target.clone(),
-                            mref: self.0.module_ref.clone().unwrap(),
-                        };
-                        let renamed = Rc::new(renamed) as Rc<dyn AstObject>;
-
-                        results.push(renamed);
-                    }
-                } else if local_mref == mref && object.is_named(target) {
-                    results.push(object.clone())
+                if global_context.span_ref.borrow().crosspan_eq(object.name, target) {
+                    results.push(classdef as Rc<_>);
                 }
             }
         }

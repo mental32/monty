@@ -51,11 +51,11 @@ impl AstObject for InfixOp {
 }
 
 impl LookupTarget for InfixOp {
-    fn is_named(&self, _target: SpanEntry) -> bool {
+    fn is_named(&self, _target: SpanRef) -> bool {
         todo!()
     }
 
-    fn name(&self) -> SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         todo!()
     }
 }
@@ -142,7 +142,7 @@ pub enum Expr {
 }
 
 impl Parseable for Expr {
-    const PARSER: ParserT<Self> = crate::parser::comb::expression_unspanned;
+    const PARSER: ParserT<Self> = crate::parser::comb::expr::expression_unspanned;
 }
 
 impl AstObject for Expr {
@@ -200,10 +200,13 @@ impl TypedObject for Expr {
 
                 let ltr_name = ctx
                     .global_context
-                    .magical_name_of(&format!("__{}__", op.as_ref()));
+                    .magical_name_of(&format!("__{}__", op.as_ref()))
+                    .unwrap();
+
                 let rtl_name = ctx
                     .global_context
-                    .magical_name_of(&format!("__{}__", op.as_ref()));
+                    .magical_name_of(&format!("__{}__", op.as_ref()))
+                    .unwrap();
 
                 let ltr = FunctionType {
                     reciever: Some(left_ty),
@@ -300,11 +303,11 @@ impl TypedObject for Expr {
 }
 
 impl LookupTarget for Expr {
-    fn is_named(&self, _target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, _target: SpanRef) -> bool {
         false
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<crate::parser::SpanRef> {
         None
     }
 }

@@ -98,7 +98,7 @@ impl<'global> CodegenBackend<'global> {
                 .push(codegen::ir::AbiParam::new(self.types[param]));
         }
 
-        let func_def_name = func.name(self.global_context).unwrap();
+        let func_def_name = func.name(self.global_context);
 
         let name = if let Some((name, fid)) = self
             .names
@@ -187,7 +187,7 @@ impl<'global> CodegenBackend<'global> {
         let mut vars = dashmap::DashMap::new();
 
         for var in func.vars.iter() {
-            let (var, ty) = (var.key().clone().unwrap(), (var.0));
+            let (var, ty) = (var.key().clone(), (var.0));
 
             let size = self.global_context.resolver.type_map.size_of(ty).unwrap();
 
@@ -215,7 +215,7 @@ impl<'global> CodegenBackend<'global> {
                     .map(|r| (r.key().clone(), r.value().0))
                     .zip(params.into_iter())
                 {
-                    let ss = vars.get(&n.unwrap()).unwrap().value().clone();
+                    let ss = vars.get(&n).unwrap().value().clone();
                     builder.ins().stack_store(value, ss, 0);
                 }
             }

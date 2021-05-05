@@ -25,7 +25,7 @@ pub mod primary;
 pub mod stmt;
 pub mod while_;
 
-pub use {self::core::*, assign::*, atom::*, expr::*, ifelse::*, primary::*};
+pub(in self) use {self::core::*, assign::*, atom::*, expr::*, primary::*};
 
 #[inline]
 pub fn return_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Return> {

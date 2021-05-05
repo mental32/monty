@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{parser::comb::return_unspanned, prelude::*, scope::ScopeRoot};
+use crate::{parser::{SpanRef, comb::return_unspanned}, prelude::*, scope::ScopeRoot};
 
 use super::{expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, Spanned};
 
@@ -125,11 +125,11 @@ impl Parseable for Return {
 }
 
 impl LookupTarget for Return {
-    fn is_named(&self, _target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, _target: SpanRef) -> bool {
         false
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         None
     }
 }

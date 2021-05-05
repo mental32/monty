@@ -60,12 +60,10 @@ impl Scope for OpaqueScope {
 
     fn lookup_any(
         &self,
-        target: SpanEntry,
+        target: SpanRef,
         global_context: &GlobalContext,
         order: LookupOrder,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
-        assert!(target.is_some());
-
         match order {
             LookupOrder::ControlFlowSensitive(object) => {
                 LookupIter(self).search_ordered(target, global_context, object)

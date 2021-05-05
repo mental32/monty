@@ -465,7 +465,7 @@ fn disjunction<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
 }
 
 #[inline]
-pub fn expression_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Expr> {
+pub(crate) fn expression_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Expr> {
     let (stream, result) = crate::parser::comb::expr::expression(stream)?;
     Ok((stream, result.inner))
 }

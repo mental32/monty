@@ -31,7 +31,7 @@ pub struct Function {
     def: DefId,
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
-    pub vars: DashMap<SpanEntry, (LocalTypeId, Span)>,
+    pub vars: DashMap<SpanRef, (LocalTypeId, Span)>,
     pub refs: RefCell<Vec<DataRef>>,
 }
 
@@ -40,7 +40,7 @@ impl Function {
         gctx.database.as_weak_object(self.def)
     }
 
-    pub fn name(&self, gctx: &GlobalContext) -> SpanEntry {
+    pub fn name(&self, gctx: &GlobalContext) -> SpanRef {
         self.def(gctx)
             .unwrap()
             .unspanned()
@@ -48,10 +48,11 @@ impl Function {
             .as_function()
             .unwrap()
             .name()
+            .unwrap()
     }
 
     pub fn name_as_string(&self, gctx: &GlobalContext) -> Option<String> {
-        let def = self.name(gctx)?;
+        let def = self.name(gctx);
 
         gctx.resolver
             .resolve(self.scope.inner.module_ref.clone().unwrap(), def)
@@ -167,7 +168,7 @@ impl Function {
                                         .map(|arg| {
                                             matches!(
                                                 &arg.as_ref().inner,
-                                                Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) if matches!(atom.as_ref(), Spanned { inner: Atom::Str(n), ..} if matches!(global_context.span_ref.borrow().resolve_ref(*n, &source), Some(st) if callcov.map(|cc| cc == st).unwrap_or(true))
+                                                Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) if matches!(atom.as_ref(), Spanned { inner: Atom::Str(n), ..} if matches!(source.get(global_context.span_ref.borrow().get(*n).unwrap()), Some(st) if callcov.map(|cc| cc == st).unwrap_or(true))
                                             ))
                                         })
                                         .unwrap_or(false)

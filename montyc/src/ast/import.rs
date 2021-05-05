@@ -7,7 +7,7 @@ use crate::prelude::*;
 pub struct ImportDecl {
     pub parent: Rc<Import>,
     pub name: Rc<Spanned<Primary>>,
-    pub alias: Option<SpanEntry>,
+    pub alias: Option<SpanRef>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +89,7 @@ impl TypedObject for Import {
 }
 
 impl LookupTarget for Import {
-    fn is_named(&self, target: SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         let names = match self {
             Import::Names(names) | Import::From { names, .. } => names,
         };
@@ -99,7 +99,7 @@ impl LookupTarget for Import {
             .any(|name| matches!(&name.inner, Primary::Atomic(atom) if matches!(atom.as_ref(), Spanned { inner: Atom::Name(n), .. } if *n == target)))
     }
 
-    fn name(&self) -> SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         todo!()
     }
 }

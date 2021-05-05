@@ -11,11 +11,11 @@ pub struct While {
 }
 
 impl LookupTarget for While {
-    fn is_named(&self, _: SpanEntry) -> bool {
+    fn is_named(&self, _: SpanRef) -> bool {
         false
     }
 
-    fn name(&self) -> SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         None
     }
 }

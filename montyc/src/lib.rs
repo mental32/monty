@@ -5,7 +5,7 @@
     assert_matches,
     get_mut_unchecked
 )]
-#![deny(warnings)]
+// #![deny(warnings)]
 
 use std::rc::Rc;
 
@@ -18,7 +18,7 @@ use ast::{
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use context::LocalContext;
 use parser::Span;
-use prelude::{SpanEntry, TypeMap};
+use prelude::{SpanRef, TypeMap};
 use typing::LocalTypeId;
 
 pub mod ast;
@@ -69,11 +69,7 @@ macro_rules! isinstance {
             $crate::ast::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
         {
             Some(inner)
-        } else if let Some(inner) = $crate::ast::_downcast_ref::<$crate::scope::Renamed>($e)
-            .and_then(|rn| rn.inner.as_ref().downcast_ref::<$t>())
-        {
-            Some(inner)
-        } else {
+        }  else {
             $crate::ast::_downcast_ref::<$t>($e)
         }
     }};
@@ -92,14 +88,14 @@ macro_rules! isinstance {
 pub enum MontyError {
     #[error("Local variable referenced before assignment.")]
     UnboundLocal {
-        name: SpanEntry,
+        name: SpanRef,
         assign: Span,
         used: Span,
     },
 
     #[error("Reassigned a name with an incompatible type.")]
     IncompatibleReassignment {
-        name: SpanEntry,
+        name: SpanRef,
         first_assigned: Span,
         incorrectly_reassigned: Span,
         expected: LocalTypeId,
@@ -431,7 +427,7 @@ pub mod prelude {
         func::{DataRef, Function},
         layout::{BlockId, Layout},
         lowering::{Lower, LowerWith},
-        parser::{token::PyToken, Parseable, ParserT, Span, SpanEntry, SpanRef},
+        parser::{token::PyToken, Parseable, ParserT, Span, SpanRef},
         scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
         typing::{FunctionType, TypeDescriptor, LocalTypeId, TypeMap, TypedObject},
         MontyError,

@@ -40,13 +40,9 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
             .join(", ");
 
         let source = self.gctx.resolver.sources.get(&self.module_ref).unwrap();
-        let name = self
-            .gctx
-            .resolver
-            .span_ref
-            .borrow()
-            .resolve_ref(self.name, source.value())
-            .unwrap();
+
+        let name = self.gctx.span_ref.borrow().get(self.name).unwrap();
+        let name = source.value().get(name).unwrap();
 
         let ret = if let Some(inner) = self.gctx.resolver.type_map.get(self.ret) {
             format!(

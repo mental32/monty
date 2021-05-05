@@ -8,13 +8,7 @@ use std::{
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::AstObject,
-    context::{LocalContext, ModuleContext, ModuleRef},
-    prelude::Span,
-    scope::LookupTarget,
-    typing::{LocalTypeId, TypeMap, TypedObject},
-};
+use crate::{ast::AstObject, context::{LocalContext, ModuleContext, ModuleRef}, prelude::{Span, SpanRef}, scope::LookupTarget, typing::{LocalTypeId, TypeMap, TypedObject}};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct DefId(usize);
@@ -94,14 +88,14 @@ impl AstObject for DefEntry {
 }
 
 impl LookupTarget for DefEntry {
-    fn is_named(&self, target: crate::prelude::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         self.object
             .upgrade()
             .map(|obj| obj.is_named(target))
             .unwrap_or(false)
     }
 
-    fn name(&self) -> crate::prelude::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         self.object.upgrade()?.name()
     }
 }
@@ -139,14 +133,14 @@ impl AstDatabase {
     fn find(&self, entry: &Rc<dyn AstObject>) -> Option<DefId> {
         let ptr = Rc::as_ptr(entry) as *const ();
 
-        let entry = if let Some(id) = self.by_pointer.get(&ptr) {
-            id.value().clone()
-        } else if let Some(entry) = self
+        let entry = if let Some(refm) = self.by_pointer.get(&ptr) {
+            refm.value().clone()
+        } else if let Some(refm) = self
             .entries
             .iter()
             .find(|refm| Rc::as_ptr(refm.value()) as *const () == ptr)
         {
-            entry.key().clone()
+            refm.key().clone()
         } else {
             return None;
         };

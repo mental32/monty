@@ -12,7 +12,7 @@ pub struct Assign {
 }
 
 impl Parseable for Assign {
-    const PARSER: ParserT<Self> = crate::parser::comb::assignment_unspanned;
+    const PARSER: ParserT<Self> = crate::parser::comb::assign::assignment_unspanned;
 }
 
 impl AstObject for Assign {
@@ -111,11 +111,11 @@ impl TypedObject for Assign {
 }
 
 impl LookupTarget for Assign {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         self.name.is_named(target)
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         self.name.name()
     }
 }

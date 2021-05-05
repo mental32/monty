@@ -7,12 +7,7 @@ use std::{
 use logos::Span;
 use typing::TypedObject;
 
-use crate::{
-    context::LocalContext,
-    // parser::token::PyToken,
-    scope::LookupTarget,
-    typing::{self, LocalTypeId},
-};
+use crate::{context::LocalContext, parser::SpanRef, scope::LookupTarget, typing::{self, LocalTypeId}};
 
 use self::{funcdef::FunctionDef, stmt::Statement};
 
@@ -168,11 +163,11 @@ impl<T: 'static> LookupTarget for Spanned<T>
 where
     T: AstObject + fmt::Debug + Clone,
 {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         self.inner.is_named(target)
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         self.inner.name()
     }
 }
@@ -265,11 +260,11 @@ impl<T: 'static> LookupTarget for Rc<T>
 where
     T: AstObject + fmt::Debug,
 {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         self.as_ref().is_named(target)
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         self.as_ref().name()
     }
 }

@@ -9,7 +9,7 @@ use std::{
 use crate::{
     ast::{
         atom::Atom,
-        class::ClassDef,
+        // class::ClassDef,
         import::{Import, ImportDecl},
         module::Module,
         primary::Primary,
@@ -18,6 +18,7 @@ use crate::{
     class::Class,
     database::AstDatabase,
     func::Function,
+    parser::SpanInterner,
     phantom::PhantomObject,
     prelude::*,
     scope::ScopedObject,
@@ -25,9 +26,7 @@ use crate::{
     CompilerOptions,
 };
 
-use super::{
-    local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef,
-};
+use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
 
 fn shorten(path: &Path) -> String {
     let mut c = path
@@ -46,7 +45,7 @@ fn shorten(path: &Path) -> String {
 pub struct GlobalContext {
     pub modules: HashMap<ModuleRef, ModuleContext>,
     pub functions: RefCell<Vec<Rc<Function>>>,
-    pub span_ref: Rc<RefCell<SpanRef>>,
+    pub span_ref: Rc<RefCell<SpanInterner>>,
     pub type_map: Rc<TypeMap>,
     pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,
     pub libstd: PathBuf,
@@ -112,7 +111,7 @@ impl From<CompilerOptions> for GlobalContext {
                 ctx.builder
                     .borrow_mut()
                     .ins()
-                    .null(cranelift_codegen::ir::types::R64)
+                    .iconst(cranelift_codegen::ir::types::I64, 0)
             });
 
         ctx.type_map
@@ -127,7 +126,10 @@ impl From<CompilerOptions> for GlobalContext {
                     .unwrap();
 
                 let mut dctx = cranelift_module::DataContext::new();
-                let st = ctx.codegen_backend.global_context.get_string_literal(value, ctx.func.scope.module_ref());
+                let st = ctx
+                    .codegen_backend
+                    .global_context
+                    .get_string_literal(value, ctx.func.scope.module_ref());
 
                 let st = std::ffi::CString::new(st.as_str()).unwrap();
                 let st = st.into_bytes_with_nul();
@@ -135,11 +137,21 @@ impl From<CompilerOptions> for GlobalContext {
 
                 dctx.define(st);
 
-                let _ = ctx.codegen_backend.object_module.borrow_mut().define_data(data_id, &dctx).unwrap();
+                let _ = ctx
+                    .codegen_backend
+                    .object_module
+                    .borrow_mut()
+                    .define_data(data_id, &dctx)
+                    .unwrap();
 
-                let gv = ctx.codegen_backend.object_module.borrow_mut().declare_data_in_func(data_id, &mut ctx.builder.borrow_mut().func);
+                let gv = ctx
+                    .codegen_backend
+                    .object_module
+                    .borrow_mut()
+                    .declare_data_in_func(data_id, &mut ctx.builder.borrow_mut().func);
 
-                let ptr = ctx.builder
+                let ptr = ctx
+                    .builder
                     .borrow_mut()
                     .ins()
                     .global_value(cranelift_codegen::ir::types::I64, gv);
@@ -201,7 +213,7 @@ impl From<CompilerOptions> for GlobalContext {
                         macro_rules! const_prop {
                             ($prop:ident($reciever:expr) := ($($arg:expr),* $(,)?) -> $ret:expr) => ({
                                 let span_ref = ctx.span_ref.borrow();
-                                let $prop = span_ref.find(stringify!($prop), MAGICAL_NAMES);
+                                let $prop = span_ref.find(stringify!($prop), MAGICAL_NAMES).unwrap();
 
                                 let type_map = &ctx.type_map;
 
@@ -213,7 +225,7 @@ impl From<CompilerOptions> for GlobalContext {
                                     module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
                                 };
 
-                                klass.properties.insert($prop.unwrap(), type_map.insert(TypeDescriptor::Function(func)));
+                                klass.properties.insert($prop, type_map.insert(TypeDescriptor::Function(func)));
                             });
                         }
 
@@ -278,7 +290,7 @@ impl From<CompilerOptions> for GlobalContext {
 
 impl Default for GlobalContext {
     fn default() -> Self {
-        let span_ref: Rc<RefCell<SpanRef>> = Default::default();
+        let span_ref: Rc<RefCell<SpanInterner>> = Default::default();
         let type_map: Rc<TypeMap> = Rc::new(TypeMap::correctly_initialized());
 
         let resolver = Rc::new(InternalResolver {
@@ -302,53 +314,24 @@ impl Default for GlobalContext {
 }
 
 impl GlobalContext {
-    pub fn is_builtin(&self, t: &dyn AstObject, t_mref: &ModuleRef) -> Option<LocalTypeId> {
+    pub fn is_builtin(&self, t: &dyn AstObject) -> Option<LocalTypeId> {
         log::trace!(
-            "context:is_builtin: checking if object is a builtin ({:?})",
+            "global_context:is_builtin: checking if object is a builtin ({:?})",
             t.name()
         );
 
-        let t_mref = t.renamed_properties().unwrap_or(t_mref.clone());
-        let t_mref = &t_mref;
+        let t_name = t.name().unwrap();
 
-        let t_mctx = self.modules.get(t_mref).unwrap();
-
-        let st = self
-            .span_ref
-            .borrow()
-            .resolve_ref(t.name(), t_mctx.source.as_ref())
-            .unwrap();
-
-        for (type_id, (object, mref)) in self.builtins.iter() {
-            let object_name = Some(object.scope.root())
-                .as_ref()
-                .and_then(|root| match root {
-                    ScopeRoot::AstObject(obj) => Some(obj),
-                    _ => None,
-                })
-                .and_then(|obj| obj.as_ref().downcast_ref::<ClassDef>())
-                .and_then(|class_def| class_def.name());
-
-            if t_mref == mref && t.is_named(object_name) {
-                return Some(type_id.clone());
-            } else if t_mref != mref {
-                let builtin_mctx = self.modules.get(mref).unwrap();
-                let builtin_st = self
-                    .span_ref
-                    .borrow()
-                    .resolve_ref(object_name, builtin_mctx.source.as_ref())
-                    .unwrap();
-
-                if builtin_st == st {
-                    return Some(type_id.clone());
-                }
+        for (type_id, (object, _)) in self.builtins.iter() {
+            if self.span_ref.borrow().crosspan_eq(object.name, t_name) {
+                return Some(type_id.clone())
             }
         }
 
         None
     }
 
-    pub fn get_class_from_module(&self, mref: ModuleRef, name: SpanEntry) -> Option<Rc<Class>> {
+    pub fn get_class_from_module(&self, mref: ModuleRef, name: SpanRef) -> Option<Rc<Class>> {
         let mctx = self.modules.get(&mref)?;
 
         for obj in mctx.scope.iter() {
@@ -371,25 +354,30 @@ impl GlobalContext {
         let span = value.span().unwrap();
         let mctx = self.modules.get(&mref).unwrap();
 
-        mctx.source.get((span.start + 1)..(span.end - 1)).unwrap().to_string()
+        mctx.source
+            .get((span.start + 1)..(span.end - 1))
+            .unwrap()
+            .to_string()
     }
 
     pub fn access_from_module(
         &self,
         module: &Rc<Spanned<Primary>>,
         item: &Rc<Spanned<Primary>>,
-        source: &str,
+        _source: &str,
         mref: &ModuleRef,
     ) -> Option<Rc<dyn AstObject>> {
         let parts = module.inner.components();
 
-        let qualname: Vec<&str> = parts
+        let qualname: Vec<String> = parts
             .into_iter()
             .map(|atom| match atom {
-                Atom::Name(n) => self.span_ref.borrow().resolve_ref(n, source).unwrap(),
+                Atom::Name(n) => self.resolver.resolve(mref.clone(), n).unwrap(),
                 _ => unreachable!(),
             })
             .collect();
+
+        let qualname: Vec<_> = qualname.iter().map(|st| st.as_str()).collect();
 
         match qualname.as_slice() {
             [] => unreachable!(),
@@ -399,7 +387,7 @@ impl GlobalContext {
 
                 let item = if let [atom] = item.as_slice() {
                     match atom {
-                        Atom::Name(n) => n.unwrap(),
+                        Atom::Name(n) => n.clone(),
                         _ => unreachable!(),
                     }
                 } else {
@@ -409,7 +397,7 @@ impl GlobalContext {
                 self.phantom_objects
                     .iter()
                     .find(|obj| {
-                        self.name_eq((obj.name, &"__monty:magical_names".into()), (item, mref))
+                        self.span_ref.borrow().crosspan_eq(obj.name, item)
                     })
                     .map(|obj| Rc::clone(&obj) as Rc<_>)
             }
@@ -447,16 +435,11 @@ impl GlobalContext {
             return true;
         }
 
-        let lmsrc = self.resolver.sources.get(lhs.1).unwrap();
-        let rmsrc = self.resolver.sources.get(rhs.1).unwrap();
-
-        self.span_ref
-            .borrow()
-            .resolve_ref(Some(lhs.0), &lmsrc.value())
+        self.resolver
+            .resolve(lhs.1.clone(), lhs.0)
             .and_then(|left| {
-                self.span_ref
-                    .borrow()
-                    .resolve_ref(Some(rhs.0), &rmsrc.value())
+                self.resolver
+                    .resolve(rhs.1.clone(), rhs.0)
                     .map(|right| left == right)
             })
             .unwrap_or(false)
@@ -562,7 +545,7 @@ impl GlobalContext {
             let qualname: Vec<&str> = qualname
                 .into_iter()
                 .map(|atom| match atom {
-                    Atom::Name(n) => self.span_ref.borrow().resolve_ref(*n, source).unwrap(),
+                    Atom::Name(n) => source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap(),
                     _ => unreachable!(),
                 })
                 .collect();
@@ -600,11 +583,11 @@ impl GlobalContext {
         Some(modules)
     }
 
-    fn parse<T>(&self, s: Rc<str>) -> T
+    fn parse<T>(&self, s: Rc<str>, mref: ModuleRef) -> T
     where
         T: Parseable + Clone,
     {
-        let Spanned { inner, .. }: Spanned<T> = (s, self.span_ref.clone()).into();
+        let Spanned { inner, .. }: Spanned<T> = (s, self.span_ref.clone(), mref).into();
         inner
     }
 
@@ -613,9 +596,9 @@ impl GlobalContext {
         P: Into<PathBuf>,
     {
         let source: Rc<_> = input.into();
-        let module: Module = self.parse(Rc::clone(&source));
-
         let path = path.into();
+
+        let module: Module = self.parse(Rc::clone(&source), ModuleRef(path.clone()));
 
         self.register_module(module, path, source)
     }

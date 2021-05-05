@@ -147,14 +147,14 @@ mod tests {
         );
     }
 
-    const NAME: &[Token] = &[(PyToken::Ident(NonZeroUsize::new(1)), 0..1)];
+    const NAME: &[Token] = &[(PyToken::Ident(unsafe { NonZeroUsize::new_unchecked(1) }), 0..1)];
 
     #[test]
     fn test_parse_name() {
         let (stream, atom) = atom(NAME).unwrap();
         assert!(stream.is_empty());
         assert!(
-            matches!(atom, Spanned { span, inner } if (span == (0..1) && inner == Atom::Name(NonZeroUsize::new(1))))
+            matches!(atom, Spanned { span, inner } if (span == (0..1) && inner == Atom::Name(unsafe { NonZeroUsize::new_unchecked(1) })))
         );
     }
 }

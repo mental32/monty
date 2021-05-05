@@ -48,11 +48,11 @@ impl Parseable for Module {
 }
 
 impl LookupTarget for Module {
-    fn is_named(&self, _target: SpanEntry) -> bool {
+    fn is_named(&self, _target: SpanRef) -> bool {
         false
     }
 
-    fn name(&self) -> SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         todo!()
     }
 }

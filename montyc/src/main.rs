@@ -1,7 +1,5 @@
-use std::rc::Rc;
-
 use cranelift_module::Linkage;
-use montyc::{context::GlobalContext, func::Function, prelude::*, CompilerOptions};
+use montyc::{context::GlobalContext, prelude::*, CompilerOptions};
 
 use structopt::StructOpt;
 
@@ -23,10 +21,9 @@ fn main() {
         }
 
         {
-            let funcs = ctx.functions.borrow();
-            let mut ctx = montyc::context::codegen::CodegenBackend::new(ctx, None);
+            let mut cctx = montyc::context::codegen::CodegenBackend::new(ctx, None);
 
-            ctx.declare_functions(funcs.iter().enumerate().map(|(idx, func)| {
+            cctx.declare_functions(ctx.functions.borrow().iter().enumerate().map(|(idx, func)| {
                 (
                     idx,
                     func.as_ref(),
@@ -36,7 +33,7 @@ fn main() {
                 )
             }));
 
-            ctx.finish(None::<&str>);
+            cctx.finish(None::<&str>);
         }
     });
 }

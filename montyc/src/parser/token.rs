@@ -2,7 +2,7 @@
 
 use logos::Logos;
 
-use super::SpanEntry;
+use super::{SpanRef};
 
 #[derive(Debug, Logos, PartialEq, Copy, Clone)]
 pub enum PyToken {
@@ -184,19 +184,20 @@ pub enum PyToken {
     Digits(isize),
 
     // -- SpanRef tokens
-    #[regex("[a-zA-Z_][_a-zA-Z0-9]*", |_| SpanEntry::None)]
-    // the inner identifier is lazily generated.
-    Ident(SpanEntry),
+    #[regex("[a-zA-Z_][_a-zA-Z0-9]*")]
+    RawIdent,
 
-    StringRef(SpanEntry),
+    Ident(SpanRef),
 
-    CommentRef(SpanEntry),
+    StringRef(SpanRef),
+
+    CommentRef(SpanRef),
 }
 
-impl From<PyToken> for SpanEntry {
+impl From<PyToken> for Option<SpanRef> {
     fn from(token: PyToken) -> Self {
         match token {
-            PyToken::StringRef(n) | PyToken::CommentRef(n) | PyToken::Ident(n) => n,
+            PyToken::StringRef(n) | PyToken::CommentRef(n) | PyToken::Ident(n) => Some(n),
             _ => unreachable!(),
         }
     }

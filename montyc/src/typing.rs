@@ -2,7 +2,7 @@ use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{ast::AstObject, context::{codegen::CodegenLowerArg, LocalContext, ModuleRef}, parser::SpanEntry};
+use crate::{ast::AstObject, context::{codegen::CodegenLowerArg, LocalContext, ModuleRef}, prelude::SpanRef};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -26,7 +26,7 @@ pub struct TaggedType<T> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionType {
     pub reciever: Option<LocalTypeId>,
-    pub name: SpanEntry,
+    pub name: SpanRef,
     pub args: Vec<LocalTypeId>,
     pub ret: LocalTypeId,
     pub module_ref: ModuleRef,
@@ -72,7 +72,7 @@ impl BuiltinTypeId {
             BuiltinTypeId::Float => todo!(),
             BuiltinTypeId::Str => todo!(),
             BuiltinTypeId::Bool => 8,
-            BuiltinTypeId::None => todo!(),
+            BuiltinTypeId::None => 0,
             BuiltinTypeId::Ellipsis => todo!(),
             BuiltinTypeId::Module => todo!(),
             BuiltinTypeId::Unknown => todo!(),
@@ -116,7 +116,7 @@ impl std::fmt::Display for BuiltinTypeId {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassType {
-    pub name: SpanEntry,
+    pub name: SpanRef,
     pub mref: ModuleRef,
 }
 

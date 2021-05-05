@@ -5,9 +5,7 @@ use super::{
     import::Import, retrn::Return, while_::While, AstObject,
 };
 
-use crate::{
-    context::codegen::CodegenLowerArg, parser::comb::stmt::statement_unspanned, prelude::*,
-};
+use crate::{context::codegen::CodegenLowerArg, parser::{SpanRef, comb::stmt::statement_unspanned}, prelude::*};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -117,7 +115,7 @@ impl Parseable for Statement {
 }
 
 impl LookupTarget for Statement {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         match self {
             Statement::Expression(e) => e.is_named(target),
             Statement::FnDef(e) => e.is_named(target),
@@ -131,7 +129,7 @@ impl LookupTarget for Statement {
         }
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         match self {
             Statement::Expression(e) => e.name(),
             Statement::FnDef(e) => e.name(),

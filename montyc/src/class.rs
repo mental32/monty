@@ -1,16 +1,12 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
-use crate::{
-    ast::class::ClassDef,
-    context::LocalContext,
-    scope::LocalScope,
-    typing::{FunctionType, LocalTypeId, TypeDescriptor, TypedObject},
-};
+use crate::{ast::class::ClassDef, context::LocalContext, prelude::SpanRef, scope::LocalScope, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypedObject}};
 
 #[derive(Debug)]
 pub struct Class {
     pub scope: LocalScope<ClassDef>,
     pub kind: LocalTypeId,
+    pub name: SpanRef,
     pub properties: HashMap<NonZeroUsize, LocalTypeId>,
 }
 
@@ -21,7 +17,7 @@ impl Class {
         template: &FunctionType,
     ) -> Option<LocalTypeId> {
         for (name, kind) in self.properties.iter() {
-            if *name == template.name.unwrap() {
+            if *name == template.name {
                 if ctx
                     .global_context
                     .type_map

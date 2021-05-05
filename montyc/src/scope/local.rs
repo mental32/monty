@@ -65,7 +65,7 @@ impl<T: std::fmt::Debug> Scope for LocalScope<T> {
 
     fn lookup_any(
         &self,
-        target: SpanEntry,
+        target: SpanRef,
         global_context: &GlobalContext,
         order: LookupOrder,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {

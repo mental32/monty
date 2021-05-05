@@ -6,17 +6,17 @@ use super::{atom::Atom, primary::Primary, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct TypedFuncArg {
-    pub(crate) name: SpanEntry,
+    pub(crate) name: SpanRef,
     pub(crate) annotation: Rc<Spanned<Primary>>,
 }
 
 impl LookupTarget for TypedFuncArg {
-    fn is_named(&self, target: SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         target == self.name
     }
 
-    fn name(&self) -> SpanEntry {
-        self.name.clone()
+    fn name(&self) -> Option<SpanRef> {
+        Some(self.name.clone())
     }
 }
 
@@ -48,7 +48,7 @@ impl TypedObject for TypedFuncArg {
 pub struct FunctionDef {
     pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
-    pub args: Option<Vec<(SpanEntry, Rc<Spanned<Primary>>)>>,
+    pub args: Option<Vec<(SpanRef, Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
     pub decorator_list: Vec<Rc<Spanned<Primary>>>,
     pub returns: Option<Spanned<Primary>>,
@@ -162,11 +162,11 @@ impl TypedObject for FunctionDef {
 }
 
 impl LookupTarget for FunctionDef {
-    fn is_named(&self, target: SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         self.name.is_named(target)
     }
 
-    fn name(&self) -> SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         self.name.name()
     }
 }

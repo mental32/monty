@@ -2,10 +2,7 @@ use std::rc::Rc;
 
 use nom::{branch::alt, error, multi::many0, sequence::terminated, IResult};
 
-use crate::{
-    ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned},
-    parser::{token::PyToken, SpanEntry, TokenSlice},
-};
+use crate::{ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned}, parser::{token::PyToken, TokenSlice}, prelude::SpanRef};
 
 use super::{
     class::decorator_list, expect, expect_, expect_ident, expect_many_n, primary, stmt::statement,
@@ -166,7 +163,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         }
     }
 
-    let args: Option<Vec<(SpanEntry, _)>> = if arguments.is_empty() {
+    let args: Option<Vec<(SpanRef, _)>> = if arguments.is_empty() {
         None
     } else {
         Some(

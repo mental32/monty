@@ -1,25 +1,24 @@
 use std::{fmt::Debug, rc::Rc};
 
-use crate::{ast::{
-        assign::Assign,
-        class::ClassDef,
-        funcdef::{TypedFuncArg},
-        stmt::Statement,
-        AstObject,
-    }, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, parser::SpanEntry, phantom::PhantomObject};
+use crate::{
+    ast::{assign::Assign, class::ClassDef, funcdef::TypedFuncArg, stmt::Statement, AstObject},
+    context::{GlobalContext, LocalContext, ModuleRef},
+    func::Function,
+    phantom::PhantomObject,
+    prelude::SpanRef,
+};
 
 mod local;
 mod object;
 mod opaque;
-mod renamed;
 mod search;
 mod wrapped;
 
-pub use self::{local::*, object::*, opaque::*, renamed::*, wrapped::*};
+pub use self::{local::*, object::*, opaque::*, wrapped::*};
 
 pub trait LookupTarget {
-    fn is_named(&self, target: SpanEntry) -> bool;
-    fn name(&self) -> SpanEntry;
+    fn is_named(&self, target: SpanRef) -> bool;
+    fn name(&self) -> Option<SpanRef>;
     fn renamed_properties(&self) -> Option<ModuleRef> {
         None
     }
@@ -85,14 +84,14 @@ pub trait Scope: core::fmt::Debug {
 
     fn lookup_any(
         &self,
-        target: SpanEntry,
+        target: SpanRef,
         global_context: &GlobalContext,
         order: LookupOrder,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>>;
 
     fn lookup_def(
         &self,
-        target: SpanEntry,
+        target: SpanRef,
         global_context: &GlobalContext,
         order: LookupOrder,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {

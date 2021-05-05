@@ -2,10 +2,7 @@
 
 use std::rc::Rc;
 
-use crate::{
-    scope::LookupTarget,
-    typing::{TypeMap, TypedObject},
-};
+use crate::{prelude::SpanRef, scope::LookupTarget, typing::{TypeMap, TypedObject}};
 
 use super::{expr::Expr, stmt::Statement, AstObject, Spanned};
 
@@ -36,11 +33,11 @@ impl AstObject for If {
 }
 
 impl LookupTarget for If {
-    fn is_named(&self, target: crate::prelude::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         false
     }
 
-    fn name(&self) -> crate::prelude::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         None
     }
 }
@@ -114,11 +111,11 @@ impl AstObject for IfChain {
 }
 
 impl LookupTarget for IfChain {
-    fn is_named(&self, target: crate::prelude::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         false
     }
 
-    fn name(&self) -> crate::prelude::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         None
     }
 }

@@ -1,11 +1,12 @@
 use std::rc::Rc;
 
 use cranelift_codegen::ir::ExtFuncData;
+use parser::SpanRef;
 
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{context::codegen::CodegenLowerArg, func::DataRef, prelude::*, scope::LookupOrder};
+use crate::{context::codegen::CodegenLowerArg, func::DataRef, parser, prelude::*, scope::LookupOrder};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -210,7 +211,7 @@ impl TypedObject for Primary {
                     let def_node = 'outer: loop {
                         let results = ctx
                             .scope
-                            .lookup_def(func.name(), &ctx.global_context, LookupOrder::Unspecified)
+                            .lookup_def(func.name().unwrap(), &ctx.global_context, LookupOrder::Unspecified)
                             .unwrap_or_compiler_error(ctx);
 
                         for obj in results {
@@ -255,11 +256,11 @@ impl TypedObject for Primary {
 }
 
 impl LookupTarget for Primary {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         matches!(self, Self::Atomic(atom) if matches!(atom.as_ref(), Spanned { inner: Atom::Name(n), .. } if n.clone() == target))
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         match self {
             Self::Atomic(at) => at.name(),
             _ => None,
@@ -278,7 +279,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
             Primary::Call { func, args } => {
                 let func_name = match &func.inner {
                     Primary::Atomic(atom) => match atom.as_ref().inner {
-                        Atom::Name(Some(n)) => n,
+                        Atom::Name(n) => n,
                         _ => unreachable!(),
                     },
                     _ => unreachable!(),
@@ -355,7 +356,9 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                 let result = ctx.builder.borrow_mut().ins().call(func_ref, args.as_slice());
 
-                ctx.builder.borrow_mut().inst_results(result).first().unwrap().clone()
+                let mut builder = ctx.builder.borrow_mut();
+
+                builder.inst_results(result).first().cloned().unwrap_or_else(|| builder.ins().iconst(cranelift_codegen::ir::types::I64, 0))
             }
 
             Primary::Attribute { left, attr } => todo!(),

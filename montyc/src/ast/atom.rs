@@ -9,15 +9,15 @@ pub enum Atom {
     None,
     Ellipsis,
     Int(isize),
-    Str(SpanEntry),
+    Str(SpanRef),
     Bool(bool),
     Float(f64),
-    Comment(SpanEntry),
-    Name(SpanEntry),
+    Comment(SpanRef),
+    Name(SpanRef),
 }
 
 impl Parseable for Atom {
-    const PARSER: ParserT<Self> = crate::parser::comb::atom_unspanned;
+    const PARSER: ParserT<Self> = crate::parser::comb::atom::atom_unspanned;
 }
 
 impl From<PyToken> for Atom {
@@ -60,7 +60,6 @@ impl TypedObject for Atom {
             Atom::Bool(_) => Ok(TypeMap::BOOL),
             Atom::Float(_) => Ok(TypeMap::FLOAT),
             Atom::Comment(_) => todo!(),
-            Atom::Name(None) => unreachable!(),
             Atom::Name(target) => {
                 log::trace!("infer_type: performing name lookup on atom {:?}", self);
 
@@ -120,21 +119,16 @@ impl TypedObject for Atom {
 }
 
 impl LookupTarget for Atom {
-    fn is_named(&self, target: SpanEntry) -> bool {
-        let target = match target {
-            Some(n) => n,
-            None => return false,
-        };
-
+    fn is_named(&self, target: SpanRef) -> bool {
         match self {
-            Self::Name(Some(n)) => *n == target,
+            Self::Name(n) => *n == target,
             _ => false,
         }
     }
 
-    fn name(&self) -> SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         match self {
-            Self::Name(n) => n.clone(),
+            Self::Name(n) => Some(n.clone()),
             _ => None,
         }
     }
@@ -161,7 +155,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
             Atom::Float(_) => todo!(),
             Atom::Comment(_) => unreachable!(),
             Atom::Name(n) => {
-                let ss = ctx.vars.get(&n.unwrap()).unwrap();
+                let ss = ctx.vars.get(&n).unwrap();
                 let ty = ctx.func.vars.get(n).map(|r| r.value().0).unwrap();
 
                 let ty = ctx.codegen_backend.types[&ty];

@@ -13,24 +13,25 @@ pub struct ClassDef {
 
 impl<'a> From<(&LocalContext<'a>, &ClassDef)> for crate::class::Class {
     fn from((ctx, def): (&LocalContext<'a>, &ClassDef)) -> Self {
-        let type_id = match ctx.global_context.is_builtin(def, &ctx.module_ref) {
+        let type_id = match ctx.global_context.is_builtin(def) {
             Some(type_id) => type_id,
             None => {
                 let type_map = &ctx.global_context.type_map;
 
                 type_map.insert(TypeDescriptor::Class(
                     crate::typing::ClassType {
-                        name: def.name.inner.name(),
+                        name: def.name.inner.name().unwrap(),
                         mref: ctx.module_ref.clone(),
                     },
                 ))
             }
         };
 
-        let def = LocalScope::from(def.clone());
+        let scope = LocalScope::from(def.clone());
 
         Self {
-            scope: def,
+            name: def.name.name().unwrap(),
+            scope,
             kind: type_id,
             properties: HashMap::new(),
         }
@@ -57,7 +58,7 @@ impl TypedObject for ClassDef {
 
         if let Some(type_id) = ctx
             .global_context
-            .is_builtin(this.as_ref(), &ctx.module_ref)
+            .is_builtin(this.as_ref())
         {
             return Ok(type_id);
         } else {
@@ -77,11 +78,11 @@ impl TypedObject for ClassDef {
 }
 
 impl LookupTarget for ClassDef {
-    fn is_named(&self, target: crate::parser::SpanEntry) -> bool {
+    fn is_named(&self, target: SpanRef) -> bool {
         self.name.is_named(target)
     }
 
-    fn name(&self) -> crate::parser::SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         self.name.name()
     }
 }

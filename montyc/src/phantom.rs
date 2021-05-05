@@ -29,11 +29,11 @@ impl AstObject for PhantomObject {
 }
 
 impl LookupTarget for PhantomObject {
-    fn is_named(&self, target: SpanEntry) -> bool {
-        target.map(|n| n == self.name).unwrap_or(false)
+    fn is_named(&self, target: SpanRef) -> bool {
+        Some(target == self.name).unwrap_or(false)
     }
 
-    fn name(&self) -> SpanEntry {
+    fn name(&self) -> Option<SpanRef> {
         Some(self.name)
     }
 }
