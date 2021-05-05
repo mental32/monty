@@ -99,7 +99,9 @@ pub trait Scope: core::fmt::Debug {
 
         let dropped = results
             .drain_filter(|o| {
-                let o = o.unspanned();
+                let o = o.unspanned().unspanned();
+
+                assert_matches!(o.name(), Some(n) if n == target, "{:?}", o);
 
                 !(crate::isinstance!(o.as_ref(), Assign).is_some()
                     || o.as_ref().downcast_ref::<Function>().is_some()
@@ -112,6 +114,7 @@ pub trait Scope: core::fmt::Debug {
 
         if !dropped.is_empty() {
             log::trace!("lookup_def: dropping results = {:?}", dropped);
+            log::trace!("lookup_def: returning = {:?}", results);
         }
 
         Ok(results)

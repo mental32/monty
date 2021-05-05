@@ -190,6 +190,19 @@ impl TypedObject for Primary {
                     func.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
                 };
 
+                let func_t = match ctx
+                    .global_context
+                    .type_map
+                    .get_tagged::<FunctionType>(func_t)
+                    .unwrap()
+                {
+                    Ok(f) => f,
+                    Err(_) => ctx.exit_with_error(MontyError::NotCallable {
+                        kind: func_t,
+                        callsite: ctx.this.clone().unwrap().span().unwrap(),
+                    }),
+                };
+
                 let callsite = args
                     .as_ref()
                     .map(|args| {
@@ -206,7 +219,7 @@ impl TypedObject for Primary {
                 if let Err((expected, actual, idx)) = ctx
                     .global_context
                     .type_map
-                    .unify_call(func_t, callsite.iter())
+                    .unify_call(func_t.type_id, callsite.iter())
                 {
                     let def_node = 'outer: loop {
                         let results = ctx

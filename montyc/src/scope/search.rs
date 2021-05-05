@@ -8,7 +8,7 @@ use crate::ast::{
 };
 use crate::prelude::*;
 
-use super::{LookupOrder};
+use super::LookupOrder;
 
 // -- LookupIter
 
@@ -72,6 +72,11 @@ impl<'a> LookupIter<'a> {
         let mut results = layout
             .rev_iter(*end)
             .filter_map(|(_, block)| block.nodes.last())
+            .filter(|node| {
+                node.name()
+                    .map(|n| global_context.span_ref.borrow().crosspan_eq(n, target))
+                    .unwrap_or(false)
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -144,7 +149,16 @@ impl<'a> LookupIter<'a> {
                 }
             }
 
-            ScopeRoot::Func(f) => f.def(global_context).unwrap().unspanned().as_ref().as_function().unwrap().args.clone().unwrap_or_default(),
+            ScopeRoot::Func(f) => f
+                .def(global_context)
+                .unwrap()
+                .unspanned()
+                .as_ref()
+                .as_function()
+                .unwrap()
+                .args
+                .clone()
+                .unwrap_or_default(),
             _ => vec![],
         };
 
@@ -177,10 +191,23 @@ impl<'a> LookupIter<'a> {
                 crate::isinstance!(object.as_ref(), Statement, Statement::Import(i) => i)
             {
                 let (module, item) = match import {
-                    Import::Names(names) => (None, names.iter().find(|name| global_context.span_ref.borrow().crosspan_eq(name.name().unwrap(), target))),
+                    Import::Names(names) => (
+                        None,
+                        names.iter().find(|name| {
+                            global_context
+                                .span_ref
+                                .borrow()
+                                .crosspan_eq(name.name().unwrap(), target)
+                        }),
+                    ),
                     Import::From { module, names, .. } => (
                         Some(module),
-                        names.iter().find(|name| global_context.span_ref.borrow().crosspan_eq(name.name().unwrap(), target)),
+                        names.iter().find(|name| {
+                            global_context
+                                .span_ref
+                                .borrow()
+                                .crosspan_eq(name.name().unwrap(), target)
+                        }),
                     ),
                 };
 
@@ -234,7 +261,11 @@ impl<'a> LookupIter<'a> {
                     })
                     .unwrap();
 
-                if global_context.span_ref.borrow().crosspan_eq(object.name, target) {
+                if global_context
+                    .span_ref
+                    .borrow()
+                    .crosspan_eq(object.name, target)
+                {
                     results.push(classdef as Rc<_>);
                 }
             }
