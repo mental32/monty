@@ -69,7 +69,7 @@ impl<'a> LookupIter<'a> {
             None => return self.search_unordered(target, global_context),
         };
 
-        let results = layout
+        let mut results = layout
             .rev_iter(*end)
             .filter_map(|(_, block)| block.nodes.last())
             .cloned()
@@ -114,6 +114,8 @@ impl<'a> LookupIter<'a> {
             }
 
             return Self(self.0).search_unordered(target, global_context);
+        } else {
+            results.extend(Self(self.0).search_unordered(target, global_context)?);
         }
 
         Ok(results)

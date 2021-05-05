@@ -61,7 +61,7 @@ impl TypedObject for Atom {
             Atom::Float(_) => Ok(TypeMap::FLOAT),
             Atom::Comment(_) => todo!(),
             Atom::Name(target) => {
-                log::trace!("infer_type: performing name lookup on atom {:?}", self);
+                log::trace!("infer_type:atom performing name lookup on atom {:?}", self);
 
                 let results = ctx
                     .scope

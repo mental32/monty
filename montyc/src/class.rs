@@ -7,7 +7,7 @@ pub struct Class {
     pub scope: LocalScope<ClassDef>,
     pub kind: LocalTypeId,
     pub name: SpanRef,
-    pub properties: HashMap<NonZeroUsize, LocalTypeId>,
+    pub properties: HashMap<SpanRef, LocalTypeId>,
 }
 
 impl Class {
@@ -17,7 +17,7 @@ impl Class {
         template: &FunctionType,
     ) -> Option<LocalTypeId> {
         for (name, kind) in self.properties.iter() {
-            if *name == template.name {
+            if ctx.global_context.span_ref.borrow().crosspan_eq(*name, template.name) {
                 if ctx
                     .global_context
                     .type_map

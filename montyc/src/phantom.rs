@@ -4,7 +4,7 @@ use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct PhantomObject {
-    pub(crate) name: NonZeroUsize,
+    pub(crate) name: SpanRef,
     pub(crate) infer_type: for<'a> fn(&'a LocalContext<'a>) -> crate::Result<LocalTypeId>,
 }
 
