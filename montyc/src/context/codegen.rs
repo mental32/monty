@@ -98,14 +98,7 @@ impl<'global> CodegenBackend<'global> {
                 .push(codegen::ir::AbiParam::new(self.types[param]));
         }
 
-        let func_def_name = func
-            .def(self.global_context)
-            .unwrap()
-            .as_function()
-            .unwrap()
-            .name()
-            .clone()
-            .unwrap();
+        let func_def_name = func.name(self.global_context).unwrap();
 
         let name = if let Some((name, fid)) = self
             .names
@@ -152,6 +145,7 @@ impl<'global> CodegenBackend<'global> {
         let func_def = func
             .def(self.global_context)
             .unwrap()
+            .unspanned()
             .as_function()
             .cloned()
             .unwrap();
@@ -275,11 +269,11 @@ impl<'global> CodegenBackend<'global> {
 
     pub fn declare_functions<'a>(
         &mut self,
-        it: impl Iterator<Item = (usize, &'a Function, &'a ModuleRef, Linkage, CallConv)>,
+        it: impl Iterator<Item = (usize, &'a Function, ModuleRef, Linkage, CallConv)>,
     ) {
         for (idx, func, mref, linkage, callcov) in it {
             self.pending.push((idx, linkage.clone(), callcov.clone()));
-            self.declare_function(func, mref, linkage, callcov);
+            self.declare_function(func, &mref, linkage, callcov);
         }
     }
 
@@ -379,8 +373,9 @@ impl<'global> CodegenBackend<'global> {
         let pending = self.pending.clone();
 
         for (idx, linkage, callcov) in pending.iter().cloned() {
-            let func = self.global_context.functions.borrow();
-            let (func, mref) = func.get(idx).unwrap();
+            let funcs = self.global_context.functions.borrow();
+            let func = funcs.get(idx).unwrap();
+            let mref = func.scope.module_ref();
 
             self.add_function_to_module(func, &mref, linkage, callcov)
         }

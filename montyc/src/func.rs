@@ -40,14 +40,18 @@ impl Function {
         gctx.database.as_weak_object(self.def)
     }
 
-    pub fn name_as_string(&self, gctx: &GlobalContext) -> Option<String> {
-        let def = self
-            .def(gctx)
+    pub fn name(&self, gctx: &GlobalContext) -> SpanEntry {
+        self.def(gctx)
             .unwrap()
+            .unspanned()
             .as_ref()
             .as_function()
             .unwrap()
-            .name();
+            .name()
+    }
+
+    pub fn name_as_string(&self, gctx: &GlobalContext) -> Option<String> {
+        let def = self.name(gctx)?;
 
         gctx.resolver
             .resolve(self.scope.inner.module_ref.clone().unwrap(), def)
@@ -119,7 +123,11 @@ impl Function {
         Ok(func)
     }
 
-    pub fn is_externaly_defined(&self, global_context: &GlobalContext, callcov: Option<&str>) -> bool {
+    pub fn is_externaly_defined(
+        &self,
+        global_context: &GlobalContext,
+        callcov: Option<&str>,
+    ) -> bool {
         let def = self.def(global_context).unwrap().unspanned();
 
         let def: &FunctionDef = def.as_function().unwrap();

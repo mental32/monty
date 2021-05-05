@@ -153,7 +153,11 @@ impl TypedObject for FunctionDef {
             this: ctx.this.clone(),
         };
 
-        func.typecheck(&lctx)
+        func.typecheck(&lctx)?;
+
+        ctx.global_context.functions.borrow_mut().push(func);
+
+        Ok(())
     }
 }
 

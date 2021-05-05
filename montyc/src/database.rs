@@ -124,7 +124,13 @@ impl AstDatabase {
 
         log::trace!("database:insert_directly {:?} = {:?}", key, entry);
 
-        assert!(self.by_pointer.insert(Weak::as_ptr(&entry.object) as *const (), key).is_none(), "{:?}", Weak::as_ptr(&entry.object) as *const ());
+        assert!(
+            self.by_pointer
+                .insert(Weak::as_ptr(&entry.object) as *const (), key)
+                .is_none(),
+            "{:?}",
+            Weak::as_ptr(&entry.object) as *const ()
+        );
         assert!(self.entries.insert(key, Rc::new(entry)).is_none());
 
         key
@@ -155,7 +161,11 @@ impl AstDatabase {
         self.entries.get(&id)?.value().object.upgrade()
     }
 
-    pub fn type_of(&self, object: &Rc<dyn AstObject>, mref: Option<&ModuleRef>) -> Option<LocalTypeId> {
+    pub fn type_of(
+        &self,
+        object: &Rc<dyn AstObject>,
+        mref: Option<&ModuleRef>,
+    ) -> Option<LocalTypeId> {
         let id = self.find(object).or_else(|| {
             let mref = mref?;
             let span = object.span()?;
@@ -165,7 +175,8 @@ impl AstDatabase {
 
         let entry = self.entries.get(&id)?;
 
-        let x = entry.value().infered_type.borrow().clone()?.ok(); x
+        let x = entry.value().infered_type.borrow().clone()?.ok();
+        x
     }
 
     pub fn set_type_of(&self, id: DefId, ty: LocalTypeId) -> Option<LocalTypeId> {
@@ -215,7 +226,9 @@ impl AstDatabase {
     }
 
     pub fn contains_object(&self, object: &Rc<dyn AstObject>) -> bool {
-        self.by_pointer.get(&(Rc::as_ptr(object) as *const ())).is_some()
+        self.by_pointer
+            .get(&(Rc::as_ptr(object) as *const ()))
+            .is_some()
     }
 
     pub fn entry(&self, entry: Rc<dyn AstObject>, mref: &ModuleRef) -> Rc<dyn AstObject> {
