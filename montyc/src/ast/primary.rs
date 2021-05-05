@@ -5,10 +5,7 @@ use cranelift_codegen::ir::ExtFuncData;
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{
-    context::codegen::CodegenLowerArg, fmt::Formattable, func::DataRef, prelude::*,
-    scope::LookupOrder,
-};
+use crate::{context::codegen::CodegenLowerArg, func::DataRef, prelude::*, scope::LookupOrder};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -340,7 +337,9 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                 let mut builder = ctx.builder.borrow_mut();
 
-                let func_ref = if let Some(signature) = ctx.codegen_backend.external_functions.get(target_fid) {
+                let func_ref = if let Some(signature) =
+                    ctx.codegen_backend.external_functions.get(target_fid)
+                {
                     let sigref = ctx.builder.borrow_mut().import_signature(signature.clone());
 
                     ctx.builder.borrow_mut().import_function(ExtFuncData {
@@ -348,7 +347,6 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                         signature: sigref,
                         colocated: false,
                     })
-
                 } else {
                     cranelift_module::Module::declare_func_in_func(
                         &*ctx.codegen_backend.object_module.borrow(),

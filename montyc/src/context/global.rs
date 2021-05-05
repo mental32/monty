@@ -26,7 +26,7 @@ use crate::{
 };
 
 use super::{
-    codegen, local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef,
+    local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef,
 };
 
 fn shorten(path: &Path) -> String {
