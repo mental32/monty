@@ -147,3 +147,12 @@ static
 /docs/book/book/
 /docs/sphinx/build/
 /poetry.lock
+
+
+# Added by cargo
+
+/target
+
+cpython/
+
+*.out
