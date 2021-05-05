@@ -72,8 +72,6 @@ impl SpanInterner {
 
     #[inline]
     pub fn crosspan_eq(&self, a: SpanRef, b: SpanRef) -> bool {
-        log::trace!("span_ref:crosspan_eq {:?} == {:?}", a, b);
-
         if let Some((a_t, b_t)) = self
             .span_trace_map
             .get(&a)

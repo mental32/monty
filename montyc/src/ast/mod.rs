@@ -95,14 +95,6 @@ pub trait AstObject: fmt::Debug + TypedObject + LookupTarget + Any {
 
 impl dyn AstObject {
     pub fn downcast_ref<'a, T: Any>(&'a self) -> Option<&'a T> {
-        // log::trace!(
-        //     "ast:downcast_ref ({:?}){:?} == ({:?}){:?}",
-        //     std::any::type_name::<T>(),
-        //     TypeId::of::<T>(),
-        //     self.type_name(),
-        //     self.type_id(),
-        // );
-
         if self.type_id() == TypeId::of::<T>() {
             // SAFETY: This is the exact same logic present in
             //         `std::any::Any::downcast_ref` minus the
