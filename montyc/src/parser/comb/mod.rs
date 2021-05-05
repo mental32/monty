@@ -9,8 +9,8 @@ use crate::ast::{
 
 use super::{token::PyToken, TokenSlice};
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;
 
 pub mod assign;
 pub mod atom;
