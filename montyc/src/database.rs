@@ -138,9 +138,20 @@ impl AstDatabase {
 
     fn find(&self, entry: &Rc<dyn AstObject>) -> Option<DefId> {
         let ptr = Rc::as_ptr(entry) as *const ();
-        let entry  = self.entries.iter().find(|refm| Rc::as_ptr(refm.value()) as *const () == ptr)?;
 
-        Some(entry.key().clone())
+        let entry = if let Some(id) = self.by_pointer.get(&ptr) {
+            id.value().clone()
+        } else if let Some(entry) = self
+            .entries
+            .iter()
+            .find(|refm| Rc::as_ptr(refm.value()) as *const () == ptr)
+        {
+            entry.key().clone()
+        } else {
+            return None;
+        };
+
+        Some(entry)
     }
 
     fn find_by_span(&self, mref: &ModuleRef, span: Span) -> Option<DefId> {
