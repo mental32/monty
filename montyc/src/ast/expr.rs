@@ -453,7 +453,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                 if left_ty.is_builtin() && right_ty.is_builtin() {
                     let lvalue = left.inner.lower_with(ctx.clone());
-                    let rvalue = right.inner.lower_with(ctx);
+                    let rvalue = right.inner.lower_with(ctx.clone());
 
                     match op {
                         InfixOp::Add => match (left_ty, right_ty) {
@@ -465,7 +465,25 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                         InfixOp::Sub => match (left_ty, right_ty) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.borrow_mut().ins().isub(lvalue, rvalue)
+                                let ss = builder.borrow_mut().create_stack_slot(cranelift_codegen::ir::stackslot::StackSlotData::new(StackSlotKind::ExplicitSlot, 8));
+
+                                let v0 = builder.borrow_mut().ins().isub(lvalue, rvalue);
+                                builder.borrow_mut().ins().stack_store(v0, ss, 0);
+
+                                let underflow_trap = ctx.builder.borrow_mut().create_block();
+                                let exit_block = ctx.builder.borrow_mut().create_block();
+
+                                builder.borrow_mut().ins().br_icmp(IntCC::SignedGreaterThan, v0, lvalue, underflow_trap, &[]);
+                                builder.borrow_mut().ins().jump(exit_block, &[]);
+
+                                ctx.builder.borrow_mut().switch_to_block(underflow_trap);
+
+                                ctx.builder.borrow_mut().ins().trap(TrapCode::IntegerOverflow);
+
+                                ctx.builder.borrow_mut().switch_to_block(exit_block);
+                                let v0 = builder.borrow_mut().ins().stack_load(cranelift_codegen::ir::types::I64, ss, 0);
+
+                                v0
                             }
                             _ => unreachable!(),
                         },
