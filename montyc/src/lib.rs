@@ -1,11 +1,11 @@
+#![deny(warnings)]
 #![feature(
     variant_count,
     bool_to_option,
     drain_filter,
     assert_matches,
-    get_mut_unchecked
+    get_mut_unchecked,
 )]
-// #![deny(warnings)]
 
 use std::rc::Rc;
 

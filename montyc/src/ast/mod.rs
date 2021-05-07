@@ -30,16 +30,12 @@ pub type ObjectIter = Iter<Rc<dyn AstObject>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spanned<T>
-where
-    T: Clone,
 {
     pub span: Span,
     pub inner: T,
 }
 
 impl<T> Spanned<T>
-where
-    T: Clone,
 {
     pub fn reveal<'a>(&self, source: &'a str) -> Option<&'a str> {
         source.get(self.span.clone())
@@ -47,13 +43,10 @@ where
 }
 
 impl<T> Spanned<T>
-where
-    T: Clone,
 {
     pub fn map<U, F>(self, f: F) -> Spanned<U>
     where
         F: FnOnce(T) -> U,
-        U: Clone,
     {
         Spanned {
             span: self.span,
@@ -61,24 +54,21 @@ where
         }
     }
 
-    pub fn transparent<U>(&self, u: U) -> Spanned<U>
-    where
-        U: Clone,
+    pub fn transparent<U>(self, u: U) -> Spanned<U>
     {
         Spanned {
-            span: self.span.clone(),
+            span: self.span,
             inner: u,
         }
     }
 
-    pub fn transparent_with<U, F>(&self, f: F) -> Spanned<U>
+    pub fn transparent_with<U, F>(self, f: F) -> Spanned<U>
     where
         F: FnOnce(Spanned<T>) -> U,
-        U: Clone,
     {
         Spanned {
             span: self.span.clone(),
-            inner: f(self.clone()),
+            inner: f(Self { inner: self.inner, span: self.span }),
         }
     }
 }

@@ -179,8 +179,7 @@ pub enum PyToken {
     #[regex(r"\t| ")]
     Whitespace,
 
-    #[regex(r"\d+", |lex| str::parse::<isize>(lex.slice()).unwrap())]
-    // TODO(mental): try avoid panicking here...
+    #[regex(r"\d+", |lex| lex.slice().parse())]
     Digits(isize),
 
     // -- SpanRef tokens
