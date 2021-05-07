@@ -25,8 +25,8 @@ subset of Python; meaning that TS adds backwards incompatible syntax to JS
 where Monty disallows existing Python syntax and semantics in a backwards
 compatible manner.
 
-Monty is intended to be compiled straight to native binaries or WASM via the
-use of [cranelift] or [llvm].
+Monty is intended to be compiled to native executable binaries or WASM via the
+use of [cranelift] (and maybe [llvm] if support for that ever lands.)
 
 ## Concepts under development
 
