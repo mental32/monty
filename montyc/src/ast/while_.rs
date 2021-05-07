@@ -46,8 +46,10 @@ impl TypedObject for While {
             let mut ctx = ctx.clone();
             ctx.this = Some(self.test.clone());
 
-            if self.test.infer_type(&ctx)? != TypeMap::BOOL {
-                todo!("boolean in if");
+            let test_ty = self.test.infer_type(&ctx)?;
+
+            if !ctx.global_context.type_map.type_eq(test_ty, TypeMap::BOOL) {
+                todo!("{:?}", (test_ty, TypeMap::BOOL));
             }
         }
 

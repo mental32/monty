@@ -7,6 +7,7 @@ use std::{
     rc::Rc,
 };
 
+use cranelift_codegen::ir::condcodes::IntCC;
 use dashmap::DashMap;
 
 use crate::{
@@ -145,6 +146,15 @@ impl From<CompilerOptions> for GlobalContext {
             .add_coercion_rule(TypeMap::STRING, c_char_p, |_ctx, value| {
                 value
             });
+
+        ctx.type_map.add_coercion_rule(TypeMap::BOOL, TypeMap::INTEGER, |ctx, value| {
+            ctx.builder.borrow_mut().ins().bint(ctx.codegen_backend.types[&TypeMap::BOOL], value)
+        });
+
+        ctx.type_map.add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |ctx, value| {
+            ctx.builder.borrow_mut().ins().icmp_imm(IntCC::Equal, value, 1)
+        });
+
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.

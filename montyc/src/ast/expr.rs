@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
+use cranelift_codegen::ir::{StackSlotData, StackSlotKind, TrapCode, condcodes::IntCC};
 
 use crate::{
     context::codegen::{CodegenContext, CodegenLowerArg},
@@ -257,7 +257,7 @@ impl TypedObject for Expr {
             Expr::If { test, body, orelse } => {
                 let test_type = ctx.with(Rc::clone(&test), |ctx, test| test.infer_type(&ctx))?;
 
-                if test_type != TypeMap::BOOL {
+                if !ctx.global_context.type_map.type_eq(test_type, TypeMap::BOOL) {
                     ctx.exit_with_error(MontyError::BadConditionalType {
                         actual: test_type,
                         span: test.span.clone(),
@@ -270,7 +270,7 @@ impl TypedObject for Expr {
                 let adjacent_branch_type =
                     ctx.with(Rc::clone(&orelse), |ctx, orelse| orelse.infer_type(&ctx))?;
 
-                if immediate_body_type != adjacent_branch_type {
+                if !ctx.global_context.type_map.type_eq(immediate_body_type, adjacent_branch_type) {
                     ctx.exit_with_error(MontyError::IncompatibleTypes {
                         left_span: body.span.clone(),
                         right_span: orelse.span.clone(),
