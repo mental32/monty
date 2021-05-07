@@ -2,23 +2,11 @@ use std::{cell::RefCell, marker::PhantomData, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::{
-        atom::Atom, expr::Expr, funcdef::FunctionDef, primary::Primary, retrn::Return,
-        stmt::Statement,
-    },
-    database::DefId,
-    prelude::*,
-    scope::ScopeRoot,
-    typing::TaggedType,
-};
+use crate::{ast::{atom::{Atom, StringRef}, expr::Expr, funcdef::FunctionDef, primary::Primary, retrn::Return, stmt::Statement}, database::DefId, prelude::*, scope::ScopeRoot, typing::TaggedType};
 
 #[derive(Debug)]
 pub enum DataRef {
-    StringConstant {
-        span_entry: NonZeroUsize,
-        module_ref: ModuleRef,
-    },
+    StringConstant(StringRef),
 
     FunctionRef {
         span_entry: NonZeroUsize,

@@ -1,8 +1,8 @@
-use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize, rc::Rc};
+use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize};
 
 use dashmap::DashMap;
 
-use crate::{ast::AstObject, context::{codegen::CodegenLowerArg, LocalContext, ModuleRef}, prelude::SpanRef};
+use crate::{context::{codegen::CodegenLowerArg, LocalContext, ModuleRef}, prelude::SpanRef};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -163,7 +163,7 @@ pub trait TypedObject {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()>;
 }
 
-pub type CoercionRule = for<'a, 'b> fn(CodegenLowerArg<'a, 'b>, Rc<dyn AstObject>) -> cranelift_codegen::ir::Value;
+pub type CoercionRule = for<'a, 'b> fn(CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value) -> cranelift_codegen::ir::Value;
 
 pub struct TypeMap {
     last_id: Cell<usize>,
@@ -244,10 +244,8 @@ impl TypeMap {
     }
 
     #[inline]
-    pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId, ctx: CodegenLowerArg<'a, 'b>, value: Rc<dyn AstObject>) -> Option<cranelift_codegen::ir::Value> {
-        let rule = self.coercion_rules.get(&(from, to))?;
-
-        Some((rule.value())(ctx, value))
+    pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId) -> Option<CoercionRule> {
+        self.coercion_rules.get(&(from, to)).map(|rule| rule.value().clone())
     }
 
     #[inline]

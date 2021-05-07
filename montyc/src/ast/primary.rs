@@ -334,15 +334,17 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                                 .type_of(&(Rc::clone(arg) as Rc<dyn AstObject>), Some(&mref))
                                 .unwrap();
 
-                            if arg_t == *param_t {
-                                arg.inner.lower_with(ctx.clone())
-                            } else {
-                                ctx.codegen_backend
+                            let mut value = arg.inner.lower_with(ctx.clone());
+
+                            if arg_t != *param_t {
+                                value = ctx.codegen_backend
                                     .global_context
                                     .type_map
-                                    .coerce(arg_t, *param_t, ctx.clone(), Rc::clone(&arg) as Rc<_>)
-                                    .unwrap()
+                                    .coerce(arg_t, *param_t)
+                                    .unwrap()(ctx.clone(), value)
                             }
+
+                            value
                         })
                         .collect(),
 

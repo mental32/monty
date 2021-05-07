@@ -2,7 +2,6 @@
 
 use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, path::Path, rc::Rc};
 
-use crate::{ast::retrn::Return, fmt::Formattable, layout::Block, prelude::*};
 use crate::{
     ast::{
         atom::Atom,
@@ -16,8 +15,17 @@ use crate::{
     scope::LookupTarget,
     typing::{LocalTypeId, TypeMap},
 };
+use crate::{
+    ast::{atom::StringRef, retrn::Return},
+    fmt::Formattable,
+    layout::Block,
+    prelude::*,
+};
 
-use codegen::{ir::{ExtFuncData, FuncRef}, isa::CallConv};
+use codegen::{
+    ir::{ExtFuncData, FuncRef},
+    isa::CallConv,
+};
 use cranelift_codegen::{
     self as codegen,
     ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind},
@@ -25,7 +33,7 @@ use cranelift_codegen::{
     verify_function, Context,
 };
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{FuncId, Linkage, Module};
+use cranelift_module::{DataContext, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use dashmap::DashMap;
 
@@ -49,6 +57,7 @@ where
 }
 
 pub struct CodegenBackend<'a> {
+    pub(crate) strings: HashMap<StringRef, DataId>,
     pub(crate) global_context: &'a GlobalContext,
     pub(crate) object_module: RefCell<ObjectModule>,
     pub(crate) flags: settings::Flags,
@@ -129,7 +138,7 @@ impl<'global> CodegenBackend<'global> {
     }
 
     #[allow(warnings)]
-    fn build_function(&self, fid: FuncId, func: &Function, cl_func: &mut codegen::ir::Function) {
+    fn build_function(&mut self, fid: FuncId, func: &Function, cl_func: &mut codegen::ir::Function) {
         use cranelift_codegen::ir::InstBuilder;
 
         log::trace!(
@@ -140,6 +149,36 @@ impl<'global> CodegenBackend<'global> {
                 inner: &func.kind.inner
             }
         );
+
+
+        for dref in func.refs.borrow().iter() {
+            if let DataRef::StringConstant(st_ref) = dref {
+                if !self.strings.contains_key(st_ref) {
+                    let data_id = self.object_module.borrow_mut().declare_data(
+                        &format!("str.{}", st_ref.0),
+                        Linkage::Export,
+                        false,
+                        false,
+                    ).unwrap();
+
+                    {
+                        let mut dctx = DataContext::new();
+                        let string = st_ref.resolve_as_string(&self.global_context).unwrap();
+                        let string = std::ffi::CString::new(string).unwrap();
+                        let string = string.into_bytes_with_nul();
+                        let string = string.into_boxed_slice();
+
+                        dctx.define(string);
+
+                        self.object_module.borrow_mut().define_data(data_id, &mut dctx);
+                    }
+
+                    self.strings.insert(st_ref.clone(), data_id);
+
+                    self.object_module.borrow_mut().declare_data_in_func(data_id, cl_func);
+                }
+            }
+        }
 
 
         let func_def = func
@@ -287,7 +326,8 @@ impl<'global> CodegenBackend<'global> {
         let (fid, mut cl_func) = self.declare_function(func, mref, linkage, callcov).unwrap();
 
         if func.is_externaly_defined(self.global_context, None) {
-            self.external_functions.insert(fid, cl_func.signature.clone());
+            self.external_functions
+                .insert(fid, cl_func.signature.clone());
             return;
         }
 
@@ -302,7 +342,7 @@ impl<'global> CodegenBackend<'global> {
         let mut ss = codegen::binemit::NullStackMapSink {};
 
         self.object_module
-        .borrow_mut()
+            .borrow_mut()
             .define_function(fid, &mut ctx, &mut ts, &mut ss)
             .unwrap();
     }
@@ -360,9 +400,10 @@ impl<'global> CodegenBackend<'global> {
             object_module: RefCell::new(object_module),
             types,
             flags,
-            names: HashMap::default(),
+            names: HashMap::new(),
             pending: vec![],
-            external_functions: HashMap::default(),
+            external_functions: HashMap::new(),
+            strings: HashMap::new(),
         }
     }
 

@@ -1,15 +1,17 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
+    convert::TryInto,
     num::NonZeroUsize,
     path::{Path, PathBuf},
     rc::Rc,
 };
 
+use dashmap::DashMap;
+
 use crate::{
     ast::{
-        atom::Atom,
-        // class::ClassDef,
+        atom::{Atom, StringRef},
         import::{Import, ImportDecl},
         module::Module,
         primary::Primary,
@@ -40,6 +42,30 @@ fn shorten(path: &Path) -> String {
     c.join("/")
 }
 
+#[derive(Debug)]
+pub struct StringData {
+    st_ref: StringRef,
+    pub mref: ModuleRef,
+    resolver: Rc<InternalResolver>,
+}
+
+impl ToString for StringData {
+    fn to_string(&self) -> String {
+        let span = self
+            .resolver
+            .span_ref
+            .borrow()
+            .get(self.st_ref.into())
+            .unwrap();
+
+        self.resolver
+            .sources
+            .get(&self.mref)
+            .and_then(|st| st.get(span).map(|st| st.to_string()))
+            .unwrap()
+    }
+}
+
 /// Used to track global compilation state per-compilation.
 #[derive(Debug)]
 pub struct GlobalContext {
@@ -52,6 +78,7 @@ pub struct GlobalContext {
     pub resolver: Rc<InternalResolver>,
     pub database: AstDatabase,
     pub phantom_objects: Vec<Rc<PhantomObject>>,
+    pub strings: DashMap<StringRef, StringData>,
 }
 
 const MAGICAL_NAMES: &str = include_str!("../magical_names.py");
@@ -115,49 +142,8 @@ impl From<CompilerOptions> for GlobalContext {
             });
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::STRING, c_char_p, |ctx, value| {
-                use cranelift_module::Module;
-
-                let data_id = ctx
-                    .codegen_backend
-                    .object_module
-                    .borrow_mut()
-                    .declare_data("string", cranelift_module::Linkage::Export, false, false)
-                    .unwrap();
-
-                let mut dctx = cranelift_module::DataContext::new();
-                let st = ctx
-                    .codegen_backend
-                    .global_context
-                    .get_string_literal(value, ctx.func.scope.module_ref());
-
-                let st = std::ffi::CString::new(st.as_str()).unwrap();
-                let st = st.into_bytes_with_nul();
-                let st = st.into_boxed_slice();
-
-                dctx.define(st);
-
-                let _ = ctx
-                    .codegen_backend
-                    .object_module
-                    .borrow_mut()
-                    .define_data(data_id, &dctx)
-                    .unwrap();
-
-                let gv = ctx
-                    .codegen_backend
-                    .object_module
-                    .borrow_mut()
-                    .declare_data_in_func(data_id, &mut ctx.builder.borrow_mut().func);
-
-                let ptr = ctx
-                    .builder
-                    .borrow_mut()
-                    .ins()
-                    .global_value(cranelift_codegen::ir::types::I64, gv);
-
-                // ctx.builder.borrow_mut().ins().bitcast(cranelift_codegen::ir::types::R64, ptr)
-                ptr
+            .add_coercion_rule(TypeMap::STRING, c_char_p, |_ctx, value| {
+                value
             });
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
@@ -209,25 +195,24 @@ impl From<CompilerOptions> for GlobalContext {
                     let mut klass: Class =
                         item.with_context(ctx, |local, _| (&local, class_def).into());
 
+                    macro_rules! const_prop {
+                        ($prop:ident($reciever:expr) := ($($arg:expr),* $(,)?) -> $ret:expr) => ({
+                            let span_ref = ctx.span_ref.borrow();
+                            let $prop = span_ref.find(stringify!($prop), MAGICAL_NAMES).unwrap();
 
-                        macro_rules! const_prop {
-                            ($prop:ident($reciever:expr) := ($($arg:expr),* $(,)?) -> $ret:expr) => ({
-                                let span_ref = ctx.span_ref.borrow();
-                                let $prop = span_ref.find(stringify!($prop), MAGICAL_NAMES).unwrap();
+                            let type_map = &ctx.type_map;
 
-                                let type_map = &ctx.type_map;
+                            let func = FunctionType {
+                                reciever: Some($reciever),
+                                name: $prop.clone(),
+                                ret: $ret,
+                                args: vec![$($arg,)*],
+                                module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
+                            };
 
-                                let func = FunctionType {
-                                    reciever: Some($reciever),
-                                    name: $prop.clone(),
-                                    ret: $ret,
-                                    args: vec![$($arg,)*],
-                                    module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
-                                };
-
-                                klass.properties.insert($prop, type_map.insert(TypeDescriptor::Function(func)));
-                            });
-                        }
+                            klass.properties.insert($prop, type_map.insert(TypeDescriptor::Function(func)));
+                        });
+                    }
 
                     match type_id {
                         TypeMap::INTEGER => {
@@ -309,11 +294,27 @@ impl Default for GlobalContext {
             libstd: PathBuf::default(),
             resolver,
             database: Default::default(),
+            strings: DashMap::new(),
         }
     }
 }
 
 impl GlobalContext {
+    pub fn register_string_literal(&self, atom: &Spanned<Atom>, mref: ModuleRef) -> StringRef {
+        let st_ref: StringRef = atom.inner.clone().try_into().unwrap();
+
+        let _ = self.strings.insert(
+            st_ref,
+            StringData {
+                st_ref,
+                mref,
+                resolver: Rc::clone(&self.resolver),
+            },
+        );
+
+        st_ref
+    }
+
     pub fn is_builtin(&self, t: &dyn AstObject) -> Option<LocalTypeId> {
         log::trace!(
             "global_context:is_builtin: checking if object is a builtin ({:?})",
@@ -324,7 +325,7 @@ impl GlobalContext {
 
         for (type_id, (object, _)) in self.builtins.iter() {
             if self.span_ref.borrow().crosspan_eq(object.name, t_name) {
-                return Some(type_id.clone())
+                return Some(type_id.clone());
             }
         }
 
@@ -396,9 +397,7 @@ impl GlobalContext {
 
                 self.phantom_objects
                     .iter()
-                    .find(|obj| {
-                        self.span_ref.borrow().crosspan_eq(obj.name, item)
-                    })
+                    .find(|obj| self.span_ref.borrow().crosspan_eq(obj.name, item))
                     .map(|obj| Rc::clone(&obj) as Rc<_>)
             }
 

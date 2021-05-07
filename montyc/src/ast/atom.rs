@@ -1,8 +1,54 @@
-use std::rc::Rc;
+use std::{convert::TryFrom, rc::Rc};
 
-use crate::{context::codegen::CodegenLowerArg, prelude::*, scope::LookupOrder};
+use cranelift_codegen::ir::{ExternalName, GlobalValueData};
+
+use crate::{context::{codegen::CodegenLowerArg}, prelude::*, scope::LookupOrder};
 
 use super::{assign::Assign, stmt::Statement, AstObject};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StringRef(pub(crate) SpanRef);
+
+impl StringRef {
+    pub fn resolve_as_string(&self, global_context: &GlobalContext) -> Option<String> {
+        let string_data = global_context.strings.get(self)?;
+
+        let mref = string_data.value().mref.clone();
+        let span = global_context.span_ref.borrow().get(self.0)?;
+
+        let refm = global_context
+            .resolver
+            .sources
+            .get(&mref)
+            .unwrap();
+
+        let st = refm.value().get(span)?;
+
+        let st = match st {
+            "\"\"" => "",
+            st => &st[1..(st.len() - 1)],
+        };
+
+        Some(st.to_string())
+    }
+}
+
+impl TryFrom<Atom> for StringRef {
+    type Error = Atom;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Str(n) => Ok(Self(n)),
+            _ => Err(value),
+        }
+    }
+}
+
+impl From<StringRef> for SpanRef {
+    fn from(st: StringRef) -> Self {
+        st.0
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Atom {
@@ -108,10 +154,27 @@ impl TypedObject for Atom {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         log::trace!("typecheck: {:?}", self);
 
-        if let Self::Name(_target) = self {
-            let _ = self.infer_type(ctx)?;
-        } else {
-            log::trace!("Skipping typecheck: {:?}", self);
+        match self {
+            Self::Name(_) => {
+                self.infer_type(ctx)?;
+            }
+
+            Self::Str(_) => {
+                let st_ref = ctx.global_context.register_string_literal(
+                    &Spanned {
+                        span: ctx.this.clone().unwrap().span().unwrap(),
+                        inner: self.clone(),
+                    },
+                    ctx.module_ref.clone(),
+                );
+
+                match ctx.scope.root() {
+                    ScopeRoot::Func(f) => f.refs.borrow_mut().push(DataRef::StringConstant(st_ref)),
+                    ScopeRoot::AstObject(_) | ScopeRoot::Class(_) => unimplemented!(),
+                }
+            }
+
+            _ => log::warn!("typecheck:atom Skipping check for self={:?}", self),
         }
 
         Ok(())
@@ -145,7 +208,33 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                 cranelift_codegen::ir::types::I64,
                 cranelift_codegen::ir::immediates::Imm64::new(*n as i64),
             ),
-            Atom::Str(_) => todo!(),
+            Atom::Str(n) => {
+                let gv = ctx
+                    .codegen_backend
+                    .strings
+                    .get(&StringRef(*n))
+                    .and_then(|data| {
+                        ctx.builder
+                            .borrow()
+                            .func
+                            .global_values
+                            .iter()
+                            .find_map(|(gv, gvd)| match gvd {
+                                GlobalValueData::Symbol {
+                                    name: ExternalName::User { index, .. },
+                                    ..
+                                } if *index == data.as_u32() => Some(gv),
+                                _ => None,
+                            })
+                    })
+                    .unwrap();
+
+                ctx.builder
+                    .borrow_mut()
+                    .ins()
+                    .global_value(cranelift_codegen::ir::types::I64, gv)
+            }
+
             Atom::Bool(b) => ctx
                 .builder
                 .borrow_mut()

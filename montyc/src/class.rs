@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::{collections::HashMap};
 
 use crate::{ast::class::ClassDef, context::LocalContext, prelude::SpanRef, scope::LocalScope, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypedObject}};
 
