@@ -2,7 +2,20 @@ use std::{cell::RefCell, marker::PhantomData, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{ast::{atom::{Atom, StringRef}, expr::Expr, funcdef::FunctionDef, primary::Primary, retrn::Return, stmt::Statement}, database::DefId, prelude::*, scope::ScopeRoot, typing::TaggedType};
+use crate::{
+    ast::{
+        atom::{Atom, StringRef},
+        expr::Expr,
+        funcdef::FunctionDef,
+        primary::Primary,
+        retrn::Return,
+        stmt::Statement,
+    },
+    database::DefId,
+    prelude::*,
+    scope::ScopeRoot,
+    typing::TaggedType,
+};
 
 #[derive(Debug)]
 pub enum DataRef {
@@ -26,6 +39,35 @@ pub struct Function {
 impl Function {
     pub fn def(&self, gctx: &GlobalContext) -> Option<Rc<dyn AstObject>> {
         gctx.database.as_weak_object(self.def)
+    }
+
+    pub fn args(&self, gctx: &GlobalContext) -> impl Iterator<Item = (SpanRef, LocalTypeId)> {
+        if let Some(FunctionDef { args, .. }) =
+            self.def(gctx).unwrap().unspanned().as_ref().as_function()
+        {
+            let args = match args {
+                Some(args) => {
+                    let typed: Vec<_> = args
+                        .iter()
+                        .map(|(n, ann)| {
+                            (
+                                *n,
+                                gctx.database
+                                    .type_of(&(Rc::clone(ann) as Rc<_>), None)
+                                    .unwrap(),
+                            )
+                        })
+                        .collect();
+                    typed
+                }
+
+                None => vec![],
+            };
+
+            args.into_iter()
+        } else {
+            unreachable!("not a function");
+        }
     }
 
     pub fn name(&self, gctx: &GlobalContext) -> SpanRef {

@@ -2,7 +2,7 @@ use std::{convert::TryFrom, rc::Rc};
 
 use cranelift_codegen::ir::{ExternalName, GlobalValueData};
 
-use crate::{context::{codegen::CodegenLowerArg}, prelude::*, scope::LookupOrder};
+use crate::{context::codegen::CodegenLowerArg, prelude::*, scope::LookupOrder};
 
 use super::{assign::Assign, stmt::Statement, AstObject};
 
@@ -16,11 +16,7 @@ impl StringRef {
         let mref = string_data.value().mref.clone();
         let span = global_context.span_ref.borrow().get(self.0)?;
 
-        let refm = global_context
-            .resolver
-            .sources
-            .get(&mref)
-            .unwrap();
+        let refm = global_context.resolver.sources.get(&mref).unwrap();
 
         let st = refm.value().get(span)?;
 

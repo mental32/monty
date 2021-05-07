@@ -1,4 +1,6 @@
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
+
+use cranelift_codegen::ir::TrapCode;
 
 use super::{
     assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain,
@@ -168,7 +170,7 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
             }
 
             Statement::Asn(asn) => {
-                let ss = ctx.vars.get(&asn.name.name().expect("atom name")).expect("unset var").value().clone();
+                let ss = ctx.vars.get(&asn.name.name().expect("atom name")).expect("unset var").clone();
                 let mref = ctx.func.scope.module_ref();
 
                 let value = if let Some(ann) = &asn.kind {
@@ -209,6 +211,10 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                     })
                     .collect();
 
+                let mut implicit_return = Some(true);
+
+                let mut block_escapes = (0..branch_blocks.len()).collect::<HashSet<_>>();
+
                 for (branch_blocks_idx, ifstmt) in ifstmt.branches.iter().enumerate() {
                     let (head_block, body_block, local_escape_block) =
                         branch_blocks[branch_blocks_idx];
@@ -226,34 +232,54 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
                         ctx.builder.borrow_mut().switch_to_block(body_block);
 
                         for part in ifstmt.inner.body.iter() {
-                            part.inner.lower_with(ctx.clone());
+                            if let Some(false) = part.inner.lower_with(ctx.clone()) {
+                                implicit_return.replace(false);
+                                block_escapes.remove(&branch_blocks_idx);
+                            }
                         }
 
                         if !ctx.builder.borrow().is_filled() {
-                            ctx.builder.borrow_mut().ins().jump(local_escape_block, &[]);
+                            ctx.builder.borrow_mut().ins().jump(global_escape_block, &[]);
                         }
                     }
 
                     ctx.builder.borrow_mut().switch_to_block(local_escape_block);
                 }
 
+
+                let mut orelse_escapes = true;
+                let orelse = ctx.builder.borrow_mut().create_block();
+
+
                 ctx.builder
                     .borrow_mut()
                     .ins()
-                    .jump(global_escape_block, &[]);
+                    .jump(orelse, &[]);
 
-                let orelse = ctx.builder.borrow_mut().create_block();
                 ctx.builder.borrow_mut().switch_to_block(orelse);
 
                 if let Some(orelse) = &ifstmt.orelse {
                     for stmt in orelse {
-                        stmt.inner.lower_with(ctx.clone());
+                        if let Some(false) = stmt.inner.lower_with(ctx.clone()) {
+                            implicit_return.replace(false);
+                            orelse_escapes = false;
+                        }
                     }
+                }
+
+                if !ctx.builder.borrow().is_filled() {
+                    ctx.builder.borrow_mut().ins().jump(global_escape_block, &[]);
                 }
 
                 ctx.builder
                     .borrow_mut()
                     .switch_to_block(global_escape_block);
+
+                if block_escapes.is_empty() && !orelse_escapes {
+                    ctx.builder.borrow_mut().ins().trap(TrapCode::UnreachableCodeReached);
+                }
+
+                return implicit_return;
             }
 
             Statement::While(w) => {

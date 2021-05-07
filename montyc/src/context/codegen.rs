@@ -52,7 +52,7 @@ where
 {
     pub codegen_backend: &'b CodegenBackend<'a>,
     pub builder: Rc<RefCell<FunctionBuilder<'a>>>,
-    pub vars: &'a DashMap<NonZeroUsize, StackSlot>,
+    pub vars: &'a HashMap<NonZeroUsize, StackSlot>,
     pub func: &'b Function,
 }
 
@@ -223,7 +223,7 @@ impl<'global> CodegenBackend<'global> {
         let mut builder_ctx = FunctionBuilderContext::new();
         let mut builder = FunctionBuilder::new(cl_func, &mut builder_ctx);
 
-        let mut vars = dashmap::DashMap::new();
+        let mut vars = HashMap::new();
 
         for var in func.vars.iter() {
             let (var, ty) = (var.key().clone(), (var.0));
@@ -233,7 +233,9 @@ impl<'global> CodegenBackend<'global> {
             let data = StackSlotData::new(StackSlotKind::ExplicitSlot, size as u32);
             let ss = builder.create_stack_slot(data);
 
-            vars.insert(var, ss);
+            if let Some(n) = vars.insert(var, ss) {
+                unreachable!("duplicate var ss: {:?}", (var, n))
+            }
         }
 
         let mut implicit_return = true;
@@ -248,14 +250,10 @@ impl<'global> CodegenBackend<'global> {
 
                 let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
-                for ((n, ty), value) in func
-                    .vars
-                    .iter()
-                    .map(|r| (r.key().clone(), r.value().0))
-                    .zip(params.into_iter())
+                for ((name, kind), value) in func.args(&self.global_context).zip(params.iter())
                 {
-                    let ss = vars.get(&n).unwrap().value().clone();
-                    builder.ins().stack_store(value, ss, 0);
+                    let ss = vars.get(&name).unwrap().clone();
+                    builder.ins().stack_store(*value, ss, 0);
                 }
             }
 
