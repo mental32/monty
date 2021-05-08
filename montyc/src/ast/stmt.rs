@@ -159,7 +159,15 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, Option<bool>> for Statement {
 
             Statement::Ret(r) => {
                 if let Some(e) = &r.value {
-                    let value = e.inner.lower_with(ctx.clone());
+                    let mut value = e.inner.lower_with(ctx.clone());
+
+                    let mref = ctx.func.scope.module_ref();
+
+                    let v_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(e) as Rc<_>), Some(&mref)).unwrap();
+
+                    if v_ty != ctx.func.kind.inner.ret {
+                        value = ctx.codegen_backend.global_context.type_map.coerce(v_ty, ctx.func.kind.inner.ret).unwrap()(ctx.clone(), value);
+                    }
 
                     ctx.builder.borrow_mut().ins().return_(&[value]);
                 } else {
