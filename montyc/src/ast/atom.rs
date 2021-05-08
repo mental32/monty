@@ -241,7 +241,8 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
             Atom::Comment(_) => unreachable!(),
             Atom::Name(n) => {
                 let ss = ctx.vars.get(&n).unwrap();
-                let ty = ctx.func.vars.get(n).map(|r| r.value().0).unwrap();
+                let (ty, _) = ctx.func.vars.get(n).map(|r| r.value().clone()).unwrap();
+
 
                 let ty = ctx.codegen_backend.types[&ty];
 

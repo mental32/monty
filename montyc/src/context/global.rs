@@ -132,9 +132,6 @@ impl From<CompilerOptions> for GlobalContext {
         use cranelift_codegen::ir::InstBuilder;
 
         ctx.type_map
-            .add_coercion_rule(c_char_p, TypeMap::NONE_TYPE, |_ctx, _value| todo!());
-
-        ctx.type_map
             .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |ctx, _value| {
                 ctx.builder
                     .borrow_mut()
@@ -143,17 +140,23 @@ impl From<CompilerOptions> for GlobalContext {
             });
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::STRING, c_char_p, |_ctx, value| {
-                value
+            .add_coercion_rule(TypeMap::STRING, c_char_p, |_ctx, value| value);
+
+        ctx.type_map
+            .add_coercion_rule(TypeMap::BOOL, TypeMap::INTEGER, |ctx, value| {
+                ctx.builder
+                    .borrow_mut()
+                    .ins()
+                    .bint(ctx.codegen_backend.types[&TypeMap::BOOL], value)
             });
 
-        ctx.type_map.add_coercion_rule(TypeMap::BOOL, TypeMap::INTEGER, |ctx, value| {
-            ctx.builder.borrow_mut().ins().bint(ctx.codegen_backend.types[&TypeMap::BOOL], value)
-        });
-
-        ctx.type_map.add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |ctx, value| {
-            ctx.builder.borrow_mut().ins().icmp_imm(IntCC::Equal, value, 1)
-        });
+        ctx.type_map
+            .add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |ctx, value| {
+                ctx.builder
+                    .borrow_mut()
+                    .ins()
+                    .icmp_imm(IntCC::Equal, value, 1)
+            });
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.
@@ -207,7 +210,7 @@ impl From<CompilerOptions> for GlobalContext {
                     macro_rules! const_prop {
                         ($prop:ident($reciever:expr) := ($($arg:expr),* $(,)?) -> $ret:expr) => ({
                             let span_ref = ctx.span_ref.borrow();
-                            let $prop = span_ref.find(stringify!($prop), MAGICAL_NAMES).unwrap();
+                            let $prop = span_ref.find(stringify!($prop)).unwrap();
 
                             let type_map = &ctx.type_map;
 
@@ -433,29 +436,7 @@ impl GlobalContext {
     }
 
     pub fn magical_name_of(&self, st: impl AsRef<str>) -> Option<NonZeroUsize> {
-        let name_ref = ModuleRef(PathBuf::from(format!("__monty:magical_names")));
-        let module = self.resolver.sources.get(&name_ref).unwrap();
-
-        self.span_ref.borrow().find(st.as_ref(), &module)
-    }
-
-    pub fn name_eq(
-        &self,
-        lhs: (NonZeroUsize, &ModuleRef),
-        rhs: (NonZeroUsize, &ModuleRef),
-    ) -> bool {
-        if lhs.1 == rhs.1 && lhs.0 == rhs.0 {
-            return true;
-        }
-
-        self.resolver
-            .resolve(lhs.1.clone(), lhs.0)
-            .and_then(|left| {
-                self.resolver
-                    .resolve(rhs.1.clone(), rhs.0)
-                    .map(|right| left == right)
-            })
-            .unwrap_or(false)
+        self.span_ref.borrow().find(st)
     }
 
     fn load_module_literal(&mut self, source: &str, path: &str, f: impl Fn(&mut Self, ModuleRef)) {

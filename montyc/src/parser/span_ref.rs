@@ -105,15 +105,14 @@ impl SpanInterner {
     }
 
     #[inline]
-    pub fn find(&self, needle: &str, haystack: &str) -> Option<SpanRef> {
-        let it = (1..self.ptr).zip(self.seq[1..].iter().cloned());
+    pub fn find(&self, st: impl AsRef<str>) -> Option<SpanRef> {
+        let st = st.as_ref();
+        let hash = {
+            let mut s = DefaultHasher::new();
+            st.hash(&mut s);
+            s.finish()
+        };
 
-        for (idx, range) in it {
-            if haystack.get(range).map(|st| st == needle).unwrap_or(false) {
-                return NonZeroUsize::new(idx + 1);
-            }
-        }
-
-        None
+        self.clobber_map.get(&hash).map(|(gv, _)| *gv)
     }
 }
