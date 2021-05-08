@@ -8,7 +8,7 @@ use super::{atom::Atom, expr::Expr, AstObject, ObjectIter, Spanned};
 pub struct Assign {
     pub name: Spanned<Atom>,
     pub value: Rc<Spanned<Expr>>,
-    pub kind: Option<Rc<Spanned<Atom>>>,
+    pub kind: Option<Rc<Spanned<Expr>>>,
 }
 
 impl Parseable for Assign {
@@ -44,6 +44,8 @@ impl TypedObject for Assign {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+        log::trace!("typecheck:assign {:?}", self);
+
         let expected = match self.kind.as_ref() {
             Some(at) => {
                 let mut ctx = ctx.clone();

@@ -4,9 +4,7 @@ use nom::{branch::alt, error, multi::many0, sequence::terminated, IResult};
 
 use crate::{ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned}, parser::{token::PyToken, TokenSlice}, prelude::SpanRef};
 
-use super::{
-    class::decorator_list, expect, expect_, expect_ident, expect_many_n, primary, stmt::statement,
-};
+use super::{class::decorator_list, expect, expect_, expect_ident, expect_many_n, expr::expression, primary, stmt::statement};
 
 #[inline]
 fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {
@@ -98,14 +96,9 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
 
     let (stream, returns) = if let Ok((stream, _)) = arrow {
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-        let (stream, ret) = expect_ident(stream)?;
+        let (stream, ret) = expression(stream)?;
 
-        let ret = ret
-            .map(|t| match t {
-                PyToken::Ident(n) => Atom::Name(n),
-                _ => unreachable!(),
-            })
-            .transparent_with(|atom| Primary::Atomic(Rc::new(atom)));
+        let ret = Rc::new(ret);
 
         (stream, Some(ret))
     } else {

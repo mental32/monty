@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{func::Function, prelude::*};
 
-use super::{atom::Atom, primary::Primary, AstObject, Spanned};
+use super::{AstObject, Spanned, atom::Atom, expr::Expr, primary::Primary};
 
 #[derive(Debug, Clone)]
 pub struct TypedFuncArg {
@@ -51,7 +51,7 @@ pub struct FunctionDef {
     pub args: Option<Vec<(SpanRef, Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
     pub decorator_list: Vec<Rc<Spanned<Primary>>>,
-    pub returns: Option<Spanned<Primary>>,
+    pub returns: Option<Rc<Spanned<Expr>>>,
     // type_comment: Option<Rc<Expr>>,
 }
 
