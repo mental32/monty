@@ -8,7 +8,13 @@ use std::{
 
 use dashmap::DashMap;
 
-use crate::{ast::AstObject, context::{LocalContext, ModuleContext, ModuleRef}, prelude::{Span, SpanRef}, scope::LookupTarget, typing::{LocalTypeId, TypeMap, TypedObject}};
+use crate::{
+    ast::AstObject,
+    context::{LocalContext, ModuleContext, ModuleRef},
+    prelude::{Span, SpanRef},
+    scope::LookupTarget,
+    typing::{LocalTypeId, TypeMap, TypedObject},
+};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct DefId(usize);
@@ -278,11 +284,13 @@ impl AstDatabase {
     }
 
     pub fn query(&self) -> QueryIter<'_> {
+        let mut results = Vec::with_capacity(self.entries.len());
+
+        results.extend(self.entries.iter().map(|refm| refm.key().clone()));
+
         QueryIter {
             database: self,
-            module: None,
-            span: None,
-            filters: vec![],
+            results,
         }
     }
 }
@@ -304,70 +312,63 @@ impl<'a> Iterator for LazyDefEntries<'a> {
     }
 }
 
-// #[derive(Debug)]
+#[derive(Debug)]
 pub struct QueryIter<'a> {
     database: &'a AstDatabase,
-    module: Option<ModuleRef>,
-    span: Option<Span>,
-    filters: Vec<Box<dyn Fn(&dyn AstObject) -> bool>>,
+    results: Vec<DefId>,
 }
 
 impl<'a> QueryIter<'a> {
     pub fn module(mut self, mref: ModuleRef) -> Self {
-        self.module.replace(mref);
+        if let Some(refm) = self.database.by_module.get(&mref) {
+            let (_, module) = refm.value();
+            let _ = self.results.drain_filter(|id| module.contains(id));
+        }
+
         self
     }
 
     pub fn span(mut self, span: Span) -> Self {
-        self.span.replace(span);
-        self
-    }
-
-    pub fn filter(mut self, f: impl Fn(&dyn AstObject) -> bool + 'static) -> Self {
-        self.filters.push(Box::new(f));
-        self
-    }
-
-    pub fn finish(self) -> impl Iterator<Item = Rc<dyn AstObject>> + 'a {
         let Self {
             database,
-            module,
-            span,
-            filters,
+            mut results,
         } = self;
 
-        let mut defs = if let Some(mref) = module {
-            if let Some(span) = span {
-                let entry = database.by_span.get(&(mref, span));
-                entry.as_ref().unwrap().value().clone()
-            } else {
-                let entry = database.by_module.get(&mref);
-                let (_, defs) = entry.as_ref().unwrap().value();
-                defs.clone()
-            }
-        } else {
-            self.database
+        let _ = results.drain_filter(|id| {
+            database
                 .entries
-                .iter()
-                .filter(|r| {
-                    span.clone()
-                        .map(|span| r.value().span == span)
-                        .unwrap_or(true)
-                })
-                .map(|r| r.key().clone())
-                .collect::<Vec<_>>()
-        };
-
-        let _ = defs.drain_filter(|def_id| match database.entries.get(def_id) {
-            None => true,
-            Some(def_entry) => match def_entry.value().object.upgrade() {
-                Some(object) => !filters.iter().all(move |f| (f)(object.as_ref())),
-                None => false,
-            },
+                .get(id)
+                .map(|refm| refm.value().span == span)
+                .unwrap_or(false)
         });
 
+        Self { database, results }
+    }
+
+    pub fn filter(mut self, f: impl Fn(&dyn AstObject) -> bool) -> Self {
+        let Self { database, mut results } = self;
+
+        let _ = results.drain_filter(|id| {
+            match database.entries.get(id) {
+                Some(refm) => refm.value().object.upgrade().map(|obj| f(obj.as_ref())).unwrap_or(true),
+                None => true
+            }
+        });
+
+        Self { database, results }
+    }
+}
+
+impl<'a> IntoIterator for QueryIter<'a> {
+    type Item = Rc<dyn AstObject>;
+
+    type IntoIter = LazyDefEntries<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let Self { database, results: inner } = self;
+
         LazyDefEntries {
-            inner: defs,
+            inner,
             database,
         }
     }
