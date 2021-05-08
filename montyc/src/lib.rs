@@ -16,7 +16,7 @@ use ast::{
     AstObject, Spanned,
 };
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use context::LocalContext;
+use context::{LocalContext};
 use parser::Span;
 use prelude::{SpanRef, TypeMap};
 use typing::LocalTypeId;
@@ -196,7 +196,7 @@ impl MontyError {
     pub fn into_diagnostic(
         self,
         ctx: &LocalContext<'_>,
-    ) -> codespan_reporting::diagnostic::Diagnostic<()> {
+    ) -> codespan_reporting::diagnostic::Diagnostic<u64> {
         macro_rules! fmt_type {
             ($t:expr) => {{
                 $crate::fmt::Formattable {
@@ -218,16 +218,16 @@ impl MontyError {
                 let ret_span = ret_node.span().unwrap();
 
                 let primary = match &ret_node.inner.value {
-                    Some(value) => Label::primary((), value.span().unwrap_or(ret_span))
+                    Some(value) => Label::primary(ctx.module_ref.hash(), value.span().unwrap_or(ret_span))
                         .with_message("but value of this type is returned instead."),
 
-                    None => Label::primary((), ret_span).with_message("`None` is returned here."),
+                    None => Label::primary(ctx.module_ref.hash(), ret_span).with_message("`None` is returned here."),
                 };
 
                 labels.push(primary);
 
                 let def = Label::secondary(
-                    (),
+                    ctx.module_ref.hash(),
                     def_node
                         .inner
                         .returns
@@ -263,20 +263,20 @@ impl MontyError {
             } => Diagnostic::error()
                 .with_message("missing return for annotated function.")
                 .with_labels(vec![
-                    Label::primary((), def_span)
+                    Label::primary(ctx.module_ref.hash(), def_span)
                         .with_message("This function will implicitly return `None`"),
-                    Label::secondary((), ret_span)
+                    Label::secondary(ctx.module_ref.hash(), ret_span)
                         .with_message("But it has been annotated to return this instead."),
                 ]),
 
             MontyError::UnknownType { node } => Diagnostic::error()
                 .with_message("unable to infer type for value.")
-                .with_labels(vec![Label::primary((), node.span().unwrap())
+                .with_labels(vec![Label::primary(ctx.module_ref.hash(), node.span().unwrap())
                     .with_message("annotate this name with a type")]),
 
             MontyError::UndefinedVariable { node } => Diagnostic::error()
                 .with_message("use of undefined variable.")
-                .with_labels(vec![Label::primary((), node.span().unwrap()).with_message(
+                .with_labels(vec![Label::primary(ctx.module_ref.hash(), node.span().unwrap()).with_message(
                     format!(
                         "\"{}\" is not defined.",
                         ctx.global_context
@@ -299,11 +299,11 @@ impl MontyError {
             } => Diagnostic::error()
                 .with_message("incompatible argument type in function call.")
                 .with_labels(vec![
-                    Label::primary((), arg_node.span.clone()).with_message(format!(
+                    Label::primary(ctx.module_ref.hash(), arg_node.span.clone()).with_message(format!(
                         "The argument here evaluates to \"{}\"",
                         fmt_type!(actual)
                     )),
-                    Label::secondary((), def_node.inner.name.span.clone()).with_message(format!(
+                    Label::secondary(ctx.module_ref.hash(), def_node.inner.name.span.clone()).with_message(format!(
                         "Function defined here expected \"{}\"",
                         fmt_type!(expected),
                     )),
@@ -322,7 +322,7 @@ impl MontyError {
 
                 Diagnostic::error()
                     .with_message("Unsupported binary expression.")
-                    .with_labels(vec![Label::primary((), span.clone()).with_message(
+                    .with_labels(vec![Label::primary(ctx.module_ref.hash(), span.clone()).with_message(
                         format!(
                             "Operator {:?} is not supported for types \"{}\" and \"{}\"",
                             op.sigil(),
@@ -334,7 +334,7 @@ impl MontyError {
 
             MontyError::BadConditionalType { actual, span } => Diagnostic::error()
                 .with_message("Incompatible type for conditional.")
-                .with_labels(vec![Label::primary((), span).with_message(format!(
+                .with_labels(vec![Label::primary(ctx.module_ref.hash(), span).with_message(format!(
                     "expected {}, found {}",
                     fmt_type!(TypeMap::BOOL),
                     fmt_type!(actual),
@@ -348,12 +348,12 @@ impl MontyError {
             } => Diagnostic::error()
                 .with_message("Incompatible types")
                 .with_labels(vec![
-                    Label::primary((), right_span).with_message(format!(
+                    Label::primary(ctx.module_ref.hash(), right_span).with_message(format!(
                         "expected {}, found {}",
                         fmt_type!(left),
                         fmt_type!(right)
                     )),
-                    Label::secondary((), left_span)
+                    Label::secondary(ctx.module_ref.hash(), left_span)
                         .with_message(format!("{}", fmt_type!(left))),
                 ]),
 
@@ -366,8 +366,8 @@ impl MontyError {
                         .unwrap()
                 ))
                 .with_labels(vec![
-                    Label::primary((), used).with_message("name used here."),
-                    Label::secondary((), assign).with_message("but initially assigned later here."),
+                    Label::primary(ctx.module_ref.hash(), used).with_message("name used here."),
+                    Label::secondary(ctx.module_ref.hash(), assign).with_message("but initially assigned later here."),
                 ]),
 
             MontyError::IncompatibleReassignment {
@@ -379,7 +379,7 @@ impl MontyError {
             } => Diagnostic::error()
                 .with_message("Incompatible type for reassignment.")
                 .with_labels(vec![
-                    Label::primary((), first_assigned).with_message(format!(
+                    Label::primary(ctx.module_ref.hash(), first_assigned).with_message(format!(
                         "\"{}\" was first assigned here with type {}",
                         ctx.global_context
                             .resolver
@@ -387,7 +387,7 @@ impl MontyError {
                             .unwrap(),
                         fmt_type!(expected),
                     )),
-                    Label::secondary((), incorrectly_reassigned).with_message(format!(
+                    Label::secondary(ctx.module_ref.hash(), incorrectly_reassigned).with_message(format!(
                         "but gets incorrectly reassigned here with type {}",
                         fmt_type!(actual)
                     )),
@@ -401,10 +401,10 @@ impl MontyError {
                 ]),
 
             MontyError::NotCallable { kind, callsite } => Diagnostic::error().with_message("Object is not callable.").with_labels(vec![
-                Label::primary((), callsite).with_message(format!("Attempted to call a non-callable object of type: {}", fmt_type!(kind))),
+                Label::primary(ctx.module_ref.hash(), callsite).with_message(format!("Attempted to call a non-callable object of type: {}", fmt_type!(kind))),
             ]),
 
-            MontyError::Unsupported { span, message } => Diagnostic::error().with_message("Unsupported feature").with_labels(vec![Label::primary((), span).with_message(message)])
+            MontyError::Unsupported { span, message } => Diagnostic::error().with_message("Unsupported feature").with_labels(vec![Label::primary(ctx.module_ref.hash(), span).with_message(message)])
         }
     }
 }

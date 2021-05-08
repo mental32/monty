@@ -280,6 +280,7 @@ impl TypedObject for Function {
                 def_span: def_node.span().unwrap(),
                 ret_span: def_node
                     .as_ref()
+                    .unspanned()
                     .as_function()
                     .cloned()
                     .unwrap()

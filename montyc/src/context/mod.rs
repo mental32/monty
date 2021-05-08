@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, path::PathBuf};
 
 pub mod codegen;
 pub(crate) mod global;
@@ -15,6 +15,23 @@ pub use self::{
 #[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::From)]
 pub struct ModuleRef(pub(crate) PathBuf);
 
+impl ModuleRef {
+    pub fn hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.0.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
+use std::fmt;
+
+impl fmt::Display for ModuleRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+
 impl From<&str> for ModuleRef {
     fn from(s: &str) -> Self {
         Self(s.into())
@@ -24,20 +41,5 @@ impl From<&str> for ModuleRef {
 impl From<ModuleRef> for PathBuf {
     fn from(ModuleRef(inner): ModuleRef) -> Self {
         inner
-    }
-}
-
-impl ModuleRef {
-    pub fn exists(&self) -> bool {
-        self.0
-            .file_name()
-            .and_then(|name| {
-                if name.to_string_lossy().starts_with("__monty") {
-                    Some(true)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| self.0.exists())
     }
 }

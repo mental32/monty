@@ -79,6 +79,7 @@ impl TypedObject for Return {
                     let fndef = f
                         .def(ctx.global_context)
                         .unwrap()
+                        .unspanned()
                         .as_ref()
                         .as_function()
                         .cloned()
