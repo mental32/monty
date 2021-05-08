@@ -4,7 +4,7 @@
     bool_to_option,
     drain_filter,
     assert_matches,
-    get_mut_unchecked,
+    get_mut_unchecked
 )]
 
 use std::rc::Rc;
@@ -16,7 +16,7 @@ use ast::{
     AstObject, Spanned,
 };
 use codespan_reporting::diagnostic::{Diagnostic, Label};
-use context::{LocalContext};
+use context::LocalContext;
 use parser::Span;
 use prelude::{SpanRef, TypeMap};
 use typing::LocalTypeId;
@@ -52,11 +52,11 @@ pub mod lowering {
     }
 }
 
+pub mod database;
 pub mod parser;
+pub mod phantom;
 pub mod scope;
 pub mod typing;
-pub mod database;
-pub mod phantom;
 
 use thiserror::Error;
 
@@ -69,7 +69,7 @@ macro_rules! isinstance {
             $crate::ast::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
         {
             Some(inner)
-        }  else {
+        } else {
             $crate::ast::_downcast_ref::<$t>($e)
         }
     }};
@@ -158,7 +158,6 @@ pub enum MontyError {
     Unsupported { span: Span, message: String },
 }
 
-
 pub trait CompilerError {
     type Success;
 
@@ -190,7 +189,6 @@ impl<T> CompilerError for std::result::Result<T, MontyError> {
         }
     }
 }
-
 
 impl MontyError {
     pub fn into_diagnostic(
@@ -429,8 +427,7 @@ pub mod prelude {
         lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanRef},
         scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
-        typing::{FunctionType, TypeDescriptor, LocalTypeId, TypeMap, TypedObject},
-        MontyError,
-        CompilerError,
+        typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject},
+        CompilerError, MontyError,
     };
 }

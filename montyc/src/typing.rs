@@ -134,7 +134,10 @@ impl TypeDescriptor {
             TypeDescriptor::Simple(s) => s.size_of(),
             TypeDescriptor::Function(_) => todo!(),
             TypeDescriptor::Class(_) => todo!(),
-            TypeDescriptor::Generic(_) => 8, // TODO: we're assuming its all 64-bit sized pointers.
+            TypeDescriptor::Generic(inner) => match inner {
+                Generic::Pointer { .. } => 8,
+                Generic::Union { .. } => todo!(),
+            }
         }
     }
 

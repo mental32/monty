@@ -392,6 +392,21 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
         #[allow(warnings)]
         match self {
             Expr::If { test, body, orelse } => {
+
+                let body_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(body) as Rc<_>), None).unwrap();
+                let orelse_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(orelse) as Rc<_>), None).unwrap();
+
+                let ty = if body_ty != orelse_ty {
+                    // create a union[left, right]
+                    ctx.codegen_backend.global_context.type_map.entry(TypeDescriptor::Generic(crate::typing::Generic::Union {
+                        inner: vec![body_ty, orelse_ty],
+                    }))
+                } else {
+                    body_ty
+                };
+
+                assert!(ctx.codegen_backend.types.contains_key(&ty));
+
                 let escape_block = ctx.builder.borrow_mut().create_block();
                 let body_block = ctx.builder.borrow_mut().create_block();
                 let orelse_block = ctx.builder.borrow_mut().create_block();
