@@ -155,7 +155,6 @@ impl From<CompilerOptions> for GlobalContext {
             ctx.builder.borrow_mut().ins().icmp_imm(IntCC::Equal, value, 1)
         });
 
-
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
             // The "builtins.py" module currently stubs and forward declares the compiler builtin types.
             //
@@ -230,11 +229,14 @@ impl From<CompilerOptions> for GlobalContext {
                             const_prop!(__sub__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
                             const_prop!(__mul__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
                             const_prop!(__div__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::FLOAT);
+                            const_prop!(__eq__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::BOOL);
+                            const_prop!(__ne__(TypeMap::INTEGER) := (TypeMap::INTEGER) -> TypeMap::BOOL);
                         },
 
                         TypeMap::STRING => {
                             const_prop!(__add__(TypeMap::STRING) := (TypeMap::STRING) -> TypeMap::STRING);
                             const_prop!(__mul__(TypeMap::STRING) := (TypeMap::INTEGER) -> TypeMap::STRING);
+                            const_prop!(__eq__(TypeMap::STRING) := (TypeMap::STRING) -> TypeMap::BOOL);
                         }
 
                         TypeMap::BOOL => {
@@ -242,11 +244,13 @@ impl From<CompilerOptions> for GlobalContext {
                             const_prop!(__sub__(TypeMap::BOOL) := (TypeMap::INTEGER) -> TypeMap::INTEGER);
                             const_prop!(__add__(TypeMap::BOOL) := (TypeMap::BOOL) -> TypeMap::INTEGER);
                             const_prop!(__sub__(TypeMap::BOOL) := (TypeMap::BOOL) -> TypeMap::INTEGER);
+                            const_prop!(__eq__(TypeMap::BOOL) := (TypeMap::BOOL) -> TypeMap::BOOL);
                         }
 
                         TypeMap::FLOAT => {
                             const_prop!(__add__(TypeMap::FLOAT) := (TypeMap::FLOAT) -> TypeMap::FLOAT);
                             const_prop!(__sub__(TypeMap::FLOAT) := (TypeMap::FLOAT) -> TypeMap::FLOAT);
+                            const_prop!(__eq__(TypeMap::FLOAT) := (TypeMap::FLOAT) -> TypeMap::BOOL);
                         }
 
                         _ => (),

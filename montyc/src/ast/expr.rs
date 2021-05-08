@@ -504,8 +504,22 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                         InfixOp::LeftShift => todo!(),
                         InfixOp::RightShift => todo!(),
-                        InfixOp::NotEq => todo!(),
-                        InfixOp::Eq => todo!(),
+                        InfixOp::NotEq => match (left_ty, right_ty) {
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                builder.borrow_mut().ins().icmp(IntCC::NotEqual, rvalue, lvalue)
+                            },
+
+                            _ => unreachable!(),
+                        },
+
+                        InfixOp::Eq => match (left_ty, right_ty) {
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                builder.borrow_mut().ins().icmp(IntCC::Equal, rvalue, lvalue)
+                            },
+
+                            _ => unreachable!(),
+                        },
+
                         InfixOp::And => todo!(),
                         InfixOp::Or => todo!(),
                     }
