@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use cranelift_codegen::ir::{StackSlotData, StackSlotKind, TrapCode, condcodes::IntCC};
+use cranelift_codegen::ir::{condcodes::IntCC, StackSlotData, StackSlotKind, TrapCode};
 
 use crate::{
     context::codegen::{CodegenContext, CodegenLowerArg},
@@ -191,8 +191,22 @@ impl TypedObject for Expr {
             Expr::If {
                 test: _,
                 body,
-                orelse: _,
-            } => ctx.with(Rc::clone(body), |ctx, body| body.infer_type(&ctx)),
+                orelse,
+            } => {
+                let left = ctx.with(Rc::clone(body), |ctx, body| body.infer_type(&ctx))?;
+                let right = ctx.with(Rc::clone(orelse), |ctx, orelse| orelse.infer_type(&ctx))?;
+
+                let ty = if left != right {
+                    // create a union[left, right]
+                    ctx.global_context.type_map.entry(TypeDescriptor::Generic(crate::typing::Generic::Union {
+                        inner: vec![left, right],
+                    }))
+                } else {
+                    left
+                };
+
+                Ok(ty)
+            }
 
             Expr::BinOp { left, op, right } => {
                 let left_ty = ctx.with(Rc::clone(left), |ctx, this| this.infer_type(&ctx))?;
@@ -254,30 +268,21 @@ impl TypedObject for Expr {
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         match self {
-            Expr::If { test, body, orelse } => {
+            Expr::If { test, .. } => {
                 let test_type = ctx.with(Rc::clone(&test), |ctx, test| test.infer_type(&ctx))?;
 
-                if !ctx.global_context.type_map.type_eq(test_type, TypeMap::BOOL) {
+                if !ctx
+                    .global_context
+                    .type_map
+                    .type_eq(test_type, TypeMap::BOOL)
+                {
                     ctx.exit_with_error(MontyError::BadConditionalType {
                         actual: test_type,
                         span: test.span.clone(),
                     });
                 }
 
-                let immediate_body_type =
-                    ctx.with(Rc::clone(&body), |ctx, body| body.infer_type(&ctx))?;
-
-                let adjacent_branch_type =
-                    ctx.with(Rc::clone(&orelse), |ctx, orelse| orelse.infer_type(&ctx))?;
-
-                if !ctx.global_context.type_map.type_eq(immediate_body_type, adjacent_branch_type) {
-                    ctx.exit_with_error(MontyError::IncompatibleTypes {
-                        left_span: body.span.clone(),
-                        right_span: orelse.span.clone(),
-                        left: immediate_body_type,
-                        right: adjacent_branch_type,
-                    });
-                }
+                let _ = self.infer_type(ctx)?;
 
                 Ok(())
             }
@@ -465,7 +470,12 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
 
                         InfixOp::Sub => match (left_ty, right_ty) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                let ss = builder.borrow_mut().create_stack_slot(cranelift_codegen::ir::stackslot::StackSlotData::new(StackSlotKind::ExplicitSlot, 8));
+                                let ss = builder.borrow_mut().create_stack_slot(
+                                    cranelift_codegen::ir::stackslot::StackSlotData::new(
+                                        StackSlotKind::ExplicitSlot,
+                                        8,
+                                    ),
+                                );
 
                                 let v0 = builder.borrow_mut().ins().isub(lvalue, rvalue);
                                 builder.borrow_mut().ins().stack_store(v0, ss, 0);
@@ -473,15 +483,28 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                                 let underflow_trap = ctx.builder.borrow_mut().create_block();
                                 let exit_block = ctx.builder.borrow_mut().create_block();
 
-                                builder.borrow_mut().ins().br_icmp(IntCC::SignedGreaterThan, v0, lvalue, underflow_trap, &[]);
+                                builder.borrow_mut().ins().br_icmp(
+                                    IntCC::SignedGreaterThan,
+                                    v0,
+                                    lvalue,
+                                    underflow_trap,
+                                    &[],
+                                );
                                 builder.borrow_mut().ins().jump(exit_block, &[]);
 
                                 ctx.builder.borrow_mut().switch_to_block(underflow_trap);
 
-                                ctx.builder.borrow_mut().ins().trap(TrapCode::IntegerOverflow);
+                                ctx.builder
+                                    .borrow_mut()
+                                    .ins()
+                                    .trap(TrapCode::IntegerOverflow);
 
                                 ctx.builder.borrow_mut().switch_to_block(exit_block);
-                                let v0 = builder.borrow_mut().ins().stack_load(cranelift_codegen::ir::types::I64, ss, 0);
+                                let v0 = builder.borrow_mut().ins().stack_load(
+                                    cranelift_codegen::ir::types::I64,
+                                    ss,
+                                    0,
+                                );
 
                                 v0
                             }
@@ -505,17 +528,19 @@ impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> fo
                         InfixOp::LeftShift => todo!(),
                         InfixOp::RightShift => todo!(),
                         InfixOp::NotEq => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.borrow_mut().ins().icmp(IntCC::NotEqual, rvalue, lvalue)
-                            },
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => builder
+                                .borrow_mut()
+                                .ins()
+                                .icmp(IntCC::NotEqual, rvalue, lvalue),
 
                             _ => unreachable!(),
                         },
 
                         InfixOp::Eq => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.borrow_mut().ins().icmp(IntCC::Equal, rvalue, lvalue)
-                            },
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => builder
+                                .borrow_mut()
+                                .ins()
+                                .icmp(IntCC::Equal, rvalue, lvalue),
 
                             _ => unreachable!(),
                         },
