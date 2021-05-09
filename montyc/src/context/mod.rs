@@ -1,6 +1,5 @@
 use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, path::PathBuf};
 
-pub mod codegen;
 pub(crate) mod global;
 pub(crate) mod local;
 pub(crate) mod module;

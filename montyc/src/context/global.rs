@@ -88,7 +88,7 @@ impl From<CompilerOptions> for GlobalContext {
     fn from(opts: CompilerOptions) -> Self {
         log::debug!("Bootstrapping with {:?}", opts);
 
-        let CompilerOptions { libstd, input: _ } = opts;
+        let CompilerOptions { libstd, input: _, .. } = opts;
 
         let libstd = match libstd.canonicalize() {
             Ok(path) => path,
@@ -132,28 +132,25 @@ impl From<CompilerOptions> for GlobalContext {
         use cranelift_codegen::ir::InstBuilder;
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |ctx, _value| {
-                ctx.builder
-                    .borrow_mut()
+            .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |(_, builder), _value| {
+                builder
                     .ins()
                     .iconst(cranelift_codegen::ir::types::I64, 0)
             });
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::STRING, c_char_p, |_ctx, value| value);
+            .add_coercion_rule(TypeMap::STRING, c_char_p, |_, value| value);
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::BOOL, TypeMap::INTEGER, |ctx, value| {
-                ctx.builder
-                    .borrow_mut()
+            .add_coercion_rule(TypeMap::BOOL, TypeMap::INTEGER, |(ctx, builder), value| {
+                builder
                     .ins()
                     .bint(ctx.codegen_backend.types[&TypeMap::BOOL], value)
             });
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |ctx, value| {
-                ctx.builder
-                    .borrow_mut()
+            .add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |(_, builder), value| {
+                builder
                     .ins()
                     .icmp_imm(IntCC::Equal, value, 1)
             });

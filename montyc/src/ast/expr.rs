@@ -1,11 +1,6 @@
 use std::rc::Rc;
 
-use cranelift_codegen::ir::{condcodes::IntCC, StackSlotData, StackSlotKind, TrapCode};
-
-use crate::{
-    context::codegen::{CodegenContext, CodegenLowerArg},
-    prelude::*,
-};
+use crate::prelude::*;
 
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
@@ -198,9 +193,11 @@ impl TypedObject for Expr {
 
                 let ty = if left != right {
                     // create a union[left, right]
-                    ctx.global_context.type_map.entry(TypeDescriptor::Generic(crate::typing::Generic::Union {
-                        inner: vec![left, right],
-                    }))
+                    ctx.global_context.type_map.entry(TypeDescriptor::Generic(
+                        crate::typing::Generic::Union {
+                            inner: vec![left, right],
+                        },
+                    ))
                 } else {
                     left
                 };
@@ -375,207 +372,5 @@ impl<'a> Lower<Layout<&'a dyn AstObject>> for &'a Expr {
         }
 
         layout
-    }
-}
-
-impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> for Expr {
-    fn lower_with(&self, ctx: CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value {
-        use cranelift_codegen::ir::InstBuilder;
-
-        let CodegenContext {
-            codegen_backend,
-            builder,
-            vars,
-            func,
-        } = ctx.clone();
-
-        #[allow(warnings)]
-        match self {
-            Expr::If { test, body, orelse } => {
-
-                let body_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(body) as Rc<_>), None).unwrap();
-                let orelse_ty = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(orelse) as Rc<_>), None).unwrap();
-
-                let ty = if body_ty != orelse_ty {
-                    // create a union[left, right]
-                    ctx.codegen_backend.global_context.type_map.entry(TypeDescriptor::Generic(crate::typing::Generic::Union {
-                        inner: vec![body_ty, orelse_ty],
-                    }))
-                } else {
-                    body_ty
-                };
-
-                assert!(ctx.codegen_backend.types.contains_key(&ty));
-
-                let escape_block = ctx.builder.borrow_mut().create_block();
-                let body_block = ctx.builder.borrow_mut().create_block();
-                let orelse_block = ctx.builder.borrow_mut().create_block();
-
-                let size = ctx
-                    .codegen_backend
-                    .global_context
-                    .database
-                    .size_of(
-                        func.scope.module_ref(),
-                        Rc::clone(&test) as Rc<_>,
-                        &ctx.codegen_backend.global_context.type_map,
-                    )
-                    .unwrap();
-
-                let ss = ctx
-                    .builder
-                    .borrow_mut()
-                    .create_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        size as u32,
-                    ));
-
-                let cc = test.inner.lower_with(ctx.clone());
-
-                ctx.builder.borrow_mut().ins().brnz(cc, body_block, &[]);
-                ctx.builder.borrow_mut().ins().jump(orelse_block, &[]);
-
-                ctx.builder.borrow_mut().switch_to_block(body_block);
-                let body_v = body.inner.lower_with(ctx.clone());
-
-                ctx.builder.borrow_mut().ins().stack_store(body_v, ss, 0);
-                ctx.builder.borrow_mut().ins().jump(escape_block, &[]);
-
-                ctx.builder.borrow_mut().switch_to_block(orelse_block);
-                let orelse_v = orelse.inner.lower_with(ctx.clone());
-
-                ctx.builder.borrow_mut().ins().stack_store(orelse_v, ss, 0);
-                ctx.builder.borrow_mut().ins().jump(escape_block, &[]);
-
-                ctx.builder.borrow_mut().switch_to_block(escape_block);
-
-                let ty = ctx.builder.borrow().func.dfg.value_type(body_v);
-
-                ctx.builder.borrow_mut().ins().stack_load(ty, ss, 0)
-            }
-
-            Expr::BinOp { left, op, right } => {
-                let mref = ctx.func.scope.module_ref();
-
-                let left_ty = ctx
-                    .codegen_backend
-                    .global_context
-                    .database
-                    .type_of(&(Rc::clone(left) as Rc<_>), Some(&mref))
-                    .unwrap();
-
-                let right_ty = ctx
-                    .codegen_backend
-                    .global_context
-                    .database
-                    .type_of(&(Rc::clone(left) as Rc<_>), Some(&mref))
-                    .unwrap();
-
-                if left_ty.is_builtin() && right_ty.is_builtin() {
-                    let lvalue = left.inner.lower_with(ctx.clone());
-                    let rvalue = right.inner.lower_with(ctx.clone());
-
-                    match op {
-                        InfixOp::Add => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.borrow_mut().ins().iadd(lvalue, rvalue)
-                            }
-                            _ => unreachable!(),
-                        },
-
-                        InfixOp::Sub => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                let ss = builder.borrow_mut().create_stack_slot(
-                                    cranelift_codegen::ir::stackslot::StackSlotData::new(
-                                        StackSlotKind::ExplicitSlot,
-                                        8,
-                                    ),
-                                );
-
-                                let v0 = builder.borrow_mut().ins().isub(lvalue, rvalue);
-                                builder.borrow_mut().ins().stack_store(v0, ss, 0);
-
-                                let underflow_trap = ctx.builder.borrow_mut().create_block();
-                                let exit_block = ctx.builder.borrow_mut().create_block();
-
-                                builder.borrow_mut().ins().br_icmp(
-                                    IntCC::SignedGreaterThan,
-                                    v0,
-                                    lvalue,
-                                    underflow_trap,
-                                    &[],
-                                );
-                                builder.borrow_mut().ins().jump(exit_block, &[]);
-
-                                ctx.builder.borrow_mut().switch_to_block(underflow_trap);
-
-                                ctx.builder
-                                    .borrow_mut()
-                                    .ins()
-                                    .trap(TrapCode::IntegerOverflow);
-
-                                ctx.builder.borrow_mut().switch_to_block(exit_block);
-                                let v0 = builder.borrow_mut().ins().stack_load(
-                                    cranelift_codegen::ir::types::I64,
-                                    ss,
-                                    0,
-                                );
-
-                                v0
-                            }
-                            _ => unreachable!(),
-                        },
-
-                        InfixOp::Power => todo!(),
-                        InfixOp::Invert => todo!(),
-                        InfixOp::FloorDiv => todo!(),
-                        InfixOp::MatMult => todo!(),
-                        InfixOp::Mod => todo!(),
-                        InfixOp::Div => todo!(),
-
-                        InfixOp::Mult => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.borrow_mut().ins().imul(lvalue, rvalue)
-                            }
-                            _ => unreachable!(),
-                        },
-
-                        InfixOp::LeftShift => todo!(),
-                        InfixOp::RightShift => todo!(),
-                        InfixOp::NotEq => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) => builder
-                                .borrow_mut()
-                                .ins()
-                                .icmp(IntCC::NotEqual, rvalue, lvalue),
-
-                            _ => unreachable!(),
-                        },
-
-                        InfixOp::Eq => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) => builder
-                                .borrow_mut()
-                                .ins()
-                                .icmp(IntCC::Equal, rvalue, lvalue),
-
-                            _ => unreachable!(),
-                        },
-
-                        InfixOp::And => todo!(),
-                        InfixOp::Or => todo!(),
-                    }
-                } else {
-                    todo!()
-                }
-            }
-
-            Expr::Unary { op, value } => todo!(),
-            Expr::Named { target, value } => todo!(),
-            Expr::Primary(p) => p.inner.lower_with(CodegenContext {
-                codegen_backend,
-                builder: Rc::clone(&builder),
-                vars: &vars,
-                func,
-            }),
-        }
     }
 }

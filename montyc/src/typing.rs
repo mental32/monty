@@ -2,7 +2,7 @@ use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize};
 
 use dashmap::DashMap;
 
-use crate::{context::{codegen::CodegenLowerArg, LocalContext, ModuleRef}, prelude::SpanRef};
+use crate::{context::{GlobalContext, LocalContext, ModuleRef}, codegen::context::CodegenLowerArg, prelude::SpanRef};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -64,31 +64,6 @@ pub enum BuiltinTypeId {
     Never = 255,
 }
 
-impl BuiltinTypeId {
-    fn size_of(&self) -> usize {
-        match self {
-            BuiltinTypeId::Invalid => unreachable!(),
-            BuiltinTypeId::Int => 8,
-            BuiltinTypeId::Float => todo!(),
-            BuiltinTypeId::Str => todo!(),
-            BuiltinTypeId::Bool => 8,
-            BuiltinTypeId::None => 0,
-            BuiltinTypeId::Ellipsis => todo!(),
-            BuiltinTypeId::Module => todo!(),
-            BuiltinTypeId::Unknown => todo!(),
-            BuiltinTypeId::Never => todo!(),
-            BuiltinTypeId::U8 => 1,
-            BuiltinTypeId::U16 => 2,
-            BuiltinTypeId::U32 => 4,
-            BuiltinTypeId::U64 => 8,
-            BuiltinTypeId::I8 => 1,
-            BuiltinTypeId::I16 => 2,
-            BuiltinTypeId::I32 => 4,
-            BuiltinTypeId::I64 => 8,
-        }
-    }
-}
-
 impl std::fmt::Display for BuiltinTypeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -129,18 +104,6 @@ pub enum TypeDescriptor {
 }
 
 impl TypeDescriptor {
-    fn size_of(&self) -> usize {
-        match self {
-            TypeDescriptor::Simple(s) => s.size_of(),
-            TypeDescriptor::Function(_) => todo!(),
-            TypeDescriptor::Class(_) => todo!(),
-            TypeDescriptor::Generic(inner) => match inner {
-                Generic::Pointer { .. } => 8,
-                Generic::Union { .. } => todo!(),
-            }
-        }
-    }
-
     fn inner_type_id(&self) -> TypeId {
         match self {
             Self::Simple(_) => TypeId::of::<BuiltinTypeId>(),
@@ -166,7 +129,7 @@ pub trait TypedObject {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()>;
 }
 
-pub type CoercionRule = for<'a, 'b> fn(CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value) -> cranelift_codegen::ir::Value;
+pub type CoercionRule = for<'a, 'b, 'c> fn(CodegenLowerArg<'a, 'b, 'c>, cranelift_codegen::ir::Value) -> cranelift_codegen::ir::Value;
 
 pub struct TypeMap {
     last_id: Cell<usize>,
@@ -249,11 +212,6 @@ impl TypeMap {
     #[inline]
     pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId) -> Option<CoercionRule> {
         self.coercion_rules.get(&(from, to)).map(|rule| rule.value().clone())
-    }
-
-    #[inline]
-    pub fn size_of(&self, ty: impl Into<LocalTypeId>) -> Option<usize> {
-        Some(self.get(ty.into())?.value().size_of())
     }
 
     #[inline]
@@ -367,5 +325,66 @@ impl TypeMap {
         let result = TaggedType { type_id, inner };
 
         Some(Ok(result))
+    }
+}
+
+
+pub(crate) trait Sized<O> {
+    fn size_of(&self, opts: O) -> Option<NonZeroUsize>;
+}
+
+impl Sized<()> for BuiltinTypeId {
+    fn size_of(&self, (): ()) -> Option<NonZeroUsize> {
+        let n = match self {
+            BuiltinTypeId::Float
+            | BuiltinTypeId::Str
+            | BuiltinTypeId::Ellipsis
+            | BuiltinTypeId::Module
+            | BuiltinTypeId::Unknown 
+            | BuiltinTypeId::Never => todo!(),
+
+            BuiltinTypeId::Invalid => unreachable!(),
+
+            BuiltinTypeId::None => 0,
+
+            BuiltinTypeId::U8
+            | BuiltinTypeId::Bool
+            | BuiltinTypeId::I8 => 1,
+
+            BuiltinTypeId::U16
+            | BuiltinTypeId::I16 => 2,
+
+            BuiltinTypeId::U32
+            | BuiltinTypeId::I32 => 4,
+
+            BuiltinTypeId::Int
+            | BuiltinTypeId::U64 
+            | BuiltinTypeId::I64  => 8,
+        };
+
+        NonZeroUsize::new(n)
+    }
+}
+
+impl Sized<&GlobalContext> for TypeDescriptor {
+    fn size_of(&self, opts: &GlobalContext) -> Option<NonZeroUsize> {
+        match self {
+            TypeDescriptor::Simple(s) => s.size_of(()),
+            TypeDescriptor::Function(_) => None,
+            TypeDescriptor::Class(_) => todo!(),
+            TypeDescriptor::Generic(inner) => match inner {
+                Generic::Pointer { inner: _ } => todo!(),
+                Generic::Union { inner } => {
+                    let tag_size = BuiltinTypeId::I64.size_of(())?.get();
+                    let largest = inner
+                        .iter()
+                        .filter_map(|ty| opts.type_map.get(*ty)?.value().size_of(opts))
+                        .map(|n| n.get())
+                        .max()?;
+
+                    NonZeroUsize::new(tag_size + largest)
+                }
+            },
+        }
     }
 }

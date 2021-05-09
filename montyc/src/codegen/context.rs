@@ -43,7 +43,7 @@ pub struct ModuleNames {
     pub functions: HashMap<NonZeroUsize, (ExternalName, FuncId)>,
 }
 
-pub type CodegenLowerArg<'a, 'b> = CodegenContext<'a, 'b>;
+pub type CodegenLowerArg<'long, 'short, 'fx> = (CodegenContext<'long, 'short>, &'short mut FunctionBuilder<'fx>);
 
 #[derive(Clone)]
 pub struct CodegenContext<'a, 'b>
@@ -51,7 +51,6 @@ where
     'a: 'b,
 {
     pub codegen_backend: &'b CodegenBackend<'a>,
-    pub builder: Rc<RefCell<FunctionBuilder<'a>>>,
     pub vars: &'a HashMap<NonZeroUsize, StackSlot>,
     pub func: &'b Function,
 }
@@ -138,7 +137,12 @@ impl<'global> CodegenBackend<'global> {
     }
 
     #[allow(warnings)]
-    fn build_function(&mut self, fid: FuncId, func: &Function, cl_func: &mut codegen::ir::Function) {
+    fn build_function(
+        &mut self,
+        fid: FuncId,
+        func: &Function,
+        cl_func: &mut codegen::ir::Function,
+    ) {
         use cranelift_codegen::ir::InstBuilder;
 
         log::trace!(
@@ -150,16 +154,14 @@ impl<'global> CodegenBackend<'global> {
             }
         );
 
-
         for dref in func.refs.borrow().iter() {
             if let DataRef::StringConstant(st_ref) = dref {
                 if !self.strings.contains_key(st_ref) {
-                    let data_id = self.object_module.borrow_mut().declare_data(
-                        &format!("str.{}", st_ref.0),
-                        Linkage::Export,
-                        false,
-                        false,
-                    ).unwrap();
+                    let data_id = self
+                        .object_module
+                        .borrow_mut()
+                        .declare_data(&format!("str.{}", st_ref.0), Linkage::Export, false, false)
+                        .unwrap();
 
                     {
                         let mut dctx = DataContext::new();
@@ -170,16 +172,19 @@ impl<'global> CodegenBackend<'global> {
 
                         dctx.define(string);
 
-                        self.object_module.borrow_mut().define_data(data_id, &mut dctx);
+                        self.object_module
+                            .borrow_mut()
+                            .define_data(data_id, &mut dctx);
                     }
 
                     self.strings.insert(st_ref.clone(), data_id);
 
-                    self.object_module.borrow_mut().declare_data_in_func(data_id, cl_func);
+                    self.object_module
+                        .borrow_mut()
+                        .declare_data_in_func(data_id, cl_func);
                 }
             }
         }
-
 
         let func_def = func
             .def(self.global_context)
@@ -228,7 +233,12 @@ impl<'global> CodegenBackend<'global> {
         for var in func.vars.iter() {
             let (var, ty) = (var.key().clone(), (var.0));
 
-            let size = self.global_context.resolver.type_map.size_of(ty).unwrap();
+            let size = crate::typing::Sized::size_of(
+                self.global_context.type_map.get(ty).unwrap().value(),
+                &self.global_context,
+            )
+            .unwrap()
+            .get();
 
             let data = StackSlotData::new(StackSlotKind::ExplicitSlot, size as u32);
             let ss = builder.create_stack_slot(data);
@@ -250,8 +260,7 @@ impl<'global> CodegenBackend<'global> {
 
                 let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
-                for ((name, kind), value) in func.args(&self.global_context).zip(params.iter())
-                {
+                for ((name, kind), value) in func.args(&self.global_context).zip(params.iter()) {
                     let ss = vars.get(&name).unwrap().clone();
                     builder.ins().stack_store(*value, ss, 0);
                 }
@@ -260,7 +269,7 @@ impl<'global> CodegenBackend<'global> {
             None => unreachable!(),
         }
 
-        let builder = Rc::new(RefCell::new(builder));
+        let mut builder = builder;
 
         for (bid, block) in it {
             assert!(block.succs.len() <= 1);
@@ -270,8 +279,6 @@ impl<'global> CodegenBackend<'global> {
             }
 
             {
-                let mut builder = builder.borrow_mut();
-
                 let block = builder.create_block();
 
                 if !builder.is_filled() {
@@ -283,12 +290,14 @@ impl<'global> CodegenBackend<'global> {
 
             for node in block.nodes.iter() {
                 if let Some(stmt) = crate::isinstance!(node.as_ref(), Statement) {
-                    let ret = stmt.lower_with(CodegenContext {
+                    let ctx = CodegenContext {
                         codegen_backend: self,
-                        builder: Rc::clone(&builder),
+                        // builder: Rc::clone(&builder),
                         vars: &vars,
                         func,
-                    });
+                    };
+
+                    let ret = stmt.lower_with((ctx, &mut builder));
 
                     if implicit_return && ret.is_some() {
                         implicit_return = ret.unwrap();
@@ -300,7 +309,7 @@ impl<'global> CodegenBackend<'global> {
         }
 
         if implicit_return {
-            builder.borrow_mut().ins().return_(&[]);
+            builder.ins().return_(&[]);
         }
     }
 
@@ -351,11 +360,6 @@ impl<'global> CodegenBackend<'global> {
     ) -> Self {
         let mut flags_builder = settings::builder();
 
-        // allow creating shared libraries
-        // flags_builder
-        //     .enable("is_pic")
-        //     .expect("is_pic should be a valid option");
-
         // use debug assertions
         flags_builder
             .enable("enable_verifier")
@@ -405,7 +409,7 @@ impl<'global> CodegenBackend<'global> {
         }
     }
 
-    pub fn finish<P>(mut self, output: Option<P>)
+    pub fn finish<P>(mut self, output: P)
     where
         P: AsRef<Path>,
     {
@@ -432,14 +436,10 @@ impl<'global> CodegenBackend<'global> {
 
         let mut cc_args = vec![path.to_str().unwrap()];
 
-        let output: std::path::PathBuf = if let Some(path) = output {
-            path.as_ref().to_path_buf()
-        } else {
-            "a.out".into()
-        };
+        let output = output.as_ref().to_str().unwrap();
 
         cc_args.push("-o");
-        cc_args.push(&output.to_str().unwrap());
+        cc_args.push(&output);
 
         cc_args.push("-no-pie");
 

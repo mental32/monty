@@ -27,6 +27,7 @@ pub mod context;
 pub mod fmt;
 pub mod func;
 pub mod layout;
+pub mod codegen;
 
 pub mod lowering {
     pub trait Lower<Output> {
@@ -409,13 +410,23 @@ impl MontyError {
 
 use structopt::*;
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, StructOpt, Clone)]
 pub struct CompilerOptions {
+    /// The path to a monty compatible stdlib.
     #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
     pub libstd: std::path::PathBuf,
 
+    /// The input file to compile.
     #[structopt(parse(from_os_str))]
     pub input: Option<std::path::PathBuf>,
+
+    /// The C compiler to use.
+    #[structopt(parse(from_os_str))]
+    pub cc: Option<std::path::PathBuf>,
+
+    /// The linker to use.
+    #[structopt(parse(from_os_str))]
+    pub ld: Option<std::path::PathBuf>,
 }
 
 pub mod prelude {

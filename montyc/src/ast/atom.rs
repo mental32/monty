@@ -1,8 +1,6 @@
 use std::{convert::TryFrom, rc::Rc};
 
-use cranelift_codegen::ir::{ExternalName, GlobalValueData};
-
-use crate::{context::codegen::CodegenLowerArg, prelude::*, scope::LookupOrder};
+use crate::{prelude::*, scope::LookupOrder};
 
 use super::{assign::Assign, stmt::Statement, AstObject};
 
@@ -189,65 +187,6 @@ impl LookupTarget for Atom {
         match self {
             Self::Name(n) => Some(n.clone()),
             _ => None,
-        }
-    }
-}
-
-impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> for Atom {
-    fn lower_with(&self, ctx: CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value {
-        use cranelift_codegen::ir::InstBuilder;
-
-        match self {
-            Atom::None => todo!(),
-            Atom::Ellipsis => todo!(),
-            Atom::Int(n) => ctx.builder.borrow_mut().ins().iconst(
-                cranelift_codegen::ir::types::I64,
-                cranelift_codegen::ir::immediates::Imm64::new(*n as i64),
-            ),
-            Atom::Str(n) => {
-                let gv = ctx
-                    .codegen_backend
-                    .strings
-                    .get(&StringRef(*n))
-                    .and_then(|data| {
-                        ctx.builder
-                            .borrow()
-                            .func
-                            .global_values
-                            .iter()
-                            .find_map(|(gv, gvd)| match gvd {
-                                GlobalValueData::Symbol {
-                                    name: ExternalName::User { index, .. },
-                                    ..
-                                } if *index == data.as_u32() => Some(gv),
-                                _ => None,
-                            })
-                    })
-                    .unwrap();
-
-                ctx.builder
-                    .borrow_mut()
-                    .ins()
-                    .global_value(cranelift_codegen::ir::types::I64, gv)
-            }
-
-            Atom::Bool(b) => ctx
-                .builder
-                .borrow_mut()
-                .ins()
-                .iconst(ctx.codegen_backend.types[&TypeMap::INTEGER], *b as i64),
-
-            Atom::Float(_) => todo!(),
-            Atom::Comment(_) => unreachable!(),
-            Atom::Name(n) => {
-                let ss = ctx.vars.get(&n).unwrap();
-                let (ty, _) = ctx.func.vars.get(n).map(|r| r.value().clone()).unwrap();
-
-
-                let ty = ctx.codegen_backend.types[&ty];
-
-                ctx.builder.borrow_mut().ins().stack_load(ty, ss.clone(), 0)
-            }
         }
     }
 }

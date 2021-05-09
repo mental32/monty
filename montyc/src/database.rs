@@ -1,20 +1,10 @@
 #![allow(warnings)]
 
-use std::{
-    cell::RefCell,
-    rc::{Rc, Weak},
-    sync::atomic::AtomicUsize,
-};
+use std::{cell::RefCell, num::NonZeroUsize, rc::{Rc, Weak}, sync::atomic::AtomicUsize};
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::AstObject,
-    context::{LocalContext, ModuleContext, ModuleRef},
-    prelude::{Span, SpanRef},
-    scope::LookupTarget,
-    typing::{LocalTypeId, TypeMap, TypedObject},
-};
+use crate::{ast::AstObject, context::{GlobalContext, LocalContext, ModuleContext, ModuleRef}, prelude::{Span, SpanRef}, scope::LookupTarget, typing::{LocalTypeId, TypeMap, TypedObject}};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct DefId(usize);
@@ -202,14 +192,17 @@ impl AstDatabase {
         &self,
         mref: ModuleRef,
         thing: Rc<dyn AstObject>,
-        type_map: &TypeMap,
-    ) -> Option<usize> {
-        let id = self.find_by_span(&mref, thing.span()?)?;
+        gctx: &GlobalContext,
+    ) -> Option<NonZeroUsize> {
+        let id = self
+            .find(&thing)
+            .or_else(|| self.find_by_span(&mref, thing.span()?))?;
+
         let entry = self.entries.get(&id)?;
 
         let kind = entry.infered_type.borrow().clone()?.ok()?;
 
-        type_map.size_of(kind)
+        crate::typing::Sized::size_of(gctx.type_map.get(kind)?.value(), gctx)
     }
 
     pub fn insert_module(&mut self, mctx: &ModuleContext) -> DefId {
@@ -346,13 +339,19 @@ impl<'a> QueryIter<'a> {
     }
 
     pub fn filter(mut self, f: impl Fn(&dyn AstObject) -> bool) -> Self {
-        let Self { database, mut results } = self;
+        let Self {
+            database,
+            mut results,
+        } = self;
 
-        let _ = results.drain_filter(|id| {
-            match database.entries.get(id) {
-                Some(refm) => refm.value().object.upgrade().map(|obj| f(obj.as_ref())).unwrap_or(true),
-                None => true
-            }
+        let _ = results.drain_filter(|id| match database.entries.get(id) {
+            Some(refm) => refm
+                .value()
+                .object
+                .upgrade()
+                .map(|obj| f(obj.as_ref()))
+                .unwrap_or(true),
+            None => true,
         });
 
         Self { database, results }
@@ -365,11 +364,11 @@ impl<'a> IntoIterator for QueryIter<'a> {
     type IntoIter = LazyDefEntries<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let Self { database, results: inner } = self;
-
-        LazyDefEntries {
-            inner,
+        let Self {
             database,
-        }
+            results: inner,
+        } = self;
+
+        LazyDefEntries { inner, database }
     }
 }

@@ -1,12 +1,11 @@
 use std::rc::Rc;
 
-use cranelift_codegen::ir::ExtFuncData;
 use parser::SpanRef;
 
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{context::codegen::CodegenLowerArg, func::DataRef, parser, prelude::*, scope::LookupOrder};
+use crate::{func::DataRef, parser, prelude::*, scope::LookupOrder};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -277,107 +276,6 @@ impl LookupTarget for Primary {
         match self {
             Self::Atomic(at) => at.name(),
             _ => None,
-        }
-    }
-}
-
-impl<'a, 'b> LowerWith<CodegenLowerArg<'a, 'b>, cranelift_codegen::ir::Value> for Primary {
-    fn lower_with(&self, ctx: CodegenLowerArg<'a, 'b>) -> cranelift_codegen::ir::Value {
-        use cranelift_codegen::ir::InstBuilder;
-
-        #[allow(warnings)]
-        match self {
-            Primary::Atomic(at) => at.inner.lower_with(ctx),
-            Primary::Subscript { value, index } => todo!(),
-            Primary::Call { func, args } => {
-                let func_name = match &func.inner {
-                    Primary::Atomic(atom) => match atom.as_ref().inner {
-                        Atom::Name(n) => n,
-                        _ => unreachable!(),
-                    },
-                    _ => unreachable!(),
-                };
-
-                let mref = ctx.func.scope.module_ref();
-
-                let func_t = ctx
-                    .codegen_backend
-                    .global_context
-                    .database
-                    .type_of(&(Rc::clone(&func) as Rc<dyn AstObject>), Some(&mref))
-                    .unwrap();
-                let func_t = ctx
-                    .codegen_backend
-                    .global_context
-                    .type_map
-                    .get_tagged::<FunctionType>(func_t)
-                    .unwrap()
-                    .unwrap();
-
-                let module = ctx
-                    .codegen_backend
-                    .names
-                    .get(&ctx.func.scope.module_ref())
-                    .unwrap();
-
-                let (target_name, target_fid) = module.functions.get(&func_name).unwrap();
-
-                let args = match args {
-                    Some(args) => args
-                        .iter()
-                        .zip(func_t.inner.args.iter())
-                        .map(|(arg, param_t)| {
-                            let arg_t = ctx
-                                .codegen_backend
-                                .global_context
-                                .database
-                                .type_of(&(Rc::clone(arg) as Rc<dyn AstObject>), Some(&mref))
-                                .unwrap();
-
-                            let mut value = arg.inner.lower_with(ctx.clone());
-
-                            if arg_t != *param_t {
-                                value = ctx.codegen_backend
-                                    .global_context
-                                    .type_map
-                                    .coerce(arg_t, *param_t)
-                                    .unwrap()(ctx.clone(), value)
-                            }
-
-                            value
-                        })
-                        .collect(),
-
-                    None => vec![],
-                };
-
-                let func_ref = if let Some(signature) =
-                    ctx.codegen_backend.external_functions.get(target_fid)
-                {
-                    let sigref = ctx.builder.borrow_mut().import_signature(signature.clone());
-
-                    ctx.builder.borrow_mut().import_function(ExtFuncData {
-                        name: target_name.clone(),
-                        signature: sigref,
-                        colocated: false,
-                    })
-                } else {
-                    cranelift_module::Module::declare_func_in_func(
-                        &*ctx.codegen_backend.object_module.borrow(),
-                        *target_fid,
-                        &mut ctx.builder.borrow_mut().func,
-                    )
-                };
-
-                let result = ctx.builder.borrow_mut().ins().call(func_ref, args.as_slice());
-
-                let mut builder = ctx.builder.borrow_mut();
-
-                builder.inst_results(result).first().cloned().unwrap_or_else(|| builder.ins().iconst(cranelift_codegen::ir::types::I64, 0))
-            }
-
-            Primary::Attribute { left, attr } => todo!(),
-            Primary::Await(_) => todo!(),
         }
     }
 }
