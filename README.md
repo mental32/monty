@@ -6,6 +6,8 @@
 
 - [Index](#index)
 - [Brief](#brief)
+- [Building the compiler](#building-the-compiler)
+- [Usaging the compiler](#usaging-the-compiler)
 - [Concepts under development](#concepts-under-development)
   - ["automatic unions"](#automatic-unions)
   - ["Type narrowing"](#type-narrowing)
@@ -27,6 +29,31 @@ compatible manner.
 
 Monty is intended to be compiled to native executable binaries or WASM via the
 use of [cranelift] (and maybe [llvm] if support for that ever lands.)
+
+## Building the compiler
+
+You will need the a recent nightly version of rust (`1.53.0-nightly` or so) in order to build.
+
+after that it's as simple as running `cargo build`
+
+## Usaging the compiler
+
+It is **strongly** advised to use `clang` and enable the `mold` linker.
+I suggest you download and install both since they (especially mold) will
+improve the final steps of compile time performance.
+
+Make sure to check the compilers help command with `--help` as it will be more
+up to date than this example.
+
+The compiler aims to be easy to use, invoking the following command will produce
+a mostly statically linked binary named `./file` (or `./file.exe` if using windows)
+
+```
+./montyc ./path/to/file.py
+```
+
+you may also specify the path to the local C compiler via `--cc="path/to/cc"`
+and a linker via `--ld="path/to/ld"`
 
 ## Concepts under development
 
