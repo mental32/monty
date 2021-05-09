@@ -1,8 +1,17 @@
-use std::{any::TypeId, cell::Cell, fmt, num::NonZeroUsize};
+use std::{
+    any::TypeId,
+    cell::Cell,
+    fmt,
+    num::{NonZeroU32, NonZeroUsize},
+};
 
 use dashmap::DashMap;
 
-use crate::{context::{GlobalContext, LocalContext, ModuleRef}, codegen::context::CodegenLowerArg, prelude::SpanRef};
+use crate::{
+    codegen::context::CodegenLowerArg,
+    context::{GlobalContext, LocalContext, ModuleRef},
+    prelude::SpanRef,
+};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -36,6 +45,7 @@ pub struct FunctionType {
 pub enum Generic {
     Pointer { inner: LocalTypeId },
     Union { inner: Vec<LocalTypeId> },
+    Struct { inner: Vec<LocalTypeId> },
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
@@ -129,7 +139,10 @@ pub trait TypedObject {
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()>;
 }
 
-pub type CoercionRule = for<'a, 'b, 'c> fn(CodegenLowerArg<'a, 'b, 'c>, cranelift_codegen::ir::Value) -> cranelift_codegen::ir::Value;
+pub type CoercionRule = for<'a, 'b, 'c> fn(
+    CodegenLowerArg<'a, 'b, 'c>,
+    cranelift_codegen::ir::Value,
+) -> cranelift_codegen::ir::Value;
 
 pub struct TypeMap {
     last_id: Cell<usize>,
@@ -211,7 +224,9 @@ impl TypeMap {
 
     #[inline]
     pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId) -> Option<CoercionRule> {
-        self.coercion_rules.get(&(from, to)).map(|rule| rule.value().clone())
+        self.coercion_rules
+            .get(&(from, to))
+            .map(|rule| rule.value().clone())
     }
 
     #[inline]
@@ -328,52 +343,51 @@ impl TypeMap {
     }
 }
 
-
-pub(crate) trait Sized<O> {
-    fn size_of(&self, opts: O) -> Option<NonZeroUsize>;
+pub(crate) trait SizeOf<O> {
+    fn size_of(&self, opts: O) -> Option<NonZeroU32>;
 }
 
-impl Sized<()> for BuiltinTypeId {
-    fn size_of(&self, (): ()) -> Option<NonZeroUsize> {
+impl SizeOf<()> for BuiltinTypeId {
+    fn size_of(&self, (): ()) -> Option<NonZeroU32> {
         let n = match self {
             BuiltinTypeId::Float
-            | BuiltinTypeId::Str
             | BuiltinTypeId::Ellipsis
             | BuiltinTypeId::Module
-            | BuiltinTypeId::Unknown 
+            | BuiltinTypeId::Unknown
             | BuiltinTypeId::Never => todo!(),
 
             BuiltinTypeId::Invalid => unreachable!(),
 
             BuiltinTypeId::None => 0,
 
-            BuiltinTypeId::U8
-            | BuiltinTypeId::Bool
-            | BuiltinTypeId::I8 => 1,
+            BuiltinTypeId::U8 | BuiltinTypeId::Bool | BuiltinTypeId::I8 => 1,
 
-            BuiltinTypeId::U16
-            | BuiltinTypeId::I16 => 2,
+            BuiltinTypeId::U16 | BuiltinTypeId::I16 => 2,
 
-            BuiltinTypeId::U32
-            | BuiltinTypeId::I32 => 4,
+            BuiltinTypeId::U32 | BuiltinTypeId::I32 => 4,
 
-            BuiltinTypeId::Int
-            | BuiltinTypeId::U64 
-            | BuiltinTypeId::I64  => 8,
+            BuiltinTypeId::Str | BuiltinTypeId::Int | BuiltinTypeId::U64 | BuiltinTypeId::I64 => 8,
         };
 
-        NonZeroUsize::new(n)
+        NonZeroU32::new(n)
     }
 }
 
-impl Sized<&GlobalContext> for TypeDescriptor {
-    fn size_of(&self, opts: &GlobalContext) -> Option<NonZeroUsize> {
+impl SizeOf<&GlobalContext> for TypeDescriptor {
+    fn size_of(&self, opts: &GlobalContext) -> Option<NonZeroU32> {
         match self {
             TypeDescriptor::Simple(s) => s.size_of(()),
             TypeDescriptor::Function(_) => None,
             TypeDescriptor::Class(_) => todo!(),
             TypeDescriptor::Generic(inner) => match inner {
                 Generic::Pointer { inner: _ } => todo!(),
+                Generic::Struct { inner } => NonZeroU32::new(
+                    inner
+                        .iter()
+                        .filter_map(|ty| opts.type_map.get(*ty)?.value().size_of(opts))
+                        .map(|n| n.get())
+                        .sum(),
+                ),
                 Generic::Union { inner } => {
                     let tag_size = BuiltinTypeId::I64.size_of(())?.get();
                     let largest = inner
@@ -382,7 +396,7 @@ impl Sized<&GlobalContext> for TypeDescriptor {
                         .map(|n| n.get())
                         .max()?;
 
-                    NonZeroUsize::new(tag_size + largest)
+                    NonZeroU32::new(tag_size + largest)
                 }
             },
         }

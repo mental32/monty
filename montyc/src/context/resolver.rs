@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{parser::{SpanInterner, SpanRef}, typing::TypeMap};
+use crate::{parser::{SpanInterner, SpanRef}};
 
 use super::ModuleRef;
 
@@ -10,7 +10,7 @@ use super::ModuleRef;
 pub struct InternalResolver {
     pub span_ref: Rc<RefCell<SpanInterner>>,
     pub sources: DashMap<ModuleRef, Rc<str>>,
-    pub type_map: Rc<TypeMap>,
+    // pub type_map: Rc<TypeMap>,
 }
 
 impl InternalResolver {

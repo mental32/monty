@@ -1,6 +1,6 @@
 #![allow(warnings)]
 
-use std::{cell::RefCell, num::NonZeroUsize, rc::{Rc, Weak}, sync::atomic::AtomicUsize};
+use std::{cell::RefCell, num::NonZeroU32, rc::{Rc, Weak}, sync::atomic::AtomicUsize};
 
 use dashmap::DashMap;
 
@@ -97,7 +97,7 @@ impl LookupTarget for DefEntry {
 }
 
 #[derive(Debug, Default)]
-pub struct AstDatabase {
+pub struct ObjectDatabase {
     last_def_id: AtomicUsize,
     entries: DashMap<DefId, Rc<DefEntry>>,
     by_pointer: DashMap<*const (), DefId>,
@@ -105,7 +105,7 @@ pub struct AstDatabase {
     by_span: DashMap<(ModuleRef, Span), Vec<DefId>>,
 }
 
-impl AstDatabase {
+impl ObjectDatabase {
     fn insert_directly(&self, entry: DefEntry) -> DefId {
         let key = self
             .last_def_id
@@ -193,7 +193,7 @@ impl AstDatabase {
         mref: ModuleRef,
         thing: Rc<dyn AstObject>,
         gctx: &GlobalContext,
-    ) -> Option<NonZeroUsize> {
+    ) -> Option<NonZeroU32> {
         let id = self
             .find(&thing)
             .or_else(|| self.find_by_span(&mref, thing.span()?))?;
@@ -202,7 +202,7 @@ impl AstDatabase {
 
         let kind = entry.infered_type.borrow().clone()?.ok()?;
 
-        crate::typing::Sized::size_of(gctx.type_map.get(kind)?.value(), gctx)
+        crate::typing::SizeOf::size_of(gctx.type_map.get(kind)?.value(), gctx)
     }
 
     pub fn insert_module(&mut self, mctx: &ModuleContext) -> DefId {
@@ -291,7 +291,7 @@ impl AstDatabase {
 #[derive(Debug)]
 pub struct LazyDefEntries<'a> {
     inner: Vec<DefId>,
-    database: &'a AstDatabase,
+    database: &'a ObjectDatabase,
 }
 
 impl<'a> Iterator for LazyDefEntries<'a> {
@@ -307,7 +307,7 @@ impl<'a> Iterator for LazyDefEntries<'a> {
 
 #[derive(Debug)]
 pub struct QueryIter<'a> {
-    database: &'a AstDatabase,
+    database: &'a ObjectDatabase,
     results: Vec<DefId>,
 }
 

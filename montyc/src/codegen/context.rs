@@ -36,6 +36,9 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataContext, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use dashmap::DashMap;
+use structbuf::StructBuf;
+
+use super::structbuf;
 
 #[derive(Debug)]
 pub struct ModuleNames {
@@ -53,17 +56,20 @@ where
     pub codegen_backend: &'b CodegenBackend<'a>,
     pub vars: &'a HashMap<NonZeroUsize, StackSlot>,
     pub func: &'b Function,
+    pub structs: Rc<RefCell<HashMap<LocalTypeId, StructBuf>>>,
 }
 
 pub struct CodegenBackend<'a> {
     pub(crate) strings: HashMap<StringRef, DataId>,
+    pub(crate) names: HashMap<ModuleRef, ModuleNames>,
+    pub(crate) types: HashMap<LocalTypeId, codegen::ir::Type>,
+    pub(crate) external_functions: HashMap<FuncId, Signature>,
+
     pub(crate) global_context: &'a GlobalContext,
     pub(crate) object_module: RefCell<ObjectModule>,
     pub(crate) flags: settings::Flags,
-    pub(crate) names: HashMap<ModuleRef, ModuleNames>,
-    pub(crate) types: HashMap<LocalTypeId, codegen::ir::Type>,
+
     pub(crate) pending: Vec<(usize, Linkage, codegen::isa::CallConv)>,
-    pub(crate) external_functions: HashMap<FuncId, Signature>,
 }
 
 impl<'global> CodegenBackend<'global> {
@@ -233,7 +239,7 @@ impl<'global> CodegenBackend<'global> {
         for var in func.vars.iter() {
             let (var, ty) = (var.key().clone(), (var.0));
 
-            let size = crate::typing::Sized::size_of(
+            let size = crate::typing::SizeOf::size_of(
                 self.global_context.type_map.get(ty).unwrap().value(),
                 &self.global_context,
             )
@@ -271,6 +277,14 @@ impl<'global> CodegenBackend<'global> {
 
         let mut builder = builder;
 
+        let structs = Rc::new(Default::default());
+        let ctx = CodegenContext {
+            codegen_backend: self,
+            structs,
+            vars: &vars,
+            func,
+        };
+
         for (bid, block) in it {
             assert!(block.succs.len() <= 1);
 
@@ -290,14 +304,7 @@ impl<'global> CodegenBackend<'global> {
 
             for node in block.nodes.iter() {
                 if let Some(stmt) = crate::isinstance!(node.as_ref(), Statement) {
-                    let ctx = CodegenContext {
-                        codegen_backend: self,
-                        // builder: Rc::clone(&builder),
-                        vars: &vars,
-                        func,
-                    };
-
-                    let ret = stmt.lower_with((ctx, &mut builder));
+                    let ret = stmt.lower_with((ctx.clone(), &mut builder));
 
                     if implicit_return && ret.is_some() {
                         implicit_return = ret.unwrap();
@@ -395,15 +402,22 @@ impl<'global> CodegenBackend<'global> {
                 )),
                 codegen::ir::types::I64,
             );
+
+            types.insert(
+                TypeMap::STRING,
+                codegen::ir::types::I64,
+            );
         }
 
         Self {
             global_context,
             object_module: RefCell::new(object_module),
-            types,
             flags,
-            names: HashMap::new(),
+
             pending: vec![],
+
+            types,
+            names: HashMap::new(),
             external_functions: HashMap::new(),
             strings: HashMap::new(),
         }

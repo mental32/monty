@@ -1,13 +1,10 @@
 use nom::sequence::tuple;
 use nom::{branch::alt, IResult};
 
-use crate::ast::{atom::Atom, Spanned};
+use crate::{ast::{atom::Atom, Spanned}};
 use crate::parser::{token::PyToken, TokenSlice};
 
-use super::{
-    core::{expect_, expect_any_of},
-    expect_with,
-};
+use super::{core::{expect, expect_, expect_any_of, expect_many_n}, expect_with};
 
 #[inline]
 fn expect_digits<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {
@@ -88,6 +85,39 @@ fn string_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ato
 }
 
 #[inline]
+fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+    let (stream, lparen) = expect(stream, PyToken::LParen)?;
+    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+
+    let mut values = vec![];
+
+    while let Ok((s, expr)) = super::expr::expression(stream) {
+        values.push(std::rc::Rc::new(expr));
+
+        let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(s).unwrap_or((s, vec![]));
+
+        let (s, _) = match expect(s, PyToken::Comma) {
+            Ok(i) => i,
+            Err(_) => {
+                stream = s;
+                break
+            },
+        };
+
+        let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(s).unwrap_or((s, vec![]));
+
+        stream = s;
+    }
+
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+    let (stream, rparen) = expect(stream, PyToken::RParen)?;
+
+    let tple = Spanned { inner: Atom::Tuple(values), span: lparen.span.start..rparen.span.end };
+
+    Ok((stream, tple))
+}
+
+#[inline]
 pub fn atom_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Atom> {
     let (stream, Spanned { inner, .. }) = atom(stream)?;
     Ok((stream, inner))
@@ -109,7 +139,7 @@ pub fn atom<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>
         Ok((stream, atom))
     };
 
-    let (stream, atom) = alt((name, float, string_ref, integer, fallback))(stream)?;
+    let (stream, atom) = alt((name, float, string_ref, integer, tuple_literal, fallback))(stream)?;
 
     Ok((stream, atom))
 }

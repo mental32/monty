@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use std::rc::Rc;
 
 use nom::IResult;

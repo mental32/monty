@@ -1,8 +1,8 @@
 use std::{convert::TryFrom, rc::Rc};
 
-use crate::{prelude::*, scope::LookupOrder};
+use crate::{prelude::*, scope::LookupOrder, typing::Generic};
 
-use super::{assign::Assign, stmt::Statement, AstObject};
+use super::{assign::Assign, expr::Expr, stmt::Statement, AstObject};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StringRef(pub(crate) SpanRef);
@@ -44,7 +44,7 @@ impl From<StringRef> for SpanRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Atom {
     None,
     Ellipsis,
@@ -52,6 +52,7 @@ pub enum Atom {
     Str(SpanRef),
     Bool(bool),
     Float(f64),
+    Tuple(Vec<Rc<Spanned<Expr>>>),
     Comment(SpanRef),
     Name(SpanRef),
 }
@@ -100,6 +101,23 @@ impl TypedObject for Atom {
             Atom::Bool(_) => Ok(TypeMap::BOOL),
             Atom::Float(_) => Ok(TypeMap::FLOAT),
             Atom::Comment(_) => todo!(),
+
+            Atom::Tuple(values) => {
+                let mut inner = vec![];
+
+                for value in values {
+                    let ty = ctx.with(Rc::clone(value), |ctx, value| value.infer_type(&ctx))?;
+                    inner.push(ty);
+                }
+
+                let ty = ctx
+                    .global_context
+                    .type_map
+                    .entry(TypeDescriptor::Generic(Generic::Struct { inner }));
+
+                Ok(ty)
+            }
+
             Atom::Name(target) => {
                 log::trace!("infer_type:atom performing name lookup on atom {:?}", self);
 
@@ -165,6 +183,12 @@ impl TypedObject for Atom {
                 match ctx.scope.root() {
                     ScopeRoot::Func(f) => f.refs.borrow_mut().push(DataRef::StringConstant(st_ref)),
                     ScopeRoot::AstObject(_) | ScopeRoot::Class(_) => unimplemented!(),
+                }
+            }
+
+            Self::Tuple(values) => {
+                for value in values.iter() {
+                    ctx.with(Rc::clone(value), |ctx, value| value.typecheck(&ctx))?;
                 }
             }
 

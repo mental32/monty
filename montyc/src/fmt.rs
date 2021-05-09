@@ -24,7 +24,7 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
             .args
             .iter()
             .map(|arg| {
-                if let Some(inner) = self.gctx.resolver.type_map.get(*arg) {
+                if let Some(inner) = self.gctx.type_map.get(*arg) {
                     format!(
                         "{}",
                         Formattable {
@@ -44,7 +44,7 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
         let name = self.gctx.span_ref.borrow().get(self.name).unwrap();
         let name = source.value().get(name).unwrap();
 
-        let ret = if let Some(inner) = self.gctx.resolver.type_map.get(self.ret) {
+        let ret = if let Some(inner) = self.gctx.type_map.get(self.ret) {
             format!(
                 "{}",
                 Formattable {
@@ -115,12 +115,36 @@ impl fmt::Display for Formattable<'_, &Generic> {
                 }
             ),
 
+            Generic::Struct { inner } => {
+                write!(
+                    f,
+                    "Tuple[{}]",
+                    inner
+                        .iter()
+                        .map(|l| format!(
+                            "{}",
+                            Formattable {
+                                gctx: self.gctx,
+                                inner: *l
+                            }
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+
             Generic::Union { inner } => write!(
                 f,
                 "Union[{}]",
                 inner
                     .iter()
-                    .map(|l| format!("{}", Formattable { gctx: self.gctx, inner: *l}))
+                    .map(|l| format!(
+                        "{}",
+                        Formattable {
+                            gctx: self.gctx,
+                            inner: *l
+                        }
+                    ))
                     .collect::<Vec<_>>()
                     .join(", ")
             ),

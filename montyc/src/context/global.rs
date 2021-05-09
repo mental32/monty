@@ -19,7 +19,7 @@ use crate::{
         stmt::Statement,
     },
     class::Class,
-    database::AstDatabase,
+    database::ObjectDatabase,
     func::Function,
     parser::SpanInterner,
     phantom::PhantomObject,
@@ -73,11 +73,11 @@ pub struct GlobalContext {
     pub modules: HashMap<ModuleRef, ModuleContext>,
     pub functions: RefCell<Vec<Rc<Function>>>,
     pub span_ref: Rc<RefCell<SpanInterner>>,
-    pub type_map: Rc<TypeMap>,
+    pub type_map: TypeMap,
     pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,
     pub libstd: PathBuf,
     pub resolver: Rc<InternalResolver>,
-    pub database: AstDatabase,
+    pub database: ObjectDatabase,
     pub phantom_objects: Vec<Rc<PhantomObject>>,
     pub strings: DashMap<StringRef, StringData>,
 }
@@ -290,12 +290,11 @@ impl From<CompilerOptions> for GlobalContext {
 impl Default for GlobalContext {
     fn default() -> Self {
         let span_ref: Rc<RefCell<SpanInterner>> = Default::default();
-        let type_map: Rc<TypeMap> = Rc::new(TypeMap::correctly_initialized());
+        let type_map = TypeMap::correctly_initialized();
 
         let resolver = Rc::new(InternalResolver {
             span_ref: span_ref.clone(),
             sources: Default::default(),
-            type_map: type_map.clone(),
         });
 
         Self {

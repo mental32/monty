@@ -1,27 +1,121 @@
-use std::{collections::HashSet, rc::Rc};
+use std::{collections::HashSet, rc::Rc, convert::TryFrom};
 
-use cranelift_codegen::ir::{
-    condcodes::IntCC, ExtFuncData, ExternalName, GlobalValueData, StackSlotData, StackSlotKind,
-    TrapCode,
-};
+use cranelift_codegen::ir::{self, ExtFuncData, ExternalName, GlobalValueData, MemFlags, StackSlotData, StackSlotKind, TrapCode, condcodes::IntCC};
 
-use crate::{
-    ast::{
+use crate::{ast::{
         atom::{Atom, StringRef},
         expr::{Expr, InfixOp},
         primary::Primary,
         stmt::Statement,
-    },
-    prelude::*,
+    }, fmt::Formattable, prelude::*, typing::{Generic, TaggedType}};
+
+use super::{
+    context::{CodegenContext, CodegenLowerArg},
+    structbuf::StructBuf,
+    TypePair,
 };
 
-use super::context::{CodegenContext, CodegenLowerArg};
+fn traverse_fields(
+    elements: &[LocalTypeId],
+    ctx: &CodegenContext,
+) -> impl Iterator<Item = (std::alloc::Layout, TypePair)> {
+    let mut fields = vec![];
 
-impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Atom {
-    fn lower_with(&self, (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>) -> cranelift_codegen::ir::Value {
+    for kind in elements {
+        let tydesc = ctx
+            .codegen_backend
+            .global_context
+            .type_map
+            .get(*kind)
+            .unwrap();
+
+        let tydesc = tydesc.value();
+
+        if let TypeDescriptor::Generic(Generic::Struct { inner }) = tydesc {
+            fields.extend(traverse_fields(inner.as_slice(), ctx));
+        } else {
+            let ir_kind = ctx.codegen_backend.types.get(kind).expect(&format!("{}", Formattable { gctx: ctx.codegen_backend.global_context, inner: *kind}));
+
+            let size = ir_kind.bytes();
+
+            let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
+
+            let layout =
+                std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
+
+            fields.push((layout, (*kind, *ir_kind)))
+        }
+    }
+
+    fields.into_iter()
+}
+
+impl<'long, 'short, 'fx>
+    LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Atom
+{
+    fn lower_with(
+        &self,
+        (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>,
+    ) -> cranelift_codegen::ir::Value {
         use cranelift_codegen::ir::InstBuilder;
 
         match self {
+            Atom::Tuple(elements) => {
+                let mut inner = Vec::with_capacity(elements.len());
+                let mref = ctx.func.scope.module_ref();
+
+                for elem in elements.iter() {
+                    let elem_t = ctx
+                        .codegen_backend
+                        .global_context
+                        .database
+                        .type_of(&(Rc::clone(elem) as Rc<_>), Some(&mref))
+                        .unwrap();
+
+                    inner.push(elem_t);
+                }
+
+                let kind = {
+                    ctx.codegen_backend
+                        .global_context
+                        .type_map
+                        .entry(TypeDescriptor::Generic(Generic::Struct { inner }))
+                };
+
+                let inner = if let Some(Ok(TaggedType {
+                    inner: Generic::Struct { inner },
+                    ..
+                })) = ctx
+                    .codegen_backend
+                    .global_context
+                    .type_map
+                    .get_tagged::<Generic>(kind)
+                {
+                    inner
+                } else {
+                    unreachable!()
+                };
+
+                let mut structs = ctx.structs.borrow_mut();
+
+                let sbuf = structs.entry(kind).or_insert_with(|| {
+                    StructBuf::new(
+                        (ctx.clone(), builder),
+                        kind,
+                        traverse_fields(inner.as_slice(), &ctx),
+                    )
+                });
+
+                for (field, elem) in elements.iter().enumerate() {
+                    let value = elem.inner.lower_with((ctx.clone(), builder));
+
+                    sbuf.write(field, value, (ctx.clone(), builder));
+                }
+
+
+                sbuf.addr((ctx.clone(), builder), 0).unwrap()
+            }
+
             Atom::None => todo!(),
             Atom::Ellipsis => todo!(),
             Atom::Int(n) => builder.ins().iconst(
@@ -63,15 +157,21 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelif
                 let ss = ctx.vars.get(&n).unwrap();
                 let (ty, _) = ctx.func.vars.get(n).map(|r| r.value().clone()).unwrap();
 
-                let ty = ctx.codegen_backend.types[&ty];
+                if let Some(sbuf) = ctx.structs.borrow().get(&ty) {
+                    sbuf.addr((ctx.clone(), builder), 0).unwrap()
+                } else {
+                    let ty = ctx.codegen_backend.types.get(&ty).expect(&format!("{}", Formattable { gctx: ctx.codegen_backend.global_context, inner: ty}));
 
-                builder.ins().stack_load(ty, ss.clone(), 0)
+                    builder.ins().stack_load(*ty, ss.clone(), 0)
+                }
             }
         }
     }
 }
 
-impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, Option<bool>> for Statement {
+impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, Option<bool>>
+    for Statement
+{
     fn lower_with(&self, (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>) -> Option<bool> {
         use cranelift_codegen::ir::InstBuilder;
 
@@ -120,13 +220,16 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, Option<b
                     .clone();
                 let mref = ctx.func.scope.module_ref();
 
-                let value = if let Some(ann) = &asn.kind {
+                let mut value = asn.value.inner.lower_with((ctx.clone(), builder));
+
+                if let Some(ann) = &asn.kind {
                     let value_ty = ctx
                         .codegen_backend
                         .global_context
                         .database
                         .type_of(&(Rc::clone(&asn.value) as Rc<_>), Some(&mref))
                         .unwrap();
+
                     let kind_ty = ctx
                         .codegen_backend
                         .global_context
@@ -141,12 +244,8 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, Option<b
                         .coerce(value_ty, kind_ty)
                         .unwrap();
 
-                    let value = asn.value.inner.lower_with((ctx.clone(), builder));
-
-                    rule((ctx.clone(), builder), value)
-                } else {
-                    asn.value.inner.lower_with((ctx.clone(), builder))
-                };
+                    value = rule((ctx.clone(), builder), value)
+                }
 
                 builder.ins().stack_store(value, ss, 0);
             }
@@ -278,14 +377,53 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, Option<b
     }
 }
 
-impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Primary {
-    fn lower_with(&self, (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>) -> cranelift_codegen::ir::Value {
+impl<'long, 'short, 'fx>
+    LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Primary
+{
+    fn lower_with(
+        &self,
+        (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>,
+    ) -> cranelift_codegen::ir::Value {
         use cranelift_codegen::ir::InstBuilder;
 
-        #[allow(warnings)]
         match self {
             Primary::Atomic(at) => at.inner.lower_with((ctx.clone(), builder)),
-            Primary::Subscript { value, index } => todo!(),
+
+            Primary::Subscript { value, index } => {
+                let v = value.inner.lower_with((ctx.clone(), builder));
+
+                let value_t = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(value) as Rc<_>), None).unwrap();
+
+                if let Some(sbuf) = ctx.structs.borrow().get(&value_t) {
+                    if let Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) = &index.inner {
+                        let n = match atom.inner {
+                            Atom::Ellipsis
+                            | Atom::Str(_)
+                            | Atom::Tuple(_)
+                            | Atom::Comment(_)
+                            | Atom::Name(_)
+                            | Atom::Float(_)
+                            | Atom::None => { unreachable!(); },
+
+                            Atom::Int(n) => n,
+                            Atom::Bool(b) => b.then_some(1).unwrap_or(0),
+                        };
+
+                        let idx = if n < 0 {
+                            sbuf.len() - usize::try_from(-n).unwrap()
+                        } else {
+                            usize::try_from(n).unwrap()
+                        };
+
+                        sbuf.read(idx, (ctx.clone(), builder)).unwrap()
+                    } else {
+                        todo!();
+                    }
+                } else {
+                    todo!()
+                }
+            },
+
             Primary::Call { func, args } => {
                 let func_name = match &func.inner {
                     Primary::Atomic(atom) => match atom.as_ref().inner {
@@ -341,7 +479,7 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelif
                                     .type_map
                                     .coerce(arg_t, param_t)
                                     .unwrap()(
-                                        (ctx.clone(), builder), value
+                                    (ctx.clone(), builder), value
                                 )
                             }
 
@@ -387,8 +525,13 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelif
     }
 }
 
-impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Expr {
-    fn lower_with(&self, (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>) -> cranelift_codegen::ir::Value {
+impl<'long, 'short, 'fx>
+    LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Expr
+{
+    fn lower_with(
+        &self,
+        (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>,
+    ) -> cranelift_codegen::ir::Value {
         use cranelift_codegen::ir::InstBuilder;
 
         match self {
@@ -436,11 +579,10 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelif
                     .unwrap()
                     .get();
 
-                let ss = builder
-                    .create_stack_slot(StackSlotData::new(
-                        StackSlotKind::ExplicitSlot,
-                        size as u32,
-                    ));
+                let ss = builder.create_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    size as u32,
+                ));
 
                 let cc = test.inner.lower_with((ctx.clone(), builder));
 
@@ -521,9 +663,7 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelif
 
                                 builder.switch_to_block(underflow_trap);
 
-                                builder
-                                    .ins()
-                                    .trap(TrapCode::IntegerOverflow);
+                                builder.ins().trap(TrapCode::IntegerOverflow);
 
                                 builder.switch_to_block(exit_block);
                                 let v0 = builder.ins().stack_load(
@@ -554,19 +694,17 @@ impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelif
                         InfixOp::LeftShift => todo!(),
                         InfixOp::RightShift => todo!(),
                         InfixOp::NotEq => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) =>
-                                builder
-                                .ins()
-                                .icmp(IntCC::NotEqual, rvalue, lvalue),
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                builder.ins().icmp(IntCC::NotEqual, rvalue, lvalue)
+                            }
 
                             _ => unreachable!(),
                         },
 
                         InfixOp::Eq => match (left_ty, right_ty) {
-                            (TypeMap::INTEGER, TypeMap::INTEGER) =>
-                                builder
-                                .ins()
-                                .icmp(IntCC::Equal, rvalue, lvalue),
+                            (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                builder.ins().icmp(IntCC::Equal, rvalue, lvalue)
+                            }
 
                             _ => unreachable!(),
                         },

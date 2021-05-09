@@ -199,6 +199,7 @@ impl<'a> LocalContext<'a> {
             .global_context
             .database
             .entry(Rc::clone(&t), &self.module_ref);
+
         let def_id = self.global_context.database.id_of(&entry).unwrap();
 
         let _ = self.global_context.database.set_type_of(def_id, type_id);
