@@ -6,10 +6,14 @@ use nom::{
     IResult,
 };
 
-use crate::ast::{primary::Primary, Spanned};
+use crate::ast::{expr::Expr, primary::Primary, Spanned};
 use crate::parser::{token::PyToken, TokenSlice};
 
-use super::{atom::atom, core::{expect, expect_, expect_many_n}, expression};
+use super::{
+    atom::atom,
+    core::{expect, expect_, expect_many_n},
+    expression,
+};
 
 #[inline]
 fn primary_subscript<'a>(
@@ -18,7 +22,28 @@ fn primary_subscript<'a>(
 ) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
     let (stream, _) = expect(stream, PyToken::LBracket)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, index) = expression(stream)?;
+
+    let tuple = |stream| -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+        let (stream, values) = super::atom::tuple_literal_inner(stream)?;
+
+        let first_value = values.get(0).unwrap();
+        let last_value = values.last().unwrap();
+
+        let span = first_value.span.start..last_value.span.end;
+
+        let tple = Spanned {
+            inner: crate::ast::atom::Atom::Tuple(values),
+            span,
+        }
+        .transparent_with(Rc::new)
+        .map(Primary::Atomic)
+        .transparent_with(Expr::Primary);
+
+        Ok((stream, tple))
+    };
+
+    let (stream, index) = tuple(stream).or_else(|_| expression(stream))?;
+
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, rbracket) = expect(stream, PyToken::RBracket)?;
 

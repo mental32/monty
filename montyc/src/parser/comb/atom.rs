@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use nom::sequence::tuple;
 use nom::{branch::alt, IResult};
 
-use crate::{ast::{atom::Atom, Spanned}};
+use crate::{ast::{Spanned, atom::Atom, expr::Expr}};
 use crate::parser::{token::PyToken, TokenSlice};
 
 use super::{core::{expect, expect_, expect_any_of, expect_many_n}, expect_with};
@@ -85,10 +87,7 @@ fn string_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ato
 }
 
 #[inline]
-fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
-    let (stream, lparen) = expect(stream, PyToken::LParen)?;
-    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
-
+pub fn tuple_literal_inner<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Rc<Spanned<Expr>>>> {
     let mut values = vec![];
 
     while let Ok((s, expr)) = super::expr::expression(stream) {
@@ -110,6 +109,15 @@ fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
     }
 
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+
+    Ok((stream, values))
+}
+
+#[inline]
+fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+    let (stream, lparen) = expect(stream, PyToken::LParen)?;
+    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+    let (stream, values) = tuple_literal_inner(stream)?;
     let (stream, rparen) = expect(stream, PyToken::RParen)?;
 
     let tple = Spanned { inner: Atom::Tuple(values), span: lparen.span.start..rparen.span.end };
