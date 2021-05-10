@@ -1,3 +1,14 @@
 [workspace]
 
 members = ["montyc"]
+
+[profile.dev]
+codegen-units = 8
+lto = "off"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+debug-assertions = false
+debug = 0
