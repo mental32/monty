@@ -639,40 +639,13 @@ impl<'long, 'short, 'fx>
 
                         InfixOp::Sub => match (left_ty, right_ty) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                let ss = builder.create_stack_slot(
-                                    cranelift_codegen::ir::stackslot::StackSlotData::new(
-                                        StackSlotKind::ExplicitSlot,
-                                        8,
-                                    ),
-                                );
+                                let result = builder.ins().isub(lvalue, rvalue);
 
-                                let v0 = builder.ins().isub(lvalue, rvalue);
-                                builder.ins().stack_store(v0, ss, 0);
+                                let cc = builder.ins().ifcmp(result, lvalue);
 
-                                let underflow_trap = builder.create_block();
-                                let exit_block = builder.create_block();
+                                builder.ins().trapif(IntCC::SignedGreaterThan, cc, TrapCode::IntegerOverflow);
 
-                                builder.ins().br_icmp(
-                                    IntCC::SignedGreaterThan,
-                                    v0,
-                                    lvalue,
-                                    underflow_trap,
-                                    &[],
-                                );
-                                builder.ins().jump(exit_block, &[]);
-
-                                builder.switch_to_block(underflow_trap);
-
-                                builder.ins().trap(TrapCode::IntegerOverflow);
-
-                                builder.switch_to_block(exit_block);
-                                let v0 = builder.ins().stack_load(
-                                    cranelift_codegen::ir::types::I64,
-                                    ss,
-                                    0,
-                                );
-
-                                v0
+                                result
                             }
                             _ => unreachable!(),
                         },
