@@ -57,15 +57,15 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
             },
         )
     } else {
-        let mut indent_level = None;
+        let mut inner_indent_level = None;
 
         loop {
             let (remaining, _) = expect_many_n::<0>(PyToken::Newline)(stream)?;
 
-            let remaining = if indent_level.is_none() {
+            let remaining = if inner_indent_level.is_none() {
                 let (_, indent) = expect_many_n::<0>(PyToken::Whitespace)(remaining)?;
 
-                indent_level.replace(indent.len());
+                inner_indent_level.replace(indent.len());
 
                 remaining
             } else {
@@ -73,7 +73,7 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
             };
 
             if let Ok((remaining, _)) =
-                expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(remaining)
+                expect_many_n_var(inner_indent_level.unwrap(), PyToken::Whitespace)(remaining)
             {
                 // panic!("{:?}", remaining);
                 let (remaining, part) = match statement(remaining) {
@@ -98,14 +98,23 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
 
         let mut stream = stream;
 
+        let mut outer_indent_level = None;
+
         'elif: loop {
-            let (s, nl) = expect_many_n::<0>(PyToken::Newline)(stream).unwrap_or((stream, vec![]));
-            let (s, ws) = expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(s)
-                .unwrap_or((s, vec![]));
+            let (s, _) = expect_many_n::<0>(PyToken::Newline)(stream)?;
+
+            let s = if outer_indent_level.is_none() {
+                let (_, indent) = expect_many_n::<0>(PyToken::Whitespace)(s)?;
+
+                outer_indent_level.replace(indent.len());
+
+                s
+            } else {
+                s
+            };
 
             let elif = match (expect(s, PyToken::Elif)) {
                 Ok(inner) => inner,
-                Err(e) if nl.is_empty() && ws.is_empty() => return Err(e),
                 Err(_) => break,
             };
 
@@ -154,8 +163,19 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
         }
 
         let (stream, nl) = expect_many_n::<0>(PyToken::Newline)(stream).unwrap_or((stream, vec![]));
+
+        let stream = if outer_indent_level.is_none() {
+            let (_, indent) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+            outer_indent_level.replace(indent.len());
+
+            stream
+        } else {
+            stream
+        };
+
         let (mut stream, ws) =
-            expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(stream)
+            expect_many_n_var(outer_indent_level.unwrap(), PyToken::Whitespace)(stream)
                 .unwrap_or((stream, vec![]));
 
         if let Ok((else_stream, else_)) = (expect(stream, PyToken::Else)) {
