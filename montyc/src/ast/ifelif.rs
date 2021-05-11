@@ -56,6 +56,8 @@ impl TypedObject for If {
         let mut ctx = ctx.clone();
         ctx.this = Some(self.test.clone());
 
+        ctx.with(Rc::clone(&self.test), |ctx, test| test.typecheck(&ctx))?;
+
         let test_t = ctx.with(Rc::clone(&self.test), |ctx, test| test.infer_type(&ctx))?;
 
         if !ctx.global_context.type_map.type_eq(test_t, TypeMap::BOOL) {
