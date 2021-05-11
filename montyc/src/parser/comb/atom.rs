@@ -88,7 +88,16 @@ fn string_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ato
 
 #[inline]
 pub fn tuple_literal_inner<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Rc<Spanned<Expr>>>> {
-    let mut values = vec![];
+    let (stream, first) = super::expr::expression(stream)?;
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+    let (stream, _) = match expect(stream, PyToken::Comma) {
+        Ok(i) => i,
+        Err(e) => return Err(e),
+    };
+
+    let mut values = vec![Rc::new(first)];
+
+    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
 
     while let Ok((s, expr)) = super::expr::expression(stream) {
         values.push(std::rc::Rc::new(expr));
