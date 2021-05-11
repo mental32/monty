@@ -121,7 +121,7 @@ impl LowerCodegen for Atom {
             Atom::Bool(b) => {
                 let ir_ty = ctx.codegen_backend.scalar_type_of(TypeMap::BOOL);
 
-                let value = builder.ins().iconst(ir_ty, if *b { 1 } else { 0 });
+                let value = builder.ins().bconst(ir_ty, *b);
 
                 Some(TypedValue::by_val(
                     value,
