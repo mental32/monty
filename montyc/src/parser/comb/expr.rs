@@ -357,7 +357,6 @@ fn equality<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>
     let (stream, _) = expect_many_n::<0>(Whitespace)(stream)?;
     let (stream, left) = shift_expr(stream)?;
 
-
     let (stream, _) = expect_many_n::<0>(Whitespace)(stream)?;
     let (stream, token) = expect_any_of([Equal, Bang])(stream)?;
     let (stream, _) = expect(stream, Equal)?;

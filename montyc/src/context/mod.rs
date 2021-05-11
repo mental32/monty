@@ -1,4 +1,8 @@
-use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, path::PathBuf};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+};
 
 pub(crate) mod global;
 pub(crate) mod local;
@@ -29,7 +33,6 @@ impl fmt::Display for ModuleRef {
         write!(f, "{:?}", self.0)
     }
 }
-
 
 impl From<&str> for ModuleRef {
     fn from(s: &str) -> Self {

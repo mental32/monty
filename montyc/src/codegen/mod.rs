@@ -338,7 +338,8 @@ mod storage {
                         layout,
                         TypePair(type_id, Some(ctx.codegen_backend.scalar_type_of(type_id))),
                     )
-                }).collect();
+                })
+                .collect();
 
             StructBuf::new(self.as_ptr(), fields)
         }

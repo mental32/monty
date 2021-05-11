@@ -1,10 +1,21 @@
 #![allow(warnings)]
 
-use std::{cell::RefCell, num::NonZeroU32, rc::{Rc, Weak}, sync::atomic::AtomicUsize};
+use std::{
+    cell::RefCell,
+    num::NonZeroU32,
+    rc::{Rc, Weak},
+    sync::atomic::AtomicUsize,
+};
 
 use dashmap::DashMap;
 
-use crate::{ast::AstObject, context::{GlobalContext, LocalContext, ModuleContext, ModuleRef}, prelude::{Span, SpanRef}, scope::LookupTarget, typing::{LocalTypeId, TypeMap, TypedObject}};
+use crate::{
+    ast::AstObject,
+    context::{GlobalContext, LocalContext, ModuleContext, ModuleRef},
+    prelude::{Span, SpanRef},
+    scope::LookupTarget,
+    typing::{LocalTypeId, TypeMap, TypedObject},
+};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct DefId(usize);
@@ -168,7 +179,10 @@ impl ObjectDatabase {
         mref: Option<&ModuleRef>,
     ) -> Option<LocalTypeId> {
         let id = self.find(object).or_else(|| {
-            log::warn!("database:type_of falling back to a span-based search for {:?}", object);
+            log::warn!(
+                "database:type_of falling back to a span-based search for {:?}",
+                object
+            );
 
             let mref = mref?;
             let span = object.span()?;

@@ -2,7 +2,11 @@
 
 use std::rc::Rc;
 
-use crate::{prelude::SpanRef, scope::LookupTarget, typing::{TypeMap, TypedObject}};
+use crate::{
+    prelude::SpanRef,
+    scope::LookupTarget,
+    typing::{TypeMap, TypedObject},
+};
 
 use super::{expr::Expr, stmt::Statement, AstObject, Spanned};
 

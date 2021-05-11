@@ -8,7 +8,6 @@ use crate::{context::ModuleRef, prelude::PyToken};
 
 use super::span_ref::SpanInterner;
 
-
 lazy_static! {
     // Single quote string literals.
     static ref MULTI_SQ_STRING: Regex = Regex::new(r###"r?'''[^']*'''"###).unwrap();
@@ -20,12 +19,11 @@ lazy_static! {
     static ref COMMENT: Regex = Regex::new(r"^#[^\n]*").unwrap();
 }
 
-
 pub struct TokenStreamIter<'a> {
     pub(super) module_ref: ModuleRef,
     pub(super) source: Rc<str>,
     pub(super) span_ref: Rc<RefCell<SpanInterner>>,
-    pub(super) lexer: logos::Lexer<'a, PyToken>
+    pub(super) lexer: logos::Lexer<'a, PyToken>,
 }
 
 impl<'a> Iterator for TokenStreamIter<'a> {
@@ -38,12 +36,13 @@ impl<'a> Iterator for TokenStreamIter<'a> {
         let mut span_range = span.0.clone();
 
         if let PyToken::RawIdent = token {
-            let ident = self.span_ref
-                .borrow_mut()
-                .push_noclobber(span_range.clone(), &self.source, self.module_ref.clone());
+            let ident = self.span_ref.borrow_mut().push_noclobber(
+                span_range.clone(),
+                &self.source,
+                self.module_ref.clone(),
+            );
 
             token = PyToken::Ident(ident);
-
         } else if let PyToken::Invalid = token {
             // we're not letting logos handle string literal or comment
             // parsing so `Invalid` may be produced when encountering

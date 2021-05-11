@@ -2,7 +2,7 @@
 
 use logos::Logos;
 
-use super::{SpanRef};
+use super::SpanRef;
 
 #[derive(Debug, Logos, PartialEq, Copy, Clone)]
 pub enum PyToken {

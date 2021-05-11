@@ -7,7 +7,12 @@ use std::{
 use logos::Span;
 use typing::TypedObject;
 
-use crate::{context::LocalContext, parser::SpanRef, scope::LookupTarget, typing::{self, LocalTypeId}};
+use crate::{
+    context::LocalContext,
+    parser::SpanRef,
+    scope::LookupTarget,
+    typing::{self, LocalTypeId},
+};
 
 use self::{funcdef::FunctionDef, stmt::Statement};
 
@@ -29,21 +34,18 @@ pub type Iter<U> = Box<dyn Iterator<Item = U>>;
 pub type ObjectIter = Iter<Rc<dyn AstObject>>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Spanned<T>
-{
+pub struct Spanned<T> {
     pub span: Span,
     pub inner: T,
 }
 
-impl<T> Spanned<T>
-{
+impl<T> Spanned<T> {
     pub fn reveal<'a>(&self, source: &'a str) -> Option<&'a str> {
         source.get(self.span.clone())
     }
 }
 
-impl<T> Spanned<T>
-{
+impl<T> Spanned<T> {
     pub fn map<U, F>(self, f: F) -> Spanned<U>
     where
         F: FnOnce(T) -> U,
@@ -54,8 +56,7 @@ impl<T> Spanned<T>
         }
     }
 
-    pub fn transparent<U>(self, u: U) -> Spanned<U>
-    {
+    pub fn transparent<U>(self, u: U) -> Spanned<U> {
         Spanned {
             span: self.span,
             inner: u,
@@ -68,7 +69,10 @@ impl<T> Spanned<T>
     {
         Spanned {
             span: self.span.clone(),
-            inner: f(Self { inner: self.inner, span: self.span }),
+            inner: f(Self {
+                inner: self.inner,
+                span: self.span,
+            }),
         }
     }
 }
@@ -205,7 +209,11 @@ where
             //       since the caller is supposed to set `ctx.this = self` before interacting with us.
 
             assert_eq!(span, this_span, "{:?} != {:?}", object, this);
-            assert_eq!(format!("{:?}", this), format!("{:?}", object), "ctx.this is not the object!");
+            assert_eq!(
+                format!("{:?}", this),
+                format!("{:?}", object),
+                "ctx.this is not the object!"
+            );
 
             let object_entry = ctx
                 .global_context

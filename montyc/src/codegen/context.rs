@@ -67,14 +67,18 @@ impl Allocator {
         /// SAFETY: we're the only one that can produce AllocId's
         ///         and you're not allowed to "shrink" the underlying
         ///         backing storage so all IDs are valid. always.
-        unsafe { self.inner.get_unchecked(alloc_id.0) }
+        unsafe {
+            self.inner.get_unchecked(alloc_id.0)
+        }
     }
 
     pub fn get_mut(&mut self, alloc_id: AllocId) -> &mut Storage {
         /// SAFETY: we're the only one that can produce AllocId's
         ///         and you're not allowed to "shrink" the underlying
         ///         backing storage so all IDs are valid. always.
-        unsafe { self.inner.get_unchecked_mut(alloc_id.0) }
+        unsafe {
+            self.inner.get_unchecked_mut(alloc_id.0)
+        }
     }
 
     pub fn alloc(&mut self, storage: Storage) -> AllocId {
@@ -88,7 +92,8 @@ impl Allocator {
     }
 }
 
-type RValueAlloc<'a> = dyn Fn(CodegenLowerArg<'_, '_, '_>, &mut Storage) -> Option<tvalue::TypedValue> + 'a;
+type RValueAlloc<'a> =
+    dyn Fn(CodegenLowerArg<'_, '_, '_>, &mut Storage) -> Option<tvalue::TypedValue> + 'a;
 
 #[derive(Clone)]
 pub struct CodegenContext<'a, 'b>
@@ -106,8 +111,14 @@ impl<'a, 'b> CodegenContext<'a, 'b>
 where
     'a: 'b,
 {
-    pub fn size_and_layout_of(&self, TypePair(hl, _): TypePair) -> Option<(u32, std::alloc::Layout)> {
-        self.codegen_backend.global_context.type_map.size_and_layout(hl)
+    pub fn size_and_layout_of(
+        &self,
+        TypePair(hl, _): TypePair,
+    ) -> Option<(u32, std::alloc::Layout)> {
+        self.codegen_backend
+            .global_context
+            .type_map
+            .size_and_layout(hl)
     }
 
     pub fn alloca_rvalue(
@@ -163,7 +174,7 @@ where
                         let refined = fx.ins().bint(ir::types::I64, raw);
 
                         return TypedValue::by_val(refined, TypePair(into, Some(refined_t)));
-                    },
+                    }
 
                     (ir::types::B1, ir::types::B8) => {
                         let raw = value.clone().into_raw(fx);
@@ -174,7 +185,6 @@ where
 
                     _ => todo!("{:?} -> {:?}", real, refined_t),
                 }
-
             }
         }
 
@@ -427,11 +437,12 @@ impl<'global> CodegenBackend<'global> {
             .unwrap()
             .get();
 
-
-            let storage = Storage::new_stack_slot((ctx.clone(), &mut builder), TypePair(ty, Some(self.scalar_type_of(ty))));
+            let storage = Storage::new_stack_slot(
+                (ctx.clone(), &mut builder),
+                TypePair(ty, Some(self.scalar_type_of(ty))),
+            );
 
             let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
-
 
             if let Some(n) = vars.insert(var, alloc_id) {
                 unreachable!("duplicate var ss: {:?}", (var, n))
@@ -445,7 +456,6 @@ impl<'global> CodegenBackend<'global> {
             vars: &vars,
             func: ctx.func,
         };
-
 
         let mut implicit_return = true;
         let mut it = layout.iter_from(layout.start);
@@ -466,7 +476,10 @@ impl<'global> CodegenBackend<'global> {
 
                     let storage = alloc.get(alloc_id);
 
-                    storage.write(TypedValue::by_val(*value, TypePair(kind, Some(self.scalar_type_of(kind)))), &mut builder);
+                    storage.write(
+                        TypedValue::by_val(*value, TypePair(kind, Some(self.scalar_type_of(kind)))),
+                        &mut builder,
+                    );
                 }
             }
 

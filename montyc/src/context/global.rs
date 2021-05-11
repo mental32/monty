@@ -88,7 +88,9 @@ impl From<CompilerOptions> for GlobalContext {
     fn from(opts: CompilerOptions) -> Self {
         log::debug!("Bootstrapping with {:?}", opts);
 
-        let CompilerOptions { libstd, input: _, .. } = opts;
+        let CompilerOptions {
+            libstd, input: _, ..
+        } = opts;
 
         let libstd = match libstd.canonicalize() {
             Ok(path) => path,
@@ -133,9 +135,7 @@ impl From<CompilerOptions> for GlobalContext {
 
         ctx.type_map
             .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |(_, builder), _value| {
-                builder
-                    .ins()
-                    .iconst(cranelift_codegen::ir::types::I64, 0)
+                builder.ins().iconst(cranelift_codegen::ir::types::I64, 0)
             });
 
         ctx.type_map
@@ -150,9 +150,7 @@ impl From<CompilerOptions> for GlobalContext {
 
         ctx.type_map
             .add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |(_, builder), value| {
-                builder
-                    .ins()
-                    .icmp_imm(IntCC::Equal, value, 1)
+                builder.ins().icmp_imm(IntCC::Equal, value, 1)
             });
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {

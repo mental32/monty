@@ -1,6 +1,10 @@
 use std::rc::Rc;
 
-use crate::{parser::{SpanRef, comb::return_unspanned}, prelude::*, scope::ScopeRoot};
+use crate::{
+    parser::{comb::return_unspanned, SpanRef},
+    prelude::*,
+    scope::ScopeRoot,
+};
 
 use super::{expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, Spanned};
 
@@ -58,7 +62,6 @@ impl TypedObject for Return {
 
             None => TypeMap::NONE_TYPE,
         };
-
 
         if !ctx.global_context.type_map.type_eq(expected, actual) {
             let ret_node = ctx

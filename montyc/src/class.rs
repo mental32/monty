@@ -1,6 +1,12 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
-use crate::{ast::class::ClassDef, context::LocalContext, prelude::SpanRef, scope::LocalScope, typing::{FunctionType, LocalTypeId, TypeDescriptor, TypedObject}};
+use crate::{
+    ast::class::ClassDef,
+    context::LocalContext,
+    prelude::SpanRef,
+    scope::LocalScope,
+    typing::{FunctionType, LocalTypeId, TypeDescriptor, TypedObject},
+};
 
 #[derive(Debug)]
 pub struct Class {
@@ -17,7 +23,12 @@ impl Class {
         template: &FunctionType,
     ) -> Option<LocalTypeId> {
         for (name, kind) in self.properties.iter() {
-            if ctx.global_context.span_ref.borrow().crosspan_eq(*name, template.name) {
+            if ctx
+                .global_context
+                .span_ref
+                .borrow()
+                .crosspan_eq(*name, template.name)
+            {
                 if ctx
                     .global_context
                     .type_map

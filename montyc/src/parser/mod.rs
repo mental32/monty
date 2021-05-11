@@ -1,10 +1,13 @@
-use std::{cell::RefCell, ops::Range};
 use std::rc::Rc;
+use std::{cell::RefCell, ops::Range};
 
 use nom::IResult;
 use token_iter::TokenStreamIter;
 
-use crate::{ast::{AstObject, Spanned}, context::ModuleRef};
+use crate::{
+    ast::{AstObject, Spanned},
+    context::ModuleRef,
+};
 
 pub mod comb;
 pub mod token;
@@ -12,7 +15,7 @@ pub mod token_iter;
 
 mod span_ref;
 
-pub use span_ref::{SpanRef, SpanInterner};
+pub use span_ref::{SpanInterner, SpanRef};
 use token::PyToken;
 
 // -- Parser
@@ -42,7 +45,7 @@ impl Parser {
             module_ref,
             span_ref: Rc::clone(&self.span_ref),
             lexer: <PyToken as logos::Logos>::lexer(&self.source),
-            source: Rc::clone(&self.source)
+            source: Rc::clone(&self.source),
         };
 
         token_stream
@@ -50,10 +53,14 @@ impl Parser {
             .collect::<Vec<_>>()
             .into_boxed_slice()
     }
-
 }
 
-pub fn parse<P, R>(source: Rc<str>, func: P, span_ref: Option<Rc<RefCell<SpanInterner>>>, mref: ModuleRef) -> R
+pub fn parse<P, R>(
+    source: Rc<str>,
+    func: P,
+    span_ref: Option<Rc<RefCell<SpanInterner>>>,
+    mref: ModuleRef,
+) -> R
 where
     P: for<'a> Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, R>,
     R: AstObject,

@@ -75,10 +75,14 @@ pub(super) fn decorator<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, S
     let (stream, dec) = super::primary(stream)?;
 
     match &dec.inner {
-        crate::ast::primary::Primary::Atomic(atom) if matches!(atom.as_ref(), Spanned {
-            inner: Atom::Name(_),
-            ..
-        }) => {},
+        crate::ast::primary::Primary::Atomic(atom)
+            if matches!(
+                atom.as_ref(),
+                Spanned {
+                    inner: Atom::Name(_),
+                    ..
+                }
+            ) => {}
         crate::ast::primary::Primary::Attribute { .. } => {}
         crate::ast::primary::Primary::Call { .. } => {}
         _ => unreachable!(),

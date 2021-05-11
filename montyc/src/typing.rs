@@ -222,10 +222,7 @@ impl TypeMap {
         let mut fields = vec![];
 
         for kind in elements {
-            let tydesc = 
-                self
-                .get(*kind)
-                .unwrap();
+            let tydesc = self.get(*kind).unwrap();
 
             let tydesc = tydesc.value();
 
@@ -245,26 +242,29 @@ impl TypeMap {
         fields.into_iter()
     }
 
-
     #[inline]
-    pub fn fields_of(&self, type_id: LocalTypeId) -> Option<Vec<(std::alloc::Layout, LocalTypeId)>> {
+    pub fn fields_of(
+        &self,
+        type_id: LocalTypeId,
+    ) -> Option<Vec<(std::alloc::Layout, LocalTypeId)>> {
         let tydesc = self.get(type_id)?;
         let tydesc = tydesc.value();
-
 
         match type_id {
             Self::UNKNOWN => None,
 
-            type_id => if type_id.is_builtin() {
-                let size = SizeOf::size_of(tydesc, self).unwrap().get();
-                let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
+            type_id => {
+                if type_id.is_builtin() {
+                    let size = SizeOf::size_of(tydesc, self).unwrap().get();
+                    let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
 
-                let layout =
-                    std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
+                    let layout =
+                        std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
 
-                Some(vec![(layout, type_id)])
-            } else {
-                Some(self.traverse_fields(&[type_id]).collect())
+                    Some(vec![(layout, type_id)])
+                } else {
+                    Some(self.traverse_fields(&[type_id]).collect())
+                }
             }
         }
     }
@@ -470,7 +470,6 @@ impl SizeOf<&TypeMap> for TypeDescriptor {
         }
     }
 }
-
 
 impl SizeOf<&GlobalContext> for TypeDescriptor {
     fn size_of(&self, opts: &GlobalContext) -> Option<NonZeroU32> {

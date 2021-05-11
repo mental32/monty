@@ -1,11 +1,14 @@
-use std::{rc::Rc};
+use std::rc::Rc;
 
 use super::{
     assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain,
     import::Import, retrn::Return, while_::While, AstObject,
 };
 
-use crate::{parser::{SpanRef, comb::stmt::statement_unspanned}, prelude::*};
+use crate::{
+    parser::{comb::stmt::statement_unspanned, SpanRef},
+    prelude::*,
+};
 
 #[derive(Debug, Clone)]
 pub enum Statement {

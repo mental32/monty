@@ -28,7 +28,8 @@ pub fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
     );
 
     let (stream, kind) = if let Ok((stream, _)) = parsed(stream) {
-        let (stream, kind) = terminated(expression, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
+        let (stream, kind) =
+            terminated(expression, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
         (stream, Some(Rc::new(kind)))
     } else {

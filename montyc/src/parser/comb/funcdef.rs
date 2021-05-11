@@ -2,9 +2,16 @@ use std::rc::Rc;
 
 use nom::{branch::alt, error, multi::many0, sequence::terminated, IResult};
 
-use crate::{ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned}, parser::{TokenSlice, comb::expect_many_n_var, token::PyToken}, prelude::SpanRef};
+use crate::{
+    ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned},
+    parser::{comb::expect_many_n_var, token::PyToken, TokenSlice},
+    prelude::SpanRef,
+};
 
-use super::{class::decorator_list, expect, expect_, expect_ident, expect_many_n, expr::expression, primary, stmt::statement};
+use super::{
+    class::decorator_list, expect, expect_, expect_ident, expect_many_n, expr::expression, primary,
+    stmt::statement,
+};
 
 #[inline]
 fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {

@@ -51,7 +51,7 @@ impl TypedObject for Assign {
                 let mut ctx = ctx.clone();
                 ctx.this = Some(Rc::clone(at) as Rc<_>);
                 Some(at.infer_type(&ctx)?)
-            },
+            }
 
             None => None,
         };

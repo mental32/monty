@@ -52,7 +52,6 @@ impl SpanInterner {
         };
 
         if let Some((clobber_span, mut srefs)) = self.clobber_map.get_mut(&hash).cloned() {
-
             if srefs.iter().find(|(_, m)| *m == mref).is_none() {
                 let sref = self.push(value);
                 srefs.push((sref, mref.clone()));
@@ -63,7 +62,8 @@ impl SpanInterner {
         } else {
             let clobber_span = self.push(value);
 
-            self.clobber_map.insert(hash, (clobber_span, vec![((clobber_span, mref.clone()))]));
+            self.clobber_map
+                .insert(hash, (clobber_span, vec![((clobber_span, mref.clone()))]));
             self.span_trace_map.insert(clobber_span, (mref, hash));
 
             clobber_span
@@ -86,7 +86,7 @@ impl SpanInterner {
     }
 
     #[inline]
-    pub(in super) fn push(&mut self, value: Range<usize>) -> SpanRef {
+    pub(super) fn push(&mut self, value: Range<usize>) -> SpanRef {
         self.ptr += 1;
         let key = self.ptr;
         self.seq.push(value);

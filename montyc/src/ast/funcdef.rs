@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{func::Function, prelude::*};
 
-use super::{AstObject, Spanned, atom::Atom, expr::Expr, primary::Primary};
+use super::{atom::Atom, expr::Expr, primary::Primary, AstObject, Spanned};
 
 #[derive(Debug, Clone)]
 pub struct TypedFuncArg {
@@ -98,7 +98,10 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         }) = def.reciever
         {
             let mut ctx = ctx.clone();
-            ctx.this = def.reciever.clone().map(|rec| Rc::new(rec) as Rc<dyn AstObject>);
+            ctx.this = def
+                .reciever
+                .clone()
+                .map(|rec| Rc::new(rec) as Rc<dyn AstObject>);
 
             Some(
                 Atom::Name(r)
@@ -141,7 +144,6 @@ impl TypedObject for FunctionDef {
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-
         let this = ctx.this.as_ref().unwrap();
 
         let func = Function::new(this, ctx).unwrap_or_compiler_error(ctx);

@@ -192,7 +192,7 @@ impl TypedObject for Atom {
                 }
             }
 
-            Self::Comment(_) | Self::Int(_) => {},
+            Self::Comment(_) | Self::Int(_) => {}
 
             _ => log::warn!("typecheck:atom Skipping check for self={:?}", self),
         }

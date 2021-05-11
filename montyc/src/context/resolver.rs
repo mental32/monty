@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{parser::{SpanInterner, SpanRef}};
+use crate::parser::{SpanInterner, SpanRef};
 
 use super::ModuleRef;
 

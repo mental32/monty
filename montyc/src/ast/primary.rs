@@ -1,12 +1,18 @@
-use std::rc::Rc;
 use std::convert::TryFrom;
+use std::rc::Rc;
 
 use parser::SpanRef;
 
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{func::DataRef, parser, prelude::*, scope::LookupOrder, typing::{Generic, TaggedType}};
+use crate::{
+    func::DataRef,
+    parser,
+    prelude::*,
+    scope::LookupOrder,
+    typing::{Generic, TaggedType},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -119,13 +125,24 @@ impl TypedObject for Primary {
                 let value_t = ctx.with(Rc::clone(value), |ctx, value| value.infer_type(&ctx))?;
                 let index_t = ctx.with(Rc::clone(index), |ctx, index| index.infer_type(&ctx))?;
 
-                if let Some(Ok(TaggedType { inner: Generic::Struct { inner }, ..})) = ctx.global_context.type_map.get_tagged(value_t) {
-
-                    if !ctx.global_context.type_map.type_eq(index_t, TypeMap::INTEGER) {
+                if let Some(Ok(TaggedType {
+                    inner: Generic::Struct { inner },
+                    ..
+                })) = ctx.global_context.type_map.get_tagged(value_t)
+                {
+                    if !ctx
+                        .global_context
+                        .type_map
+                        .type_eq(index_t, TypeMap::INTEGER)
+                    {
                         todo!("error must have subscript with integer type.");
                     }
 
-                    if let Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) = &index.inner {
+                    if let Expr::Primary(Spanned {
+                        inner: Primary::Atomic(atom),
+                        ..
+                    }) = &index.inner
+                    {
                         let n = match atom.inner {
                             Atom::Ellipsis
                             | Atom::Str(_)
@@ -133,7 +150,9 @@ impl TypedObject for Primary {
                             | Atom::Comment(_)
                             | Atom::Name(_)
                             | Atom::Float(_)
-                            | Atom::None => { unreachable!(); },
+                            | Atom::None => {
+                                unreachable!();
+                            }
 
                             Atom::Int(n) => n,
                             Atom::Bool(b) => b.then_some(1).unwrap_or(0),
@@ -147,17 +166,15 @@ impl TypedObject for Primary {
 
                         match inner.get(idx) {
                             Some(ty) => Ok(*ty),
-                            None => todo!("out of bound const access.")
+                            None => todo!("out of bound const access."),
                         }
-
                     } else {
                         unimplemented!();
                     }
-
                 } else {
                     todo!();
                 }
-            },
+            }
 
             Primary::Call { func, args: _ } => {
                 log::trace!("infer_type:call {:?}", func);
@@ -271,7 +288,11 @@ impl TypedObject for Primary {
                     let def_node = 'outer: loop {
                         let results = ctx
                             .scope
-                            .lookup_def(func.name().unwrap(), &ctx.global_context, LookupOrder::Unspecified)
+                            .lookup_def(
+                                func.name().unwrap(),
+                                &ctx.global_context,
+                                LookupOrder::Unspecified,
+                            )
                             .unwrap_or_compiler_error(ctx);
 
                         for obj in results {

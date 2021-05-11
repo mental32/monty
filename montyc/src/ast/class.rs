@@ -18,12 +18,10 @@ impl<'a> From<(&LocalContext<'a>, &ClassDef)> for crate::class::Class {
             None => {
                 let type_map = &ctx.global_context.type_map;
 
-                type_map.insert(TypeDescriptor::Class(
-                    crate::typing::ClassType {
-                        name: def.name.inner.name().unwrap(),
-                        mref: ctx.module_ref.clone(),
-                    },
-                ))
+                type_map.insert(TypeDescriptor::Class(crate::typing::ClassType {
+                    name: def.name.inner.name().unwrap(),
+                    mref: ctx.module_ref.clone(),
+                }))
             }
         };
 
@@ -56,10 +54,7 @@ impl TypedObject for ClassDef {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         let this = ctx.this.as_ref().unwrap();
 
-        if let Some(type_id) = ctx
-            .global_context
-            .is_builtin(this.as_ref())
-        {
+        if let Some(type_id) = ctx.global_context.is_builtin(this.as_ref()) {
             return Ok(type_id);
         } else {
             todo!();

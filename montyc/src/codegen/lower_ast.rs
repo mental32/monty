@@ -5,12 +5,18 @@ use cranelift_codegen::ir::{
     StackSlotKind, TrapCode,
 };
 
-use crate::{ast::{
+use crate::{
+    ast::{
         atom::{Atom, StringRef},
         expr::{Expr, InfixOp},
         primary::Primary,
         stmt::Statement,
-    }, codegen::{pointer::Pointer, storage::Storage, tvalue::TypedValue}, fmt::Formattable, prelude::*, typing::{Generic, TaggedType}};
+    },
+    codegen::{pointer::Pointer, storage::Storage, tvalue::TypedValue},
+    fmt::Formattable,
+    prelude::*,
+    typing::{Generic, TaggedType},
+};
 
 use super::{
     context::{CodegenContext, CodegenLowerArg},
@@ -148,7 +154,10 @@ impl LowerCodegen for Primary {
                         Some((layout, f)) => {
                             let mut allocator = ctx.allocator.borrow_mut();
 
-                            let storage = Storage::new_stack_slot((ctx.clone(), builder), TypePair(value_t, None));
+                            let storage = Storage::new_stack_slot(
+                                (ctx.clone(), builder),
+                                TypePair(value_t, None),
+                            );
 
                             let alloc_id = allocator.alloc(storage);
                             let storage = allocator.get_mut(alloc_id);
@@ -186,14 +195,17 @@ impl LowerCodegen for Primary {
                                 let value = sbuf.read(idx, (ctx.clone(), builder)).unwrap();
                                 let value_t = builder.func.dfg.value_type(value);
 
-                                return Some(TypedValue::by_val(value, TypePair(TypeMap::UNKNOWN, Some(value_t))));
+                                return Some(TypedValue::by_val(
+                                    value,
+                                    TypePair(TypeMap::UNKNOWN, Some(value_t)),
+                                ));
                             }
 
                             todo!();
-                        },
+                        }
 
                         None => unreachable!(),
-                    }
+                    },
                 };
             }
 

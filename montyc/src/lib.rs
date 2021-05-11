@@ -23,11 +23,11 @@ use typing::LocalTypeId;
 
 pub mod ast;
 pub mod class;
+pub mod codegen;
 pub mod context;
 pub mod fmt;
 pub mod func;
 pub mod layout;
-pub mod codegen;
 
 pub mod lowering {
     pub trait Lower<Output> {

@@ -3,10 +3,13 @@ use std::rc::Rc;
 use nom::sequence::tuple;
 use nom::{branch::alt, IResult};
 
-use crate::{ast::{Spanned, atom::Atom, expr::Expr}};
+use crate::ast::{atom::Atom, expr::Expr, Spanned};
 use crate::parser::{token::PyToken, TokenSlice};
 
-use super::{core::{expect, expect_, expect_any_of, expect_many_n}, expect_with};
+use super::{
+    core::{expect, expect_, expect_any_of, expect_many_n},
+    expect_with,
+};
 
 #[inline]
 fn expect_digits<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {
@@ -87,7 +90,9 @@ fn string_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ato
 }
 
 #[inline]
-pub fn tuple_literal_inner<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Rc<Spanned<Expr>>>> {
+pub fn tuple_literal_inner<'a>(
+    mut stream: TokenSlice<'a>,
+) -> IResult<TokenSlice<'a>, Vec<Rc<Spanned<Expr>>>> {
     let (stream, first) = super::expr::expression(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
     let (stream, _) = match expect(stream, PyToken::Comma) {
@@ -97,7 +102,8 @@ pub fn tuple_literal_inner<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice
 
     let mut values = vec![Rc::new(first)];
 
-    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+    let (mut stream, _) =
+        expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
 
     while let Ok((s, expr)) = super::expr::expression(stream) {
         values.push(std::rc::Rc::new(expr));
@@ -108,8 +114,8 @@ pub fn tuple_literal_inner<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice
             Ok(i) => i,
             Err(_) => {
                 stream = s;
-                break
-            },
+                break;
+            }
         };
 
         let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(s).unwrap_or((s, vec![]));
@@ -125,11 +131,15 @@ pub fn tuple_literal_inner<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice
 #[inline]
 fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
     let (stream, lparen) = expect(stream, PyToken::LParen)?;
-    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+    let (mut stream, _) =
+        expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
     let (stream, values) = tuple_literal_inner(stream)?;
     let (stream, rparen) = expect(stream, PyToken::RParen)?;
 
-    let tple = Spanned { inner: Atom::Tuple(values), span: lparen.span.start..rparen.span.end };
+    let tple = Spanned {
+        inner: Atom::Tuple(values),
+        span: lparen.span.start..rparen.span.end,
+    };
 
     Ok((stream, tple))
 }
@@ -194,7 +204,10 @@ mod tests {
         );
     }
 
-    const NAME: &[Token] = &[(PyToken::Ident(unsafe { NonZeroUsize::new_unchecked(1) }), 0..1)];
+    const NAME: &[Token] = &[(
+        PyToken::Ident(unsafe { NonZeroUsize::new_unchecked(1) }),
+        0..1,
+    )];
 
     #[test]
     fn test_parse_name() {
