@@ -306,7 +306,7 @@ impl TypedObject for Function {
                 let last = tail.as_ref();
 
                 if crate::isinstance!(last, Return).is_none()
-                    || crate::isinstance!(last, Statement, Statement::Ret(_) => ()).is_none()
+                    && crate::isinstance!(last, Statement, Statement::Ret(_) => ()).is_none()
                 {
                     ctx.exit_with_error(MontyError::MissingReturn {
                         expected: self.kind.inner.ret,
