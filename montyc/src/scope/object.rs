@@ -14,7 +14,7 @@ impl ScopedObject {
     where
         F: Fn(LocalContext, Rc<dyn AstObject>) -> T,
     {
-        let scope = Rc::new(WrappedScope {
+        let scope = Rc::new(ChainedScope {
             inner: Rc::clone(&self.scope),
             parent: self.scope.parent(),
         });

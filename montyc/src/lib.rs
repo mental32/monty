@@ -438,7 +438,7 @@ pub mod prelude {
         layout::{BlockId, Layout},
         lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanRef},
-        scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, WrappedScope},
+        scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, ChainedScope},
         typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject},
         CompilerError, MontyError,
     };

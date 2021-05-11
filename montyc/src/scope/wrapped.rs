@@ -4,15 +4,15 @@ use crate::prelude::*;
 
 use super::{LookupOrder, ScopeIter, ScopeRoot, ScopedObject};
 
-// -- WrappedScope
+// -- ChainedScope
 
 #[derive(Debug)]
-pub struct WrappedScope {
+pub struct ChainedScope {
     pub inner: Rc<dyn Scope>,
     pub parent: Option<Rc<dyn Scope>>,
 }
 
-impl Scope for WrappedScope {
+impl Scope for ChainedScope {
     fn iter<'b>(&'b self) -> Box<(dyn Iterator<Item = ScopedObject> + 'b)> {
         self.inner.iter()
     }
