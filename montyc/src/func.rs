@@ -240,62 +240,69 @@ impl TypedObject for Function {
 
         assert_matches!(self.scope.root(), ScopeRoot::Func(_));
 
-        let mut implicit_return = true;
-
         for scoped_object in self.scope.iter() {
-            let node = scoped_object.object.clone();
-
             assert_matches!(scoped_object.scope.root(), ScopeRoot::Func(_));
-
-            if node.as_ref().downcast_ref::<Spanned<Return>>().is_some()
-                || node.as_ref().downcast_ref::<Return>().is_some()
-                || node
-                    .as_ref()
-                    .downcast_ref::<Spanned<Statement>>()
-                    .map(|Spanned { inner, .. }| matches!(inner, Statement::Ret(_)))
-                    .unwrap_or(false)
-            {
-                implicit_return = false;
-            }
 
             scoped_object.with_context(ctx.global_context, |local_context, object| {
                 object.typecheck(&local_context)
             })?;
         }
 
-        if implicit_return
-            && !ctx
-                .global_context
-                .type_map
-                .type_eq(self.kind.inner.ret, TypeMap::NONE_TYPE)
+        if !ctx
+            .global_context
+            .type_map
+            .type_eq(self.kind.inner.ret, TypeMap::NONE_TYPE)
         {
-            let def_node = match self.scope.root() {
-                ScopeRoot::Func(f) => f.def(ctx.global_context).unwrap(),
-                _ => unreachable!(),
+            // This function returns something (i.e. not `None`)
+            // check the "tailing" blocks of the layout and make sure they're all Return statements.
+
+            let (def_span, def_node) = {
+                let def = ctx.this.clone().expect("`ctx.this` is not set.");
+                let span = def.span().expect("definition must be spanned.");
+
+                (span, def.unspanned())
             };
 
-            ctx.exit_with_error(MontyError::MissingReturn {
-                expected: TypeMap::NONE_TYPE,
-                actual: self.kind.inner.ret,
-                def_span: def_node.span().unwrap(),
-                ret_span: def_node
-                    .as_ref()
-                    .unspanned()
-                    .as_function()
-                    .cloned()
-                    .unwrap()
-                    .returns
-                    .map(|ret| ret.span.clone())
-                    .unwrap_or(def_node.span().unwrap()),
-            });
+            let funcdef = def_node
+                .as_function()
+                .expect("Function::def must be a FunctionDef node!");
+
+            let layout = {
+                let mut layout = funcdef.lower();
+
+                layout.reduce_forwarding_edges();
+
+                layout
+            };
+
+            let tails = layout
+                .blocks
+                .get(&layout.end)
+                .expect("Function layout does not have an exit block.")
+                .preds
+                .iter()
+                .filter_map(|id| layout.blocks.get(&id))
+                .filter_map(|block| block.nodes.last());
+
+            for tail in tails {
+                let last = tail.as_ref();
+
+                if crate::isinstance!(last, Return).is_none()
+                    || crate::isinstance!(last, Statement, Statement::Ret(_) => ()).is_none()
+                {
+                    ctx.exit_with_error(MontyError::MissingReturn {
+                        expected: self.kind.inner.ret,
+                        def_span: last.span().unwrap(),
+                        ret_span: funcdef
+                            .returns
+                            .clone()
+                            .map(|ret| ret.span.clone())
+                            .unwrap_or(def_span),
+                    });
+                }
+            }
         }
 
         Ok(())
     }
 }
-
-// impl Lower<Layout<Rc<dyn AstObject>>> for &Function {
-//     fn lower(&self) -> Layout<Rc<dyn AstObject>> {
-//         self.def.inner.lower()
-//     }
-// }

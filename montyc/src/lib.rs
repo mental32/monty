@@ -117,7 +117,6 @@ pub enum MontyError {
     #[error("Incompatible return type due to implicit return.")]
     MissingReturn {
         expected: LocalTypeId,
-        actual: LocalTypeId,
         def_span: Span,
         ret_span: Span,
     },
@@ -255,17 +254,20 @@ impl MontyError {
             }
 
             MontyError::MissingReturn {
-                expected: _,
-                actual: _,
+                expected,
                 def_span,
                 ret_span,
             } => Diagnostic::error()
                 .with_message("missing return for annotated function.")
                 .with_labels(vec![
                     Label::primary(ctx.module_ref.hash(), def_span)
-                        .with_message("This function will implicitly return `None`"),
+                        .with_message("But will implicitly return `None` here."),
+
                     Label::secondary(ctx.module_ref.hash(), ret_span)
-                        .with_message("But it has been annotated to return this instead."),
+                        .with_message(                    format!(
+                            "Expected to return a value of {}.",
+                            fmt_type!(expected)
+                        )),
                 ]),
 
             MontyError::UnknownType { node } => Diagnostic::error()
