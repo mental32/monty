@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use nom::{branch::alt, error, multi::many0, sequence::terminated, IResult};
 
-use crate::{ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned}, parser::{token::PyToken, TokenSlice}, prelude::SpanRef};
+use crate::{ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned}, parser::{TokenSlice, comb::expect_many_n_var, token::PyToken}, prelude::SpanRef};
 
 use super::{class::decorator_list, expect, expect_, expect_ident, expect_many_n, expr::expression, primary, stmt::statement};
 
@@ -132,7 +132,9 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
                 remaining
             };
 
-            if let Ok((remaining, _)) = expect_many_n::<4>(PyToken::Whitespace)(remaining) {
+            if let Ok((remaining, _)) =
+                expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(remaining)
+            {
                 let (remaining, part) = match statement(remaining) {
                     Ok(i) => i,
                     Err(err) => {
