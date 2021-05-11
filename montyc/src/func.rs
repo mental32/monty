@@ -17,6 +17,76 @@ use crate::{
     typing::TaggedType,
 };
 
+
+pub fn is_externaly_defined(
+    func: &Function,
+    global_context: &GlobalContext,
+    callcov: Option<&str>,
+) -> bool {
+    let def = func.def(global_context).unwrap().unspanned();
+
+    let def: &FunctionDef = def.as_function().unwrap();
+
+    let source = global_context
+        .modules
+        .get(&func.scope.module_ref())
+        .as_ref()
+        .unwrap()
+        .source
+        .clone();
+
+    // checks if the function has a decorator "extern"
+    // "extern" may be called with zero or exactly one arguments
+    // and the argument if present must be a string literal that matches `callcov`
+    let has_extern_tag = def
+        .decorator_list
+        .as_slice()
+        .iter()
+        .any(|dec| match &dec.inner {
+            Primary::Atomic(atom) => atom
+                .reveal(&source)
+                .map(|st| st == "extern")
+                .unwrap_or(false),
+
+            Primary::Call { func, args } => {
+                source
+                    .get(func.span.clone())
+                    .map(|st| st == "extern")
+                    .unwrap_or(false)
+                    && args
+                    .as_ref()
+                        .map(|args| {
+                            args.len() == 1
+                                && args
+                                    .get(0)
+                                    .map(|arg| {
+                                        matches!(
+                                            &arg.as_ref().inner,
+                                            Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) if matches!(atom.as_ref(), Spanned { inner: Atom::Str(n), ..} if matches!(source.get(global_context.span_ref.borrow().get(*n).unwrap()), Some(st) if callcov.map(|cc| cc == st).unwrap_or(true))
+                                        ))
+                                    })
+                                    .unwrap_or(false)
+                        })
+                        .unwrap_or(true)
+            }
+            _ => false,
+        });
+
+    let body_is_ellipsis = match def.body.as_slice() {
+        [] => unreachable!(),
+
+        [obj]
+        | [_, obj] => {
+            crate::isinstance!(obj.as_ref(), Statement, Statement::Expression(Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. })) => matches!(atom.as_ref(), Spanned { inner: Atom::Ellipsis, ..})).unwrap_or(false)
+        },
+
+        _ => false,
+    };
+
+    has_extern_tag && body_is_ellipsis
+}
+
+
 #[derive(Debug)]
 pub enum DataRef {
     StringConstant(StringRef),
@@ -29,7 +99,9 @@ pub enum DataRef {
 
 #[derive(Debug)]
 pub struct Function {
-    def: DefId,
+    def_id: DefId,
+    has_extern_tag: bool,
+
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
     pub vars: DashMap<SpanRef, (LocalTypeId, Span)>,
@@ -38,7 +110,7 @@ pub struct Function {
 
 impl Function {
     pub fn def(&self, gctx: &GlobalContext) -> Option<Rc<dyn AstObject>> {
-        gctx.database.as_weak_object(self.def)
+        gctx.database.as_weak_object(self.def_id)
     }
 
     pub fn args(&self, gctx: &GlobalContext) -> impl Iterator<Item = (SpanRef, LocalTypeId)> {
@@ -98,7 +170,7 @@ impl Function {
             "Rc::as_ptr(def) != Rc::as_ptr(ctx.this): `ctx.this` must be the same object as `def`"
         );
 
-        let id = {
+        let def_id = {
             let entry = ctx
                 .global_context
                 .database
@@ -141,13 +213,16 @@ impl Function {
             }
         }
 
-        let func = Self {
-            def: id,
+        let mut func = Self {
+            has_extern_tag: false,
+            def_id,
             scope,
             kind,
             vars,
             refs: Default::default(),
         };
+
+        func.has_extern_tag = is_externaly_defined(&func, &ctx.global_context, None);
 
         let func = Rc::new(func);
 
@@ -161,72 +236,8 @@ impl Function {
         Ok(func)
     }
 
-    pub fn is_externaly_defined(
-        &self,
-        global_context: &GlobalContext,
-        callcov: Option<&str>,
-    ) -> bool {
-        let def = self.def(global_context).unwrap().unspanned();
-
-        let def: &FunctionDef = def.as_function().unwrap();
-
-        let source = global_context
-            .modules
-            .get(&self.scope.module_ref())
-            .as_ref()
-            .unwrap()
-            .source
-            .clone();
-
-        // checks if the function has a decorator "extern"
-        // "extern" may be called with zero or exactly one arguments
-        // and the argument if present must be a string literal that matches `callcov`
-        let has_extern_tag = def
-            .decorator_list
-            .as_slice()
-            .iter()
-            .any(|dec| match &dec.inner {
-                Primary::Atomic(atom) => atom
-                    .reveal(&source)
-                    .map(|st| st == "extern")
-                    .unwrap_or(false),
-
-                Primary::Call { func, args } => {
-                    source
-                        .get(func.span.clone())
-                        .map(|st| st == "extern")
-                        .unwrap_or(false)
-                        && args
-                        .as_ref()
-                            .map(|args| {
-                                args.len() == 1
-                                    && args
-                                        .get(0)
-                                        .map(|arg| {
-                                            matches!(
-                                                &arg.as_ref().inner,
-                                                Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) if matches!(atom.as_ref(), Spanned { inner: Atom::Str(n), ..} if matches!(source.get(global_context.span_ref.borrow().get(*n).unwrap()), Some(st) if callcov.map(|cc| cc == st).unwrap_or(true))
-                                            ))
-                                        })
-                                        .unwrap_or(false)
-                            })
-                            .unwrap_or(true)
-                }
-                _ => false,
-            });
-
-        let body_is_ellipsis = match def.body.as_slice() {
-            [] => unreachable!(),
-
-            [obj]
-            | [_, obj] => {
-                crate::isinstance!(obj.as_ref(), Statement, Statement::Expression(Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. })) => matches!(atom.as_ref(), Spanned { inner: Atom::Ellipsis, ..})).unwrap_or(false)
-            },
-
-            _ => false,
-        };
-
-        has_extern_tag && body_is_ellipsis
+    pub fn is_externaly_defined(&self) -> bool {
+        self.has_extern_tag
     }
 }
 
@@ -241,7 +252,7 @@ impl TypedObject for Function {
             ctx.as_formattable(&self.kind.inner)
         );
 
-        if self.is_externaly_defined(ctx.global_context, None) {
+        if self.is_externaly_defined(){
             return Ok(());
         }
 

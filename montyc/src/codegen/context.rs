@@ -536,9 +536,10 @@ impl<'global> CodegenBackend<'global> {
     ) {
         let (fid, mut cl_func) = self.declare_function(func, mref, linkage, callcov).unwrap();
 
-        if func.is_externaly_defined(self.global_context, None) {
+        if func.is_externaly_defined() {
             self.external_functions
                 .insert(fid, cl_func.signature.clone());
+
             return;
         }
 
