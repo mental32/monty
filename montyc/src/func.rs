@@ -47,18 +47,19 @@ impl Function {
         {
             let args = match args {
                 Some(args) => {
-                    let typed: Vec<_> = args
+                    let typed_args = args
                         .iter()
+                        .cloned()
                         .map(|(n, ann)| {
-                            (
-                                *n,
-                                gctx.database
-                                    .type_of(&(Rc::clone(ann) as Rc<_>), None)
-                                    .unwrap(),
-                            )
-                        })
-                        .collect();
-                    typed
+                            let type_id = gctx
+                                .database
+                                .type_of(&(Rc::clone(&ann) as Rc<_>), None)
+                                .unwrap();
+
+                            (n, type_id)
+                        });
+
+                    typed_args.collect()
                 }
 
                 None => vec![],
@@ -89,18 +90,26 @@ impl Function {
     }
 
     pub fn new(def: &Rc<dyn AstObject>, ctx: &LocalContext) -> crate::Result<Rc<Self>> {
-        let def = ctx
-            .global_context
-            .database
-            .entry(Rc::clone(def), &ctx.module_ref);
-        let id = ctx.global_context.database.id_of(&def).unwrap();
-        let def = ctx
-            .global_context
-            .database
-            .as_weak_object(id)
-            .unwrap()
-            .unspanned();
-        let func = crate::isinstance!(def.as_ref(), Statement, Statement::FnDef(f) => f).unwrap();
+        assert!(
+            ctx.this
+                .as_ref()
+                .map(|this| Rc::as_ptr(this) as *const () == Rc::as_ptr(def) as *const ())
+                .unwrap_or(false),
+            "Rc::as_ptr(def) != Rc::as_ptr(ctx.this): `ctx.this` must be the same object as `def`"
+        );
+
+        let id = {
+            let entry = ctx
+                .global_context
+                .database
+                .entry(Rc::clone(def), &ctx.module_ref);
+
+            ctx.global_context.database.id_of(&entry).unwrap()
+        };
+
+        let def = def.unspanned();
+        let func =
+            crate::isinstance!(def.as_ref(), Statement, Statement::FnDef(f) => f).unwrap();
 
         let mut scope = OpaqueScope::from(Rc::clone(&def) as Rc<_>);
 
@@ -140,15 +149,13 @@ impl Function {
             refs: Default::default(),
         };
 
-        let mut func = Rc::new(func);
+        let func = Rc::new(func);
 
         let mut root = ScopeRoot::Func(Rc::clone(&func));
 
-        // SAFETY: The only other reference to `func` is in the scope root.
-        //         which doesn't get dereferenced in the call to `std::mem::swap`.
-        unsafe {
-            let func = Rc::get_mut_unchecked(&mut func);
-            std::mem::swap(&mut func.scope.inner.root, &mut root);
+        {
+            let empty_slot = &mut *func.scope.inner.root.borrow_mut();
+            std::mem::swap(empty_slot, &mut root);
         }
 
         Ok(func)

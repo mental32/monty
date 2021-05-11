@@ -4,7 +4,6 @@
     bool_to_option,
     drain_filter,
     assert_matches,
-    get_mut_unchecked
 )]
 
 use std::rc::Rc;

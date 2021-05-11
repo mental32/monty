@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::prelude::*;
 
@@ -17,7 +17,7 @@ where
     T: AstObject,
 {
     fn from(scope: OpaqueScope) -> Self {
-        assert_matches!(&scope.root, ScopeRoot::AstObject(o) if o.as_ref().downcast_ref::<T>().is_some());
+        assert_matches!(&*scope.root.borrow(), ScopeRoot::AstObject(o) if o.as_ref().downcast_ref::<T>().is_some());
 
         Self {
             inner: scope,
@@ -36,7 +36,7 @@ where
 
         Self {
             inner: OpaqueScope {
-                root: ScopeRoot::AstObject(root as Rc<dyn AstObject>),
+                root: RefCell::new(ScopeRoot::AstObject(root as Rc<dyn AstObject>)),
                 nodes,
                 module_ref: None,
                 parent: None,
@@ -52,7 +52,7 @@ impl<T: std::fmt::Debug> Scope for LocalScope<T> {
     }
 
     fn root<'b>(&'b self) -> ScopeRoot {
-        self.inner.root.clone()
+        self.inner.root()
     }
 
     fn lookup_with(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>> {

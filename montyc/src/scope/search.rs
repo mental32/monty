@@ -140,7 +140,7 @@ impl<'a> LookupIter<'a> {
 
         // inspect immediate scope
 
-        let extra = match &self.0.root {
+        let extra = match &*self.0.root.borrow() {
             ScopeRoot::AstObject(o) => {
                 if let Some(f) = o.as_ref().downcast_ref::<FunctionDef>() {
                     f.args.clone().unwrap_or_default()

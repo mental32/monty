@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use super::{
     collect_subnodes, search::LookupIter, LookupOrder, ScopeIter, ScopeRoot, ScopedObject,
@@ -9,7 +9,7 @@ use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct OpaqueScope {
-    pub root: ScopeRoot,
+    pub root: RefCell<ScopeRoot>,
     pub module_ref: Option<ModuleRef>,
     pub nodes: Vec<Rc<dyn AstObject>>,
     pub parent: Option<Rc<dyn Scope>>,
@@ -28,7 +28,7 @@ impl From<Rc<dyn AstObject>> for OpaqueScope {
         let nodes = collect_subnodes(root.as_ref());
 
         Self {
-            root: ScopeRoot::AstObject(root),
+            root: RefCell::new(ScopeRoot::AstObject(root)),
             nodes,
             module_ref: None,
             parent: None,
@@ -47,7 +47,7 @@ impl Scope for OpaqueScope {
     }
 
     fn root<'b>(&'b self) -> ScopeRoot {
-        self.root.clone()
+        self.root.borrow().clone()
     }
 
     fn lookup_with(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>> {
