@@ -168,6 +168,8 @@ impl ObjectDatabase {
         mref: Option<&ModuleRef>,
     ) -> Option<LocalTypeId> {
         let id = self.find(object).or_else(|| {
+            log::warn!("database:type_of falling back to a span-based search for {:?}", object);
+
             let mref = mref?;
             let span = object.span()?;
 

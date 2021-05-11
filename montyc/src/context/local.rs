@@ -195,6 +195,8 @@ impl<'a> LocalContext<'a> {
 
     /// Associate a span of the current module with a type used for later codegen.
     pub fn cache_type(&self, t: &Rc<dyn AstObject>, type_id: LocalTypeId) {
+        log::trace!("context:cache_type caching object {:?}", t);
+
         let entry = self
             .global_context
             .database

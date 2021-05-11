@@ -1,62 +1,28 @@
-use std::{collections::HashSet, rc::Rc, convert::TryFrom};
+use std::{collections::HashSet, convert::TryFrom, rc::Rc};
 
-use cranelift_codegen::ir::{self, ExtFuncData, ExternalName, GlobalValueData, MemFlags, StackSlotData, StackSlotKind, TrapCode, condcodes::IntCC};
+use cranelift_codegen::ir::{
+    self, condcodes::IntCC, ExtFuncData, ExternalName, GlobalValueData, MemFlags, StackSlotData,
+    StackSlotKind, TrapCode,
+};
 
 use crate::{ast::{
         atom::{Atom, StringRef},
         expr::{Expr, InfixOp},
         primary::Primary,
         stmt::Statement,
-    }, fmt::Formattable, prelude::*, typing::{Generic, TaggedType}};
+    }, codegen::{pointer::Pointer, storage::Storage, tvalue::TypedValue}, fmt::Formattable, prelude::*, typing::{Generic, TaggedType}};
 
 use super::{
     context::{CodegenContext, CodegenLowerArg},
-    structbuf::StructBuf,
-    TypePair,
+    tvalue::TypePair,
+    LowerCodegen,
 };
 
-fn traverse_fields(
-    elements: &[LocalTypeId],
-    ctx: &CodegenContext,
-) -> impl Iterator<Item = (std::alloc::Layout, TypePair)> {
-    let mut fields = vec![];
-
-    for kind in elements {
-        let tydesc = ctx
-            .codegen_backend
-            .global_context
-            .type_map
-            .get(*kind)
-            .unwrap();
-
-        let tydesc = tydesc.value();
-
-        if let TypeDescriptor::Generic(Generic::Struct { inner }) = tydesc {
-            fields.extend(traverse_fields(inner.as_slice(), ctx));
-        } else {
-            let ir_kind = ctx.codegen_backend.types.get(kind).expect(&format!("{}", Formattable { gctx: ctx.codegen_backend.global_context, inner: *kind}));
-
-            let size = ir_kind.bytes();
-
-            let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
-
-            let layout =
-                std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
-
-            fields.push((layout, (*kind, *ir_kind)))
-        }
-    }
-
-    fields.into_iter()
-}
-
-impl<'long, 'short, 'fx>
-    LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Atom
-{
-    fn lower_with(
+impl LowerCodegen for Atom {
+    fn lower(
         &self,
-        (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>,
-    ) -> cranelift_codegen::ir::Value {
+        (ctx, builder): CodegenLowerArg<'_, '_, '_>,
+    ) -> Option<super::tvalue::TypedValue> {
         use cranelift_codegen::ir::InstBuilder;
 
         match self {
@@ -96,333 +62,140 @@ impl<'long, 'short, 'fx>
                     unreachable!()
                 };
 
-                let mut structs = ctx.structs.borrow_mut();
+                let elements = elements.clone();
+                let (_, layout) = ctx.size_and_layout_of(TypePair(kind, None)).unwrap();
 
-                let sbuf = structs.entry(kind).or_insert_with(|| {
-                    StructBuf::new(
-                        (ctx.clone(), builder),
-                        kind,
-                        traverse_fields(inner.as_slice(), &ctx),
-                    )
+                ctx.alloca_rvalue(layout, move |(ctx, builder), mut storage| {
+                    {
+                        let mut sbuf = storage.as_mut_struct((ctx.clone(), builder));
+
+                        for (field, elem) in elements.iter().enumerate() {
+                            let value = elem.inner.lower((ctx.clone(), builder)).unwrap();
+
+                            sbuf.write(field, value.into_raw(builder), (ctx.clone(), builder));
+                        }
+                    }
+
+                    let pointer = storage.as_ptr_value();
+
+                    Some(pointer)
                 });
 
-                for (field, elem) in elements.iter().enumerate() {
-                    let value = elem.inner.lower_with((ctx.clone(), builder));
-
-                    sbuf.write(field, value, (ctx.clone(), builder));
-                }
-
-
-                sbuf.addr((ctx.clone(), builder), 0).unwrap()
+                None
             }
 
             Atom::None => todo!(),
             Atom::Ellipsis => todo!(),
-            Atom::Int(n) => builder.ins().iconst(
-                cranelift_codegen::ir::types::I64,
-                cranelift_codegen::ir::immediates::Imm64::new(*n as i64),
-            ),
-            Atom::Str(n) => {
-                let gv = ctx
-                    .codegen_backend
-                    .strings
-                    .get(&StringRef(*n))
-                    .and_then(|data| {
-                        builder
-                            .func
-                            .global_values
-                            .iter()
-                            .find_map(|(gv, gvd)| match gvd {
-                                GlobalValueData::Symbol {
-                                    name: ExternalName::User { index, .. },
-                                    ..
-                                } if *index == data.as_u32() => Some(gv),
-                                _ => None,
-                            })
-                    })
-                    .unwrap();
+            Atom::Int(n) => {
+                let value = builder.ins().iconst(
+                    ir::types::I64,
+                    ir::immediates::Imm64::new(i64::try_from(*n).unwrap()),
+                );
 
-                builder
-                    .ins()
-                    .global_value(cranelift_codegen::ir::types::I64, gv)
+                Some(TypedValue::by_val(
+                    value,
+                    TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
+                ))
+            }
+            Atom::Str(n) => {
+                let str_global_value = ctx
+                    .get_str_data(StringRef(*n), &builder.func)
+                    .expect("string literal should already be defined in the module.");
+
+                let ptr = {
+                    let ptr =
+                        Pointer::new(builder.ins().global_value(ir::types::I64, str_global_value));
+
+                    TypedValue::by_ref(ptr, TypePair(TypeMap::STRING, Some(ir::types::I64)))
+                };
+
+                Some(ptr)
             }
 
-            Atom::Bool(b) => builder
-                .ins()
-                .iconst(ctx.codegen_backend.types[&TypeMap::INTEGER], *b as i64),
+            Atom::Bool(b) => {
+                let ir_ty = ctx.codegen_backend.scalar_type_of(TypeMap::BOOL);
+
+                let value = builder.ins().iconst(ir_ty, if *b { 1 } else { 0 });
+
+                Some(TypedValue::by_val(
+                    value,
+                    TypePair(TypeMap::BOOL, Some(ir_ty)),
+                ))
+            }
 
             Atom::Float(_) => todo!(),
             Atom::Comment(_) => unreachable!(),
-            Atom::Name(n) => {
-                let ss = ctx.vars.get(&n).unwrap();
-                let (ty, _) = ctx.func.vars.get(n).map(|r| r.value().clone()).unwrap();
-
-                if let Some(sbuf) = ctx.structs.borrow().get(&ty) {
-                    sbuf.addr((ctx.clone(), builder), 0).unwrap()
-                } else {
-                    let ty = ctx.codegen_backend.types.get(&ty).expect(&format!("{}", Formattable { gctx: ctx.codegen_backend.global_context, inner: ty}));
-
-                    builder.ins().stack_load(*ty, ss.clone(), 0)
-                }
-            }
+            Atom::Name(n) => ctx.with_var_alloc(*n, |storage| Some(storage.as_ptr_value())),
         }
     }
 }
 
-impl<'long, 'short, 'fx> LowerWith<CodegenLowerArg<'long, 'short, 'fx>, Option<bool>>
-    for Statement
-{
-    fn lower_with(&self, (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>) -> Option<bool> {
-        use cranelift_codegen::ir::InstBuilder;
+impl LowerCodegen for Primary {
+    fn lower(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> Option<TypedValue> {
+        use ir::InstBuilder;
+
+        log::trace!("codegen:primary {:?}", self);
 
         match self {
-            Statement::Expression(e) => {
-                let _ = e.lower_with((ctx.clone(), builder));
-            }
-
-            Statement::FnDef(_) => todo!(),
-
-            Statement::Ret(r) => {
-                if let Some(e) = &r.value {
-                    let mut value = e.inner.lower_with((ctx.clone(), builder));
-
-                    let mref = ctx.func.scope.module_ref();
-
-                    let v_ty = ctx
-                        .codegen_backend
-                        .global_context
-                        .database
-                        .type_of(&(Rc::clone(e) as Rc<_>), Some(&mref))
-                        .unwrap();
-
-                    if v_ty != ctx.func.kind.inner.ret {
-                        value = ctx
-                            .codegen_backend
-                            .global_context
-                            .type_map
-                            .coerce(v_ty, ctx.func.kind.inner.ret)
-                            .unwrap()((ctx.clone(), builder), value);
-                    }
-
-                    builder.ins().return_(&[value]);
-                } else {
-                    builder.ins().return_(&[]);
-                };
-
-                return Some(false); // this sets "implicit return" to false in codegen.
-            }
-
-            Statement::Asn(asn) => {
-                let ss = ctx
-                    .vars
-                    .get(&asn.name.name().expect("atom name"))
-                    .expect("unset var")
-                    .clone();
-                let mref = ctx.func.scope.module_ref();
-
-                let mut value = asn.value.inner.lower_with((ctx.clone(), builder));
-
-                if let Some(ann) = &asn.kind {
-                    let value_ty = ctx
-                        .codegen_backend
-                        .global_context
-                        .database
-                        .type_of(&(Rc::clone(&asn.value) as Rc<_>), Some(&mref))
-                        .unwrap();
-
-                    let kind_ty = ctx
-                        .codegen_backend
-                        .global_context
-                        .database
-                        .type_of(&(Rc::clone(&ann) as Rc<_>), Some(&mref))
-                        .unwrap();
-
-                    let rule = ctx
-                        .codegen_backend
-                        .global_context
-                        .type_map
-                        .coerce(value_ty, kind_ty)
-                        .unwrap();
-
-                    value = rule((ctx.clone(), builder), value)
-                }
-
-                builder.ins().stack_store(value, ss, 0);
-            }
-
-            Statement::Import(_) => todo!(),
-            Statement::Class(_) => todo!(),
-            Statement::Pass => {
-                builder.ins().nop();
-            }
-
-            Statement::If(ifstmt) => {
-                let global_escape_block = builder.create_block();
-
-                let branch_blocks: Vec<_> = ifstmt
-                    .branches
-                    .iter()
-                    .map(|_| {
-                        (
-                            builder.create_block(),
-                            builder.create_block(),
-                            builder.create_block(),
-                        ) // (head, body, escape)
-                    })
-                    .collect();
-
-                let mut implicit_return = Some(true);
-
-                let mut block_escapes = (0..branch_blocks.len()).collect::<HashSet<_>>();
-
-                for (branch_blocks_idx, ifstmt) in ifstmt.branches.iter().enumerate() {
-                    let (head_block, body_block, local_escape_block) =
-                        branch_blocks[branch_blocks_idx];
-
-                    builder.ins().jump(head_block, &[]);
-
-                    builder.switch_to_block(head_block);
-
-                    let cc = ifstmt.inner.test.inner.lower_with((ctx.clone(), builder));
-
-                    builder.ins().brnz(cc, body_block, &[]);
-                    builder.ins().jump(local_escape_block, &[]);
-
-                    {
-                        builder.switch_to_block(body_block);
-
-                        for part in ifstmt.inner.body.iter() {
-                            if let Some(false) = part.inner.lower_with((ctx.clone(), builder)) {
-                                implicit_return.replace(false);
-                                block_escapes.remove(&branch_blocks_idx);
-                            }
-                        }
-
-                        if !builder.is_filled() {
-                            builder.ins().jump(global_escape_block, &[]);
-                        }
-                    }
-
-                    builder.switch_to_block(local_escape_block);
-                }
-
-                let mut orelse_escapes = true;
-                let orelse = builder.create_block();
-
-                builder.ins().jump(orelse, &[]);
-
-                builder.switch_to_block(orelse);
-
-                if let Some(orelse) = &ifstmt.orelse {
-                    for stmt in orelse {
-                        if let Some(false) = stmt.inner.lower_with((ctx.clone(), builder)) {
-                            implicit_return.replace(false);
-                            orelse_escapes = false;
-                        }
-                    }
-                }
-
-                if !builder.is_filled() {
-                    builder.ins().jump(global_escape_block, &[]);
-                }
-
-                builder.switch_to_block(global_escape_block);
-
-                if block_escapes.is_empty() && !orelse_escapes {
-                    builder.ins().trap(TrapCode::UnreachableCodeReached);
-                }
-
-                return implicit_return;
-            }
-
-            Statement::While(w) => {
-                let (head, body, escape) = {
-                    (
-                        builder.create_block(),
-                        builder.create_block(),
-                        builder.create_block(),
-                    )
-                };
-
-                builder.ins().jump(head, &[]);
-
-                builder.switch_to_block(head);
-
-                let cc = w.test.inner.lower_with((ctx.clone(), builder));
-
-                builder.ins().brnz(cc, body, &[]);
-                builder.ins().jump(escape, &[]);
-
-                builder.switch_to_block(body);
-
-                let mut ret = None;
-
-                for part in w.body.iter() {
-                    ret = part.inner.lower_with((ctx.clone(), builder));
-                }
-
-                if !builder.is_filled() {
-                    builder.ins().jump(head, &[]);
-                    builder.switch_to_block(escape);
-                } else {
-                    builder.switch_to_block(escape);
-                    builder.ins().jump(head, &[]);
-                }
-
-                return ret;
-            }
-        }
-
-        None
-    }
-}
-
-impl<'long, 'short, 'fx>
-    LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Primary
-{
-    fn lower_with(
-        &self,
-        (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>,
-    ) -> cranelift_codegen::ir::Value {
-        use cranelift_codegen::ir::InstBuilder;
-
-        match self {
-            Primary::Atomic(at) => at.inner.lower_with((ctx.clone(), builder)),
+            Primary::Atomic(atom) => return atom.inner.lower((ctx, builder)),
 
             Primary::Subscript { value, index } => {
-                let v = value.inner.lower_with((ctx.clone(), builder));
+                let value_t = ctx.type_of(value).unwrap();
 
-                let value_t = ctx.codegen_backend.global_context.database.type_of(&(Rc::clone(value) as Rc<_>), None).unwrap();
+                let value = match value.inner.lower((ctx.clone(), builder)) {
+                    Some(ty) => todo!("subscript on scalar value."),
+                    None => match ctx.pending_rvalue.borrow_mut().take() {
+                        Some((layout, f)) => {
+                            let mut allocator = ctx.allocator.borrow_mut();
 
-                if let Some(sbuf) = ctx.structs.borrow().get(&value_t) {
-                    if let Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) = &index.inner {
-                        let n = match atom.inner {
-                            Atom::Ellipsis
-                            | Atom::Str(_)
-                            | Atom::Tuple(_)
-                            | Atom::Comment(_)
-                            | Atom::Name(_)
-                            | Atom::Float(_)
-                            | Atom::None => { unreachable!(); },
+                            let storage = Storage::new_stack_slot((ctx.clone(), builder), TypePair(value_t, None));
 
-                            Atom::Int(n) => n,
-                            Atom::Bool(b) => b.then_some(1).unwrap_or(0),
-                        };
+                            let alloc_id = allocator.alloc(storage);
+                            let storage = allocator.get_mut(alloc_id);
 
-                        let idx = if n < 0 {
-                            sbuf.len() - usize::try_from(-n).unwrap()
-                        } else {
-                            usize::try_from(n).unwrap()
-                        };
+                            let value = f((ctx.clone(), builder), storage).unwrap();
 
-                        sbuf.read(idx, (ctx.clone(), builder)).unwrap()
-                    } else {
-                        todo!();
+                            if let Expr::Primary(Spanned {
+                                inner: Primary::Atomic(atom),
+                                ..
+                            }) = &index.inner
+                            {
+                                let n = match atom.inner {
+                                    Atom::Ellipsis
+                                    | Atom::Str(_)
+                                    | Atom::Tuple(_)
+                                    | Atom::Comment(_)
+                                    | Atom::Name(_)
+                                    | Atom::Float(_)
+                                    | Atom::None => {
+                                        unreachable!();
+                                    }
+
+                                    Atom::Int(n) => n,
+                                    Atom::Bool(b) => b.then_some(1).unwrap_or(0),
+                                };
+
+                                let sbuf = storage.as_mut_struct((ctx.clone(), builder));
+
+                                let idx = if n < 0 {
+                                    sbuf.field_count() - usize::try_from(-n).unwrap()
+                                } else {
+                                    usize::try_from(n).unwrap()
+                                };
+
+                                let value = sbuf.read(idx, (ctx.clone(), builder)).unwrap();
+                                let value_t = builder.func.dfg.value_type(value);
+
+                                return Some(TypedValue::by_val(value, TypePair(TypeMap::UNKNOWN, Some(value_t))));
+                            }
+
+                            todo!();
+                        },
+
+                        None => unreachable!(),
                     }
-                } else {
-                    todo!()
-                }
-            },
+                };
+            }
 
             Primary::Call { func, args } => {
                 let func_name = match &func.inner {
@@ -460,30 +233,14 @@ impl<'long, 'short, 'fx>
                 let args = match args {
                     Some(args) => args
                         .iter()
-                        .cloned()
                         .zip(func_t.inner.args.iter().cloned())
                         .map(|(arg, param_t)| {
-                            let arg_t = ctx
-                                .codegen_backend
-                                .global_context
-                                .database
-                                .type_of(&(Rc::clone(&arg) as Rc<dyn AstObject>), Some(&mref))
-                                .unwrap();
+                            let arg_t = ctx.type_of(&arg).unwrap();
 
-                            let mut value = arg.inner.lower_with((ctx.clone(), builder));
+                            let value = arg.inner.lower((ctx.clone(), builder)).unwrap();
+                            let value = ctx.maybe_coerce(value, param_t, builder);
 
-                            if arg_t != param_t {
-                                value = ctx
-                                    .codegen_backend
-                                    .global_context
-                                    .type_map
-                                    .coerce(arg_t, param_t)
-                                    .unwrap()(
-                                    (ctx.clone(), builder), value
-                                )
-                            }
-
-                            value
+                            value.into_raw(builder)
                         })
                         .collect(),
 
@@ -512,27 +269,25 @@ impl<'long, 'short, 'fx>
 
                 let mut builder = builder;
 
-                builder
-                    .inst_results(result)
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| builder.ins().iconst(cranelift_codegen::ir::types::I64, 0))
+                let value = builder.inst_results(result).first().cloned().unwrap();
+
+                let ty = builder.func.dfg.value_type(value);
+
+                Some(TypedValue::by_val(
+                    value,
+                    TypePair(func_t.inner.ret, Some(ty)),
+                ))
             }
 
             Primary::Attribute { left, attr } => todo!(),
-            Primary::Await(_) => todo!(),
+            Primary::Await(_) => unreachable!(),
         }
     }
 }
 
-impl<'long, 'short, 'fx>
-    LowerWith<CodegenLowerArg<'long, 'short, 'fx>, cranelift_codegen::ir::Value> for Expr
-{
-    fn lower_with(
-        &self,
-        (ctx, builder): CodegenLowerArg<'long, 'short, 'fx>,
-    ) -> cranelift_codegen::ir::Value {
-        use cranelift_codegen::ir::InstBuilder;
+impl LowerCodegen for Expr {
+    fn lower(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> Option<TypedValue> {
+        use ir::InstBuilder;
 
         match self {
             Expr::If { test, body, orelse } => {
@@ -549,23 +304,21 @@ impl<'long, 'short, 'fx>
                     .type_of(&(Rc::clone(orelse) as Rc<_>), None)
                     .unwrap();
 
-                let ty = if body_ty != orelse_ty {
-                    // create a union[left, right]
-                    ctx.codegen_backend
-                        .global_context
-                        .type_map
-                        .entry(TypeDescriptor::Generic(crate::typing::Generic::Union {
-                            inner: vec![body_ty, orelse_ty],
-                        }))
-                } else {
-                    body_ty
-                };
+                let (ty, is_union) =
+                    if body_ty != orelse_ty {
+                        // create a union[left, right]
+                        let ty = ctx.codegen_backend.global_context.type_map.entry(
+                            TypeDescriptor::Generic(crate::typing::Generic::Union {
+                                inner: vec![body_ty, orelse_ty],
+                            }),
+                        );
+
+                        (ty, true)
+                    } else {
+                        (body_ty, false)
+                    };
 
                 assert!(ctx.codegen_backend.types.contains_key(&ty));
-
-                let escape_block = builder.create_block();
-                let body_block = builder.create_block();
-                let orelse_block = builder.create_block();
 
                 let size = ctx
                     .codegen_backend
@@ -579,120 +332,404 @@ impl<'long, 'short, 'fx>
                     .unwrap()
                     .get();
 
-                let ss = builder.create_stack_slot(StackSlotData::new(
-                    StackSlotKind::ExplicitSlot,
-                    size as u32,
-                ));
+                let test = Rc::clone(test);
+                let orelse = Rc::clone(orelse);
+                let body = Rc::clone(body);
 
-                let cc = test.inner.lower_with((ctx.clone(), builder));
+                let (_, layout) = ctx
+                    .codegen_backend
+                    .global_context
+                    .type_map
+                    .size_and_layout(ty)
+                    .unwrap();
 
-                builder.ins().brnz(cc, body_block, &[]);
-                builder.ins().jump(orelse_block, &[]);
+                if is_union {
+                    ctx.alloca_rvalue(layout, move |(ctx, builder), storage| {
+                        let escape_block = builder.create_block();
+                        let body_block = builder.create_block();
+                        let orelse_block = builder.create_block();
 
-                builder.switch_to_block(body_block);
-                let body_v = body.inner.lower_with((ctx.clone(), builder));
+                        let cc = test
+                            .inner
+                            .lower((ctx.clone(), builder))
+                            .unwrap()
+                            .into_raw(builder);
 
-                builder.ins().stack_store(body_v, ss, 0);
-                builder.ins().jump(escape_block, &[]);
+                        builder.ins().brnz(cc, body_block, &[]);
+                        builder.ins().jump(orelse_block, &[]);
 
-                builder.switch_to_block(orelse_block);
-                let orelse_v = orelse.inner.lower_with((ctx.clone(), builder));
+                        builder.switch_to_block(body_block);
+                        let body_v = body.inner.lower((ctx.clone(), builder)).unwrap();
 
-                builder.ins().stack_store(orelse_v, ss, 0);
-                builder.ins().jump(escape_block, &[]);
+                        storage.write(body_v.clone(), builder);
 
-                builder.switch_to_block(escape_block);
+                        builder.ins().jump(escape_block, &[]);
 
-                let ty = builder.func.dfg.value_type(body_v);
+                        builder.switch_to_block(orelse_block);
+                        let orelse_v = orelse.inner.lower((ctx.clone(), builder)).unwrap();
 
-                builder.ins().stack_load(ty, ss, 0)
+                        storage.write(orelse_v, builder);
+                        builder.ins().jump(escape_block, &[]);
+
+                        builder.switch_to_block(escape_block);
+
+                        let raw = body_v.into_raw(builder);
+
+                        let ty = builder.func.dfg.value_type(raw);
+
+                        todo!()
+                    });
+
+                    None
+                } else {
+                    let escape_block = builder.create_block();
+                    builder.append_block_param(
+                        escape_block,
+                        ctx.codegen_backend.scalar_type_of(body_ty),
+                    );
+
+                    let body_block = builder.create_block();
+                    let orelse_block = builder.create_block();
+
+                    let cc = test
+                        .inner
+                        .lower((ctx.clone(), builder))
+                        .unwrap()
+                        .into_raw(builder);
+
+                    builder.ins().brnz(cc, body_block, &[]);
+                    builder.ins().jump(orelse_block, &[]);
+
+                    builder.switch_to_block(body_block);
+                    let body_v = body.inner.lower((ctx.clone(), builder)).unwrap();
+                    let body_v_raw = body_v.clone().into_raw(builder);
+
+                    builder.ins().jump(escape_block, &[body_v_raw]);
+
+                    builder.switch_to_block(orelse_block);
+                    let orelse_v = orelse
+                        .inner
+                        .lower((ctx.clone(), builder))
+                        .unwrap()
+                        .into_raw(builder);
+
+                    builder.ins().jump(escape_block, &[orelse_v]);
+
+                    builder.switch_to_block(escape_block);
+
+                    let ty = builder.func.dfg.value_type(body_v_raw);
+
+                    let value = builder.block_params(escape_block)[0];
+
+                    Some(TypedValue::by_val(value, TypePair(body_ty, Some(ty))))
+                }
             }
 
             Expr::BinOp { left, op, right } => {
-                let mref = ctx.func.scope.module_ref();
+                let left_t = ctx.type_of(left).unwrap();
+                let right_t = ctx.type_of(right).unwrap();
 
-                let left_ty = ctx
-                    .codegen_backend
-                    .global_context
-                    .database
-                    .type_of(&(Rc::clone(left) as Rc<_>), Some(&mref))
-                    .unwrap();
-
-                let right_ty = ctx
-                    .codegen_backend
-                    .global_context
-                    .database
-                    .type_of(&(Rc::clone(left) as Rc<_>), Some(&mref))
-                    .unwrap();
-
-                if left_ty.is_builtin() && right_ty.is_builtin() {
-                    let lvalue = left.inner.lower_with((ctx.clone(), builder));
-                    let rvalue = right.inner.lower_with((ctx.clone(), builder));
+                if left_t.is_builtin() && right_t.is_builtin() {
+                    let left_v = left.inner.lower((ctx.clone(), builder)).unwrap();
+                    let right_v = right.inner.lower((ctx.clone(), builder)).unwrap();
 
                     match op {
-                        InfixOp::Add => match (left_ty, right_ty) {
+                        InfixOp::Add => match (left_t, right_t) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.ins().iadd(lvalue, rvalue)
+                                let lvalue = left_v.clone().deref_into_raw(builder);
+                                let rvalue = right_v.clone().deref_into_raw(builder);
+
+                                let result = builder.ins().iadd(lvalue, rvalue);
+
+                                let cc = builder.ins().ifcmp(result, lvalue);
+
+                                builder.ins().trapif(
+                                    IntCC::SignedLessThan,
+                                    cc,
+                                    TrapCode::IntegerOverflow,
+                                );
+
+                                let value = TypedValue::by_val(
+                                    result,
+                                    TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
+                                );
+
+                                Some(value)
                             }
-                            _ => unreachable!(),
+
+                            _ => todo!(),
                         },
 
-                        InfixOp::Sub => match (left_ty, right_ty) {
+                        InfixOp::Sub => match (left_t, right_t) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
+                                let lvalue = left_v.clone().deref_into_raw(builder);
+                                let rvalue = right_v.clone().deref_into_raw(builder);
+
                                 let result = builder.ins().isub(lvalue, rvalue);
 
                                 let cc = builder.ins().ifcmp(result, lvalue);
 
-                                builder.ins().trapif(IntCC::SignedGreaterThan, cc, TrapCode::IntegerOverflow);
+                                builder.ins().trapif(
+                                    IntCC::SignedGreaterThan,
+                                    cc,
+                                    TrapCode::IntegerOverflow,
+                                );
 
-                                result
+                                let value = TypedValue::by_val(
+                                    result,
+                                    TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
+                                );
+
+                                Some(value)
                             }
-                            _ => unreachable!(),
+
+                            _ => todo!(),
                         },
 
-                        InfixOp::Power => todo!(),
-                        InfixOp::Invert => todo!(),
-                        InfixOp::FloorDiv => todo!(),
-                        InfixOp::MatMult => todo!(),
-                        InfixOp::Mod => todo!(),
-                        InfixOp::Div => todo!(),
-
-                        InfixOp::Mult => match (left_ty, right_ty) {
+                        InfixOp::Mult => match (left_t, right_t) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.ins().imul(lvalue, rvalue)
+                                let lvalue = left_v.clone().deref_into_raw(builder);
+                                let rvalue = right_v.clone().deref_into_raw(builder);
+
+                                let result = builder.ins().imul(lvalue, rvalue);
+
+                                let cc = builder.ins().ifcmp(result, lvalue);
+
+                                builder.ins().trapif(
+                                    IntCC::SignedLessThan,
+                                    cc,
+                                    TrapCode::IntegerOverflow,
+                                );
+
+                                let value = TypedValue::by_val(
+                                    result,
+                                    TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
+                                );
+
+                                Some(value)
                             }
-                            _ => unreachable!(),
+
+                            _ => todo!(),
                         },
 
-                        InfixOp::LeftShift => todo!(),
-                        InfixOp::RightShift => todo!(),
-                        InfixOp::NotEq => match (left_ty, right_ty) {
+                        InfixOp::Eq => match (left_t, right_t) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.ins().icmp(IntCC::NotEqual, rvalue, lvalue)
+                                let lvalue = left_v.clone().deref_into_raw(builder);
+                                let rvalue = right_v.clone().deref_into_raw(builder);
+
+                                let result = builder.ins().icmp(IntCC::Equal, lvalue, rvalue);
+
+                                Some(TypedValue::by_val(
+                                    result,
+                                    TypePair(TypeMap::BOOL, Some(ir::types::B1)),
+                                ))
                             }
 
-                            _ => unreachable!(),
+                            _ => todo!(),
                         },
 
-                        InfixOp::Eq => match (left_ty, right_ty) {
+                        InfixOp::NotEq => match (left_t, right_t) {
                             (TypeMap::INTEGER, TypeMap::INTEGER) => {
-                                builder.ins().icmp(IntCC::Equal, rvalue, lvalue)
+                                let lvalue = left_v.clone().deref_into_raw(builder);
+                                let rvalue = right_v.clone().deref_into_raw(builder);
+
+                                let result = builder.ins().icmp(IntCC::NotEqual, lvalue, rvalue);
+
+                                Some(TypedValue::by_val(
+                                    result,
+                                    TypePair(TypeMap::BOOL, Some(ir::types::B1)),
+                                ))
                             }
 
-                            _ => unreachable!(),
+                            _ => todo!(),
                         },
 
-                        InfixOp::And => todo!(),
-                        InfixOp::Or => todo!(),
+                        _ => todo!("{:?}", op),
                     }
                 } else {
-                    todo!()
+                    todo!();
                 }
             }
 
             Expr::Unary { op, value } => todo!(),
             Expr::Named { target, value } => todo!(),
-            Expr::Primary(p) => p.inner.lower_with((ctx.clone(), builder)),
+            Expr::Primary(primary) => return primary.inner.lower((ctx, builder)),
+        }
+    }
+}
+
+impl LowerCodegen for Statement {
+    fn lower(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> Option<TypedValue> {
+        use ir::InstBuilder;
+
+        match self {
+            Self::FnDef(_) | Self::Import(_) | Self::Class(_) => unreachable!(),
+
+            Statement::Expression(expr) => LowerCodegen::lower(expr, (ctx, builder)),
+
+            Statement::Ret(ret) => {
+                if let Some(expr) = &ret.value {
+                    let value = {
+                        let value = match expr.inner.lower((ctx.clone(), builder)) {
+                            Some(value) => value,
+                            None => {
+                                if let Some((layout, f)) = ctx.pending_rvalue.borrow_mut().take() {
+                                    let storage = todo!();
+
+                                    f((ctx.clone(), builder), storage);
+                                } else {
+                                    panic!("return expression should produce a value.");
+                                }
+                            }
+                        };
+
+                        let refined = ctx.maybe_coerce(value, ctx.func.kind.inner.ret, builder);
+
+                        refined.into_raw(builder)
+                    };
+
+                    builder.ins().return_(&[value]);
+                } else {
+                    builder.ins().return_(&[]);
+                }
+
+                None
+            }
+
+            Statement::Asn(assign) => {
+                let mut value = assign
+                    .value
+                    .inner
+                    .lower((ctx.clone(), builder))
+                    .expect("return expression should produce a value.");
+
+                if let Some(ann) = &assign.kind {
+                    let expected = ctx.type_of(ann).unwrap();
+
+                    value = ctx.maybe_coerce(value, expected, builder);
+                }
+
+                ctx.with_var_alloc(assign.name.name().unwrap(), move |storage| {
+                    storage.write(value, builder)
+                });
+
+                None
+            }
+
+            Statement::If(ifstmt) => {
+                let global_escape_block = builder.create_block();
+
+                let branch_blocks: Vec<_> = ifstmt
+                    .branches
+                    .iter()
+                    .map(|_| {
+                        (
+                            builder.create_block(),
+                            builder.create_block(),
+                            builder.create_block(),
+                        ) // (head, body, escape)
+                    })
+                    .collect();
+
+                for (branch_blocks_idx, ifstmt) in ifstmt.branches.iter().enumerate() {
+                    let (head_block, body_block, local_escape_block) =
+                        branch_blocks[branch_blocks_idx];
+
+                    builder.ins().jump(head_block, &[]);
+
+                    builder.switch_to_block(head_block);
+
+                    let cc = ifstmt
+                        .inner
+                        .test
+                        .inner
+                        .lower((ctx.clone(), builder))
+                        .unwrap()
+                        .into_raw(builder);
+
+                    builder.ins().brnz(cc, body_block, &[]);
+                    builder.ins().jump(local_escape_block, &[]);
+
+                    {
+                        builder.switch_to_block(body_block);
+
+                        for part in ifstmt.inner.body.iter() {
+                            let _ = part.inner.lower((ctx.clone(), builder));
+                        }
+
+                        if !builder.is_filled() {
+                            builder.ins().jump(global_escape_block, &[]);
+                        }
+                    }
+
+                    builder.switch_to_block(local_escape_block);
+                }
+
+                let orelse = builder.create_block();
+
+                builder.ins().jump(orelse, &[]);
+
+                builder.switch_to_block(orelse);
+
+                if let Some(orelse) = &ifstmt.orelse {
+                    for stmt in orelse {
+                        let _ = stmt.inner.lower((ctx.clone(), builder));
+                    }
+                }
+
+                if !builder.is_filled() {
+                    builder.ins().jump(global_escape_block, &[]);
+                }
+
+                builder.switch_to_block(global_escape_block);
+
+                None
+            }
+
+            Statement::While(while_) => {
+                let (head, body, escape) = {
+                    (
+                        builder.create_block(),
+                        builder.create_block(),
+                        builder.create_block(),
+                    )
+                };
+
+                builder.ins().jump(head, &[]);
+
+                builder.switch_to_block(head);
+
+                let cc = while_
+                    .test
+                    .inner
+                    .lower((ctx.clone(), builder))
+                    .unwrap()
+                    .into_raw(builder);
+
+                builder.ins().brnz(cc, body, &[]);
+                builder.ins().jump(escape, &[]);
+
+                builder.switch_to_block(body);
+
+                for part in while_.body.iter() {
+                    let _ = part.inner.lower((ctx.clone(), builder));
+                }
+
+                if !builder.is_filled() {
+                    builder.ins().jump(head, &[]);
+                    builder.switch_to_block(escape);
+                } else {
+                    builder.switch_to_block(escape);
+                    builder.ins().jump(head, &[]);
+                }
+
+                None
+            }
+
+            Statement::Pass => {
+                builder.ins().nop();
+                None
+            }
         }
     }
 }

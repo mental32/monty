@@ -215,6 +215,74 @@ impl TypeMap {
         }
     }
 
+    fn traverse_fields(
+        &self,
+        elements: &[LocalTypeId],
+    ) -> impl Iterator<Item = (std::alloc::Layout, LocalTypeId)> {
+        let mut fields = vec![];
+
+        for kind in elements {
+            let tydesc = 
+                self
+                .get(*kind)
+                .unwrap();
+
+            let tydesc = tydesc.value();
+
+            if let TypeDescriptor::Generic(Generic::Struct { inner }) = tydesc {
+                fields.extend(self.traverse_fields(inner.as_slice()));
+            } else {
+                let size = SizeOf::size_of(tydesc, self).unwrap().get();
+                let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
+
+                let layout =
+                    std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
+
+                fields.push((layout, *kind))
+            }
+        }
+
+        fields.into_iter()
+    }
+
+
+    #[inline]
+    pub fn fields_of(&self, type_id: LocalTypeId) -> Option<Vec<(std::alloc::Layout, LocalTypeId)>> {
+        let tydesc = self.get(type_id)?;
+        let tydesc = tydesc.value();
+
+
+        match type_id {
+            Self::UNKNOWN => None,
+
+            type_id => if type_id.is_builtin() {
+                let size = SizeOf::size_of(tydesc, self).unwrap().get();
+                let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
+
+                let layout =
+                    std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
+
+                Some(vec![(layout, type_id)])
+            } else {
+                Some(self.traverse_fields(&[type_id]).collect())
+            }
+        }
+    }
+
+    #[inline]
+    pub fn size_and_layout(&self, type_id: LocalTypeId) -> Option<(u32, std::alloc::Layout)> {
+        let mut layout = std::alloc::Layout::from_size_align(0, 1).unwrap();
+
+        for (field, _) in self.traverse_fields(&[type_id]) {
+            let (new_layout, _) = layout.extend(field).unwrap();
+            layout = new_layout;
+        }
+
+        let layout = layout.pad_to_align();
+
+        Some((layout.size() as u32, layout))
+    }
+
     #[inline]
     pub fn add_coercion_rule(&self, from: LocalTypeId, to: LocalTypeId, rule: CoercionRule) {
         log::trace!("typing:add_coercion_rule from={:?} to={:?}", from, to);
@@ -373,8 +441,8 @@ impl SizeOf<()> for BuiltinTypeId {
     }
 }
 
-impl SizeOf<&GlobalContext> for TypeDescriptor {
-    fn size_of(&self, opts: &GlobalContext) -> Option<NonZeroU32> {
+impl SizeOf<&TypeMap> for TypeDescriptor {
+    fn size_of(&self, opts: &TypeMap) -> Option<NonZeroU32> {
         match self {
             TypeDescriptor::Simple(s) => s.size_of(()),
             TypeDescriptor::Function(_) => None,
@@ -384,7 +452,7 @@ impl SizeOf<&GlobalContext> for TypeDescriptor {
                 Generic::Struct { inner } => NonZeroU32::new(
                     inner
                         .iter()
-                        .filter_map(|ty| opts.type_map.get(*ty)?.value().size_of(opts))
+                        .filter_map(|ty| opts.get(*ty)?.value().size_of(opts))
                         .map(|n| n.get())
                         .sum(),
                 ),
@@ -392,7 +460,7 @@ impl SizeOf<&GlobalContext> for TypeDescriptor {
                     let tag_size = BuiltinTypeId::I64.size_of(())?.get();
                     let largest = inner
                         .iter()
-                        .filter_map(|ty| opts.type_map.get(*ty)?.value().size_of(opts))
+                        .filter_map(|ty| opts.get(*ty)?.value().size_of(opts))
                         .map(|n| n.get())
                         .max()?;
 
@@ -400,5 +468,12 @@ impl SizeOf<&GlobalContext> for TypeDescriptor {
                 }
             },
         }
+    }
+}
+
+
+impl SizeOf<&GlobalContext> for TypeDescriptor {
+    fn size_of(&self, opts: &GlobalContext) -> Option<NonZeroU32> {
+        SizeOf::size_of(self, &opts.type_map)
     }
 }
