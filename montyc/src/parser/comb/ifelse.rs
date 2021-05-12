@@ -162,44 +162,44 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
             stream = elif_stream;
         }
 
-        let (stream, nl) = expect_many_n::<0>(PyToken::Newline)(stream).unwrap_or((stream, vec![]));
+        let (else_stream, nl) = expect_many_n::<0>(PyToken::Newline)(stream).unwrap_or((stream, vec![]));
 
-        let stream = if outer_indent_level.is_none() {
-            let (_, indent) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+        let else_stream = if outer_indent_level.is_none() {
+            let (_, indent) = expect_many_n::<0>(PyToken::Whitespace)(else_stream)?;
 
             outer_indent_level.replace(indent.len());
 
-            stream
+            else_stream
         } else {
-            stream
+            else_stream
         };
 
-        let (mut stream, ws) =
-            expect_many_n_var(outer_indent_level.unwrap(), PyToken::Whitespace)(stream)
-                .unwrap_or((stream, vec![]));
+        let (mut else_stream, ws) =
+            expect_many_n_var(outer_indent_level.unwrap(), PyToken::Whitespace)(else_stream)
+                .unwrap_or((else_stream, vec![]));
 
-        if let Ok((else_stream, else_)) = (expect(stream, PyToken::Else)) {
+        if let Ok((mut remaining, else_)) = (expect(else_stream, PyToken::Else)) {
             let (mut else_stream, (_, _, _)) = tuple((
                 expect_many_n::<0>(PyToken::Whitespace),
                 expect_(PyToken::Colon),
                 expect_many_n::<0>(PyToken::Whitespace),
-            ))(else_stream)?;
+            ))(remaining)?;
 
             let mut else_body = vec![];
 
             loop {
-                if let Ok((remaining, _)) = terminated(
+                if let Ok((remaining_, _)) = terminated(
                     expect_(PyToken::Newline),
                     expect_many_n::<4>(PyToken::Whitespace),
-                )(else_stream)
+                )(remaining)
                 {
-                    let (remaining, part) = match statement(remaining) {
+                    let (remaining_, part) = match statement(remaining_) {
                         Ok(i) => i,
                         Err(e) => break,
                     };
 
                     else_body.push(Rc::new(part) as Rc<_>);
-                    else_stream = remaining;
+                    remaining = remaining_;
                 } else {
                     break;
                 }
@@ -207,10 +207,10 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
 
             if_chain.orelse = Some(else_body);
 
-            stream = else_stream;
+            (else_stream, if_chain)
+        } else {
+            (stream, if_chain)
         }
-
-        (stream, if_chain)
     };
 
     return Ok((

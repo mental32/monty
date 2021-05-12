@@ -142,20 +142,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
             if let Ok((remaining, _)) =
                 expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(remaining)
             {
-                let (remaining, part) = match statement(remaining) {
-                    Ok(i) => i,
-                    Err(err) => {
-                        if let nom::Err::Error(err) = &err {
-                            if let Some((top, _)) = err.input.get(0) {
-                                if matches!(top, PyToken::Elif | PyToken::Else) {
-                                    break;
-                                }
-                            }
-                        }
-
-                        return Err(err);
-                    }
-                };
+                let (remaining, part)  = statement(remaining)?;
 
                 body.push(Rc::new(part) as Rc<_>);
                 stream = remaining;
