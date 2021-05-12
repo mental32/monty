@@ -9,6 +9,7 @@ use typing::TypedObject;
 
 use crate::{
     context::LocalContext,
+    database::DefEntry,
     parser::SpanRef,
     scope::LookupTarget,
     typing::{self, LocalTypeId},
@@ -187,48 +188,42 @@ where
 {
     log::trace!("ast:with_object_in_database_and_then {:?}", object);
 
-    let that = Rc::clone(object) as Rc<_>;
+    let dyn_object = Rc::clone(object) as Rc<dyn AstObject>;
 
-    assert_eq!(
+    debug_assert_eq!(
         Rc::as_ptr(object) as *const (),
-        Rc::as_ptr(&that) as *const ()
+        Rc::as_ptr(&dyn_object) as *const (),
+        "sanity check: the pointer to `object` and `object` as a trait object are different?!"
     );
 
-    if ctx.global_context.database.contains_entry(&that) {
-        // `object` is a `DefEntry` already.
-        return f(object.as_ref());
+    // lazily insert `object` into the database if it has a span (is well formed.)
+    if let Some(_) = object.span() {
+        let this = ctx.this.as_ref().expect("`ctx.this` must be set!");
+
+        // NOTE: so like we're just assuming `this` and `object` are from the same module
+        //       since the caller is supposed to set `ctx.this = self` before interacting with us.
+
+        debug_assert_eq!(
+            format!("{:?}", this),
+            format!("{:?}", object),
+            "ctx.this and the object produce different debug formats! (are they the same object?)"
+        );
+
+        let object_entry = ctx
+            .global_context
+            .database
+            .entry(Rc::clone(&dyn_object), &ctx.module_ref);
+
+        assert!(
+            ctx.global_context.database.contains_object(&dyn_object),
+            "{:?}",
+            Rc::as_ptr(&dyn_object)
+        );
+
+        return f(object_entry.as_ref());
     }
 
-    if !ctx.global_context.database.contains_object(&that) {
-        // lazily insert `object` into the database if it has a span (is well formed.)
-        if let Some(span) = object.span() {
-            let this = ctx.this.as_ref().expect("`ctx.this` must be set!");
-            let this_span = this.span().expect("`ctx.this` must be spanned!");
-
-            // NOTE: so like we're just assuming `this` and `object` are from the same module
-            //       since the caller is supposed to set `ctx.this = self` before interacting with us.
-
-            assert_eq!(span, this_span, "{:?} != {:?}", object, this);
-            assert_eq!(
-                format!("{:?}", this),
-                format!("{:?}", object),
-                "ctx.this is not the object!"
-            );
-
-            let object_entry = ctx
-                .global_context
-                .database
-                .entry(Rc::clone(&that), &ctx.module_ref);
-
-            assert!(
-                ctx.global_context.database.contains_object(&that),
-                "{:?}",
-                Rc::as_ptr(&that)
-            );
-
-            return f(object_entry.as_ref());
-        }
-    }
+    log::warn!("Analyzing an unspanned but Rc'd object is discouraged {:?}", object.as_ref());
 
     f(object.as_ref())
 }
@@ -238,11 +233,19 @@ where
     T: AstObject,
 {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        with_object_in_database_and_then(self, ctx, |object| object.infer_type(ctx))
+        if TypeId::of::<T>() == TypeId::of::<DefEntry>() {
+            self.as_ref().infer_type(ctx)
+        } else {
+            with_object_in_database_and_then(self, ctx, |object| object.infer_type(ctx))
+        }
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
-        with_object_in_database_and_then(self, ctx, |object| object.typecheck(ctx))
+        if TypeId::of::<T>() == TypeId::of::<DefEntry>() {
+            self.as_ref().typecheck(ctx)
+        } else {
+            with_object_in_database_and_then(self, ctx, |object| object.typecheck(ctx))
+        }
     }
 }
 
