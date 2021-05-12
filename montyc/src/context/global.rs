@@ -84,8 +84,31 @@ pub struct GlobalContext {
 
 const MAGICAL_NAMES: &str = include_str!("../magical_names.py");
 
-impl From<CompilerOptions> for GlobalContext {
-    fn from(opts: CompilerOptions) -> Self {
+impl GlobalContext {
+    fn new_uninit() -> Self {
+        let span_ref: Rc<_> = Default::default();
+        let type_map = TypeMap::correctly_initialized();
+
+        let resolver = Rc::new(InternalResolver {
+            span_ref: Rc::clone(&span_ref),
+            sources: Default::default(),
+        });
+
+        Self {
+            modules: HashMap::new(),
+            functions: RefCell::new(Vec::new()),
+            span_ref,
+            type_map,
+            builtins: HashMap::new(),
+            phantom_objects: vec![],
+            libstd: PathBuf::default(),
+            resolver,
+            database: Default::default(),
+            strings: DashMap::new(),
+        }
+    }
+
+    pub fn initialize(opts: &CompilerOptions) -> Self {
         log::debug!("Bootstrapping with {:?}", opts);
 
         let CompilerOptions {
@@ -102,7 +125,7 @@ impl From<CompilerOptions> for GlobalContext {
 
         log::debug!("libstd path is set to => {:?}", libstd);
 
-        let mut ctx = Self::default();
+        let mut ctx = Self::new_uninit();
 
         ctx.libstd = libstd.clone();
 
@@ -285,30 +308,6 @@ impl From<CompilerOptions> for GlobalContext {
     }
 }
 
-impl Default for GlobalContext {
-    fn default() -> Self {
-        let span_ref: Rc<RefCell<SpanInterner>> = Default::default();
-        let type_map = TypeMap::correctly_initialized();
-
-        let resolver = Rc::new(InternalResolver {
-            span_ref: span_ref.clone(),
-            sources: Default::default(),
-        });
-
-        Self {
-            modules: HashMap::new(),
-            functions: RefCell::new(Vec::new()),
-            span_ref,
-            type_map,
-            builtins: HashMap::new(),
-            phantom_objects: vec![],
-            libstd: PathBuf::default(),
-            resolver,
-            database: Default::default(),
-            strings: DashMap::new(),
-        }
-    }
-}
 
 impl GlobalContext {
     pub fn register_string_literal(&self, atom: &Spanned<Atom>, mref: ModuleRef) -> StringRef {

@@ -9,7 +9,7 @@ fn main() {
     let opts = CompilerOptions::from_args();
     let file = opts.input.clone();
 
-    let mut global_context = GlobalContext::from(opts.clone());
+    let mut global_context = GlobalContext::initialize(&opts);
 
     global_context.load_module(file.unwrap(), |ctx, mref| {
         let mctx = ctx.modules.get(&mref).unwrap();

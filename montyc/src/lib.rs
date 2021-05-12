@@ -51,7 +51,7 @@ pub type Result<T> = std::result::Result<T, error::MontyError>;
 macro_rules! isinstance {
     ($e:expr, $t:ident) => {{
         if let Some($crate::ast::Spanned { inner, .. }) =
-            dbg!($crate::ast::_downcast_ref::<$crate::ast::Spanned<$t>>($e))
+            $crate::ast::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
         {
             Some(inner)
         } else {
