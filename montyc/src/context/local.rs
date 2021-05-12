@@ -6,7 +6,7 @@ use crate::{
     fmt::Formattable,
     scope::Scope,
     typing::{LocalTypeId, TypeDescriptor},
-    MontyError,
+    error::MontyError,
 };
 
 use super::{global::GlobalContext, ModuleRef};
