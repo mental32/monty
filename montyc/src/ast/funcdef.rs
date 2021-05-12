@@ -36,7 +36,7 @@ impl AstObject for TypedFuncArg {
 
 impl TypedObject for TypedFuncArg {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        self.annotation.infer_type(ctx)
+        ctx.with(Rc::clone(&self.annotation), |ctx, ann| ann.infer_type(&ctx))
     }
 
     fn typecheck<'a>(&self, _: &LocalContext<'a>) -> crate::Result<()> {
