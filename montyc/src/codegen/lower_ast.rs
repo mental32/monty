@@ -1,4 +1,4 @@
-use std::{collections::HashSet, convert::TryFrom, rc::Rc};
+use std::{any::Any, collections::HashSet, convert::TryFrom, rc::Rc};
 
 use cranelift_codegen::ir::{
     self, condcodes::IntCC, ExtFuncData, ExternalName, GlobalValueData, MemFlags, StackSlotData,
@@ -159,6 +159,8 @@ impl LowerCodegen for Primary {
                                 TypePair(value_t, None),
                             );
 
+                            let value_t_d = ctx.codegen_backend.global_context.type_map.get(value_t).unwrap();
+
                             let alloc_id = allocator.alloc(storage);
                             let storage = allocator.get_mut(alloc_id);
 
@@ -195,9 +197,14 @@ impl LowerCodegen for Primary {
                                 let value = sbuf.read(idx, (ctx.clone(), builder)).unwrap();
                                 let value_t = builder.func.dfg.value_type(value);
 
+                                let type_id = match value_t_d.value() {
+                                    TypeDescriptor::Generic(Generic::Struct { inner }) => inner[idx],
+                                    _ => unreachable!(),
+                                };
+
                                 return Some(TypedValue::by_val(
                                     value,
-                                    TypePair(TypeMap::UNKNOWN, Some(value_t)),
+                                    TypePair(type_id, Some(value_t)),
                                 ));
                             }
 
