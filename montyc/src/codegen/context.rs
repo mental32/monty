@@ -650,9 +650,13 @@ impl<'global> CodegenBackend<'global> {
         cc_args.push("-o");
         cc_args.push(&output);
 
-        std::process::Command::new("cc")
+        let status = std::process::Command::new("cc")
             .args(&cc_args)
             .status()
             .unwrap();
+
+        if !status.success() {
+            panic!("Failed to compile module.");
+        }
     }
 }
