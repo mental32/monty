@@ -7,7 +7,7 @@
 - [Index](#index)
 - [Brief](#brief)
 - [Building the compiler](#building-the-compiler)
-- [Usaging the compiler](#usaging-the-compiler)
+- [Using the compiler](#using-the-compiler)
 - [Concepts under development](#concepts-under-development)
   - ["automatic unions"](#automatic-unions)
   - ["Type narrowing"](#type-narrowing)
@@ -36,7 +36,7 @@ You will need the a recent nightly version of rust (`1.53.0-nightly` or so) in o
 
 after that it's as simple as running `cargo build`
 
-## Usaging the compiler
+## Using the compiler
 
 It is **strongly** advised to use `clang` and enable the `mold` linker.
 I suggest you download and install both since they (especially mold) will
@@ -132,7 +132,7 @@ else:
 
 ### "Deviated instance types"
 
-Inspired from [this section of the RPython documentation][rpython-instances] Derived Instance Types
+Inspired from [this section of the RPython documentation][rpython-instances] Deviated Instance Types
 work very similarly. For example take the following class:
 
 ```py
@@ -145,7 +145,7 @@ The memory layout of class `Thing` we'll call "Layout 1" will contain an integer
 that's all that was said about the class so that's all monty can do with it for now any other attribute access
 either getting or setting will invoke a type error to be reported to the user.
 
-Here's where the idea of "diverging" an "instance"s "type" comes in:
+Here's where the idea of "deviating" an "instance"s "type" comes in:
 
 ```py
 THING = Thing()
