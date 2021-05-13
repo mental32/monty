@@ -10,24 +10,13 @@ use std::{
 use cranelift_codegen::ir::condcodes::IntCC;
 use dashmap::DashMap;
 
-use crate::{
-    ast::{
+use crate::{CompilerOptions, VerifiedCompilerOptions, ast::{
         atom::{Atom, StringRef},
         import::{Import, ImportDecl},
         module::Module,
         primary::Primary,
         stmt::Statement,
-    },
-    class::Class,
-    database::ObjectDatabase,
-    func::Function,
-    parser::SpanInterner,
-    phantom::PhantomObject,
-    prelude::*,
-    scope::ScopedObject,
-    typing::{Generic, LocalTypeId, TypeDescriptor},
-    CompilerOptions,
-};
+    }, class::Class, database::ObjectDatabase, func::Function, parser::SpanInterner, phantom::PhantomObject, prelude::*, scope::ScopedObject, typing::{Generic, LocalTypeId, TypeDescriptor}};
 
 use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
 
@@ -108,8 +97,8 @@ impl GlobalContext {
         }
     }
 
-    pub fn initialize(opts: &CompilerOptions) -> Self {
-        log::debug!("Bootstrapping with {:?}", opts);
+    pub fn initialize(VerifiedCompilerOptions(opts): &VerifiedCompilerOptions) -> Self {
+        log::debug!("Bootstrapping with: {:#?}", opts);
 
         let CompilerOptions {
             libstd, input: _, ..
@@ -132,9 +121,9 @@ impl GlobalContext {
         // pre-emptively load in core modules i.e. builtins, ctypes, and typing.
 
         // HACK: Synthesize a module so that our `SpanRef` string/ident/comment interner is aware of certain builtin
-        //       method names this is necessary when resolving binary expressions using builtin types (since they have)
+        //       method names this is necessary when resolving binary expressions using "builtin" types (since they have)
         //       no module, hence "builtin", the name resolution logic fails.
-        ctx.load_module_literal(MAGICAL_NAMES, "__monty:magical_names", |_, _| {});
+        let _ = ctx.parse_and_register_module(MAGICAL_NAMES.to_string().into_boxed_str(), "__monty:magical_names");
 
         let c_char_p = ctx
             .type_map
@@ -432,16 +421,6 @@ impl GlobalContext {
         self.span_ref.borrow().find(st)
     }
 
-    fn load_module_literal(&mut self, source: &str, path: &str, f: impl Fn(&mut Self, ModuleRef)) {
-        log::debug!("Loading module ({:?})", path);
-
-        let module = self.parse_and_register_module(source.to_string().into_boxed_str(), path);
-
-        f(self, module);
-
-        log::debug!("Finished loading module ({:?})", path);
-    }
-
     pub fn load_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
         let path = path.as_ref();
 
@@ -458,8 +437,6 @@ impl GlobalContext {
         let module = self.parse_and_register_module(source, path);
 
         f(self, module);
-
-        log::debug!("Finished loading module ({:?})", shorten(path));
     }
 
     fn resolve_import_to_path(&self, qualname: Vec<&str>) -> Option<PathBuf> {

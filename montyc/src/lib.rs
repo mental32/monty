@@ -69,7 +69,12 @@ macro_rules! isinstance {
     }};
 }
 
+use std::path::PathBuf;
+
 use structopt::*;
+
+#[derive(Debug)]
+pub struct VerifiedCompilerOptions(CompilerOptions);
 
 #[derive(Debug, StructOpt, Clone)]
 pub struct CompilerOptions {
@@ -79,7 +84,7 @@ pub struct CompilerOptions {
 
     /// The input file to compile.
     #[structopt(parse(from_os_str))]
-    pub input: Option<std::path::PathBuf>,
+    pub input: std::path::PathBuf,
 
     /// The C compiler to use.
     #[structopt(parse(from_os_str))]
@@ -88,7 +93,57 @@ pub struct CompilerOptions {
     /// The linker to use.
     #[structopt(parse(from_os_str))]
     pub ld: Option<std::path::PathBuf>,
+
+    /// Low level codegen settings to pass to Cranelift.
+    #[structopt(multiple=true, short = "C", long = "codegen")]
+    pub cranelift_settings: Vec<String>,
 }
+
+impl CompilerOptions {
+    fn check_if_path_exists(&self, path: &std::path::Path, field_name: &str) -> std::result::Result<PathBuf, String> {
+        match path.canonicalize() {
+            Ok(path) if !path.exists() => Err(format!("Provided path to {} does not exist. (path={:?})", field_name, path)),
+            Err(err) => Err(format!("Failed to get the absolute path of {}. (path={:?}, error={:?})", field_name, path, err.kind())),
+            Ok(path) => Ok(path),  // provided path exists and is canonicalized.
+        }
+    }
+
+    pub fn verify(self) -> VerifiedCompilerOptions {
+        let mut errors = vec![];
+
+        if let Err(st) = self.check_if_path_exists(&self.libstd, "the standard library") {
+            errors.push(st);
+        }
+
+        if let Err(st) = self.check_if_path_exists(&self.input, "the provided input file") {
+            errors.push(st);
+        }
+
+        if let Some(cc) = &self.cc {
+            if let Err(st) = self.check_if_path_exists(&cc, "the specified C compiler") {
+                errors.push(st);
+            }
+        }
+
+        if let Some(ld) = &self.ld {
+            if let Err(st) = self.check_if_path_exists(&ld, "the specified linker") {
+                errors.push(st);
+            }
+        }
+
+        if !errors.is_empty() {
+            for err in errors.drain(..) {
+                eprintln!("error: {}", err);
+            }
+
+            std::process::exit(1);
+
+        } else {
+            VerifiedCompilerOptions(self)
+        }
+    }
+}
+
 
 pub mod prelude {
     pub use crate::{
