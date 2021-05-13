@@ -45,12 +45,26 @@ impl TypedObject for Return {
                         kind.ret
                     }
 
-                    None => unreachable!("{:?}", ctx.scope.root()),
+                    None => {
+                        return Err(MontyError::FunctionlessReturn {
+                            ret_span: (
+                                ctx.this.clone().unwrap().span().unwrap(),
+                                ctx.module_ref.clone(),
+                            ),
+                        })
+                    }
                 }
             }
 
             ScopeRoot::Func(func) => func.kind.inner.ret,
-            ScopeRoot::Class(_) => panic!("return in a class def"),
+            ScopeRoot::Class(_) => {
+                return Err(MontyError::FunctionlessReturn {
+                    ret_span: (
+                        ctx.this.clone().unwrap().span().unwrap(),
+                        ctx.module_ref.clone(),
+                    ),
+                })
+            }
         };
 
         let actual = match &self.value {

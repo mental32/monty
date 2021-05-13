@@ -3,8 +3,14 @@ use std::rc::Rc;
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 use thiserror::Error;
 
-use crate::{ast::{expr::{Expr, InfixOp}, funcdef::FunctionDef, retrn::Return}, prelude::*};
-
+use crate::{
+    ast::{
+        expr::{Expr, InfixOp},
+        funcdef::FunctionDef,
+        retrn::Return,
+    },
+    prelude::*,
+};
 
 #[derive(Debug, Error, Clone)]
 pub enum MontyError {
@@ -14,6 +20,9 @@ pub enum MontyError {
         assign: Span,
         used: Span,
     },
+
+    #[error("Return outside of a function.")]
+    FunctionlessReturn { ret_span: (Span, ModuleRef) },
 
     #[error("Reassigned a name with an incompatible type.")]
     IncompatibleReassignment {
@@ -126,6 +135,12 @@ impl MontyError {
         }
 
         match self {
+            MontyError::FunctionlessReturn { ret_span: (span, mref ) } => Diagnostic::error()
+                .with_message("return outside of function")
+                .with_labels(vec![
+                    Label::primary(mref.hash(), span).with_message("return can only be used within a function.")
+                ]),
+
             MontyError::BadReturnType {
                 expected,
                 actual,
