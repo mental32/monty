@@ -141,7 +141,7 @@ where
                 .coerce(from, into)
                 .unwrap();
 
-            let raw = value.clone().into_raw(fx);
+            let raw = value.clone().deref_into_raw(fx);
 
             let refined = (coerce)((self.clone(), fx), raw);
             let refined_t = Some(fx.func.dfg.value_type(refined));
@@ -333,7 +333,7 @@ impl<'global> CodegenBackend<'global> {
                     let data_id = self
                         .object_module
                         .borrow_mut()
-                        .declare_data(&format!("str.{}", st_ref.0), Linkage::Export, false, false)
+                        .declare_data(&format!("str.{}", st_ref.0), Linkage::Local, false, false)
                         .unwrap();
 
                     {
@@ -497,10 +497,6 @@ impl<'global> CodegenBackend<'global> {
                 }
             }
         }
-
-        // if implicit_return {
-        //     builder.ins().return_(&[]);
-        // }
     }
 
     pub fn declare_functions<'a>(
@@ -550,6 +546,8 @@ impl<'global> CodegenBackend<'global> {
         isa: Option<target_lexicon::Triple>,
     ) -> Self {
         let mut flags_builder = settings::builder();
+
+        flags_builder.set("is_pic", "1").unwrap();
 
         // use debug assertions
         flags_builder
@@ -635,6 +633,8 @@ impl<'global> CodegenBackend<'global> {
 
         cc_args.push("-o");
         cc_args.push(&output);
+
+        cc_args.push("-no-pie");
 
         let status = std::process::Command::new("cc")
             .args(&cc_args)
