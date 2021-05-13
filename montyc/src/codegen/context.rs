@@ -22,14 +22,7 @@ use crate::{
     typing::{LocalTypeId, TypeMap},
 };
 
-use cranelift_codegen::{
-    binemit,
-    ir::{self, ExtFuncData, FuncRef, GlobalValue, GlobalValueData},
-    ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind},
-    isa::{self, CallConv},
-    settings::{self, Configurable},
-    verify_function, Context,
-};
+use cranelift_codegen::{Context, binemit, ir::{self, ExtFuncData, FuncRef, GlobalValue, GlobalValueData}, ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind}, isa::{self, CallConv, TargetIsa}, settings::{self, Configurable}, verify_function};
 
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataContext, DataId, FuncId, Linkage, Module};
@@ -543,30 +536,11 @@ impl<'global> CodegenBackend<'global> {
 
     pub fn new(
         global_context: &'global GlobalContext,
-        isa: Option<target_lexicon::Triple>,
+        isa: Box<dyn TargetIsa>,
     ) -> Self {
-        let mut flags_builder = settings::builder();
-
-        flags_builder.set("is_pic", "1").unwrap();
-
-        // use debug assertions
-        flags_builder
-            .enable("enable_verifier")
-            .expect("enable_verifier should be a valid option");
-
-        // minimal optimizations
-        flags_builder
-            .set("opt_level", "none")
-            .expect("opt_level: speed should be a valid option");
-
-        let flags = settings::Flags::new(flags_builder);
-
-        let target_isa = isa::lookup(isa.unwrap_or_else(target_lexicon::Triple::host))
-            .unwrap()
-            .finish(settings::Flags::new(settings::builder()));
-
+        let flags = isa.flags().clone();
         let object_builder = ObjectBuilder::new(
-            target_isa,
+            isa,
             "<empty>".to_string(),
             cranelift_module::default_libcall_names(),
         )

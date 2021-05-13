@@ -1,10 +1,5 @@
 #![deny(warnings)]
-#![feature(
-    variant_count,
-    bool_to_option,
-    drain_filter,
-    assert_matches,
-)]
+#![feature(variant_count, bool_to_option, drain_filter, assert_matches)]
 
 pub mod ast;
 pub mod class;
@@ -39,11 +34,11 @@ pub mod lowering {
 }
 
 pub mod database;
+pub mod error;
 pub mod parser;
 pub mod phantom;
 pub mod scope;
 pub mod typing;
-pub mod error;
 
 pub type Result<T> = std::result::Result<T, error::MontyError>;
 
@@ -95,17 +90,57 @@ pub struct CompilerOptions {
     pub ld: Option<std::path::PathBuf>,
 
     /// Low level codegen settings to pass to Cranelift.
-    #[structopt(multiple=true, short = "C", long = "codegen")]
+    #[structopt(multiple = true, short = "C", long = "codegen")]
     pub cranelift_settings: Vec<String>,
 }
 
 impl CompilerOptions {
-    fn check_if_path_exists(&self, path: &std::path::Path, field_name: &str) -> std::result::Result<PathBuf, String> {
+    fn check_if_path_exists(
+        &self,
+        path: &std::path::Path,
+        field_name: &str,
+    ) -> std::result::Result<PathBuf, String> {
         match path.canonicalize() {
-            Ok(path) if !path.exists() => Err(format!("Provided path to {} does not exist. (path={:?})", field_name, path)),
-            Err(err) => Err(format!("Failed to get the absolute path of {}. (path={:?}, error={:?})", field_name, path, err.kind())),
-            Ok(path) => Ok(path),  // provided path exists and is canonicalized.
+            Ok(path) if !path.exists() => Err(format!(
+                "Provided path to {} does not exist. (path={:?})",
+                field_name, path
+            )),
+            Err(err) => Err(format!(
+                "Failed to get the absolute path of {}. (path={:?}, error={:?})",
+                field_name,
+                path,
+                err.kind()
+            )),
+            Ok(path) => Ok(path), // provided path exists.
         }
+    }
+
+    pub fn codegen_settings(&self) -> Box<dyn cranelift_codegen::isa::TargetIsa> {
+        use cranelift_codegen::{isa, settings::{self, Configurable}};
+
+        let mut flags_builder = cranelift_codegen::settings::builder();
+
+        let default_settings = vec![
+            "opt_level=none",
+            "is_pic=yes",
+            "enable_verifier=yes"
+        ];
+
+        let default_settings = default_settings.iter().map(ToString::to_string);
+
+        for setting in default_settings.chain(self.cranelift_settings.iter().cloned()) {
+            let mut it = setting.split("=").take(2);
+
+            let (name, value) = (it.next().unwrap(), it.next().unwrap());
+
+            flags_builder.set(name, value).unwrap();
+        }
+
+        let flags = settings::Flags::new(flags_builder);
+
+        isa::lookup(target_lexicon::Triple::host())
+            .unwrap()
+            .finish(flags)
     }
 
     pub fn verify(self) -> VerifiedCompilerOptions {
@@ -137,24 +172,22 @@ impl CompilerOptions {
             }
 
             std::process::exit(1);
-
         } else {
             VerifiedCompilerOptions(self)
         }
     }
 }
 
-
 pub mod prelude {
     pub use crate::{
         ast::{AstObject, Spanned},
         context::{GlobalContext, LocalContext, ModuleContext, ModuleFlags, ModuleRef},
+        error::{CompilerError, MontyError},
         func::{DataRef, Function},
         layout::{BlockId, Layout},
         lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanRef},
-        scope::{LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot, ChainedScope},
+        scope::{ChainedScope, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot},
         typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject},
-        error::{CompilerError, MontyError},
     };
 }

@@ -9,6 +9,8 @@ fn main() {
     let opts = CompilerOptions::from_args();
     let file = opts.input.clone();
 
+    let isa = opts.codegen_settings();
+
     let opts = opts.verify();
 
     let mut global_context = GlobalContext::initialize(&opts);
@@ -23,7 +25,7 @@ fn main() {
         }
     });
 
-    let mut cctx = montyc::codegen::context::CodegenBackend::new(&global_context, None);
+    let mut cctx = montyc::codegen::context::CodegenBackend::new(&global_context, isa);
 
     cctx.declare_functions(global_context.functions.borrow().iter().enumerate().map(
         |(idx, func)| {
