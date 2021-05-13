@@ -59,26 +59,12 @@ pub struct AllocId(usize);
 #[derive(Debug, Default)]
 pub(super) struct Allocator {
     next_free_slot: AllocId,
-    inner: Vec<Storage>,
+    inner: Vec<Rc<Storage>>,
 }
 
 impl Allocator {
-    pub fn get(&self, alloc_id: AllocId) -> &Storage {
-        /// SAFETY: we're the only one that can produce AllocId's
-        ///         and you're not allowed to "shrink" the underlying
-        ///         backing storage so all IDs are valid. always.
-        unsafe {
-            self.inner.get_unchecked(alloc_id.0)
-        }
-    }
-
-    pub fn get_mut(&mut self, alloc_id: AllocId) -> &mut Storage {
-        /// SAFETY: we're the only one that can produce AllocId's
-        ///         and you're not allowed to "shrink" the underlying
-        ///         backing storage so all IDs are valid. always.
-        unsafe {
-            self.inner.get_unchecked_mut(alloc_id.0)
-        }
+    pub fn get(&self, alloc_id: AllocId) -> Rc<Storage> {
+        Rc::clone(self.inner.get(alloc_id.0).unwrap())
     }
 
     pub fn alloc(&mut self, storage: Storage) -> AllocId {
@@ -86,14 +72,14 @@ impl Allocator {
 
         self.next_free_slot = AllocId(id.0 + 1);
 
-        self.inner.push(storage);
+        self.inner.push(Rc::new(storage));
 
         id
     }
 }
 
 type RValueAlloc<'a> =
-    dyn Fn(CodegenLowerArg<'_, '_, '_>, &mut Storage) -> Option<tvalue::TypedValue> + 'a;
+    dyn Fn(CodegenLowerArg<'_, '_, '_>, &Storage) -> Option<tvalue::TypedValue> + 'a;
 
 #[derive(Clone)]
 pub struct CodegenContext<'a, 'b>
@@ -126,7 +112,7 @@ where
         layout: alloc::Layout,
         allocator: impl for<'long, 'short, 'fx> Fn(
                 CodegenLowerArg<'long, 'short, 'fx>,
-                &mut Storage,
+                &Storage,
             ) -> Option<tvalue::TypedValue>
             + 'a,
     ) {
@@ -197,7 +183,7 @@ where
 
         let storage = alloc.get(*alloc_id);
 
-        f(storage)
+        f(&*storage)
     }
 
     pub fn type_of<T>(&self, obj: &Rc<T>) -> Option<LocalTypeId>
@@ -572,7 +558,7 @@ impl<'global> CodegenBackend<'global> {
 
         // minimal optimizations
         flags_builder
-            .set("opt_level", "speed")
+            .set("opt_level", "none")
             .expect("opt_level: speed should be a valid option");
 
         let flags = settings::Flags::new(flags_builder);

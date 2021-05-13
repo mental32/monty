@@ -152,19 +152,18 @@ impl LowerCodegen for Primary {
                     Some(ty) => todo!("subscript on scalar value."),
                     None => match ctx.pending_rvalue.borrow_mut().take() {
                         Some((layout, f)) => {
-                            let mut allocator = ctx.allocator.borrow_mut();
-
                             let storage = Storage::new_stack_slot(
                                 (ctx.clone(), builder),
                                 TypePair(value_t, None),
                             );
 
+                            let mut alloc_id = ctx.allocator.borrow_mut().alloc(storage);
+
                             let value_t_d = ctx.codegen_backend.global_context.type_map.get(value_t).unwrap();
 
-                            let alloc_id = allocator.alloc(storage);
-                            let storage = allocator.get_mut(alloc_id);
+                            let storage = ctx.allocator.borrow().get(alloc_id);
 
-                            let value = f((ctx.clone(), builder), storage).unwrap();
+                            let value = f((ctx.clone(), builder), &*storage).unwrap();
 
                             if let Expr::Primary(Spanned {
                                 inner: Primary::Atomic(atom),

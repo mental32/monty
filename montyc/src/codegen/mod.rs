@@ -324,7 +324,7 @@ mod storage {
             }
         }
 
-        pub fn as_mut_struct(&mut self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> StructBuf {
+        pub fn as_mut_struct(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> StructBuf {
             let type_id = self.kind.0;
             let fields = ctx
                 .codegen_backend
