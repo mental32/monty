@@ -1,6 +1,6 @@
 use std::{convert::TryFrom, rc::Rc};
 
-use crate::{prelude::*, scope::LookupOrder, typing::Generic};
+use crate::{ast::class::ClassDef, prelude::*, scope::LookupOrder, typing::Generic};
 
 use super::{assign::Assign, expr::Expr, stmt::Statement, AstObject};
 
@@ -55,6 +55,26 @@ pub enum Atom {
     Tuple(Vec<Rc<Spanned<Expr>>>),
     Comment(SpanRef),
     Name(SpanRef),
+}
+
+impl Atom {
+    pub fn resolve_name_to_definition(
+        &self,
+        scope: &dyn Scope,
+        global_context: &GlobalContext,
+    ) -> Option<Rc<dyn AstObject>> {
+        let target = if let Self::Name(t) = self { t } else { todo!() };
+
+        scope
+            .lookup_def(
+                target.clone(),
+                &global_context,
+                LookupOrder::Unspecified,
+            )
+            .unwrap()
+            .drain(..)
+            .next()
+    }
 }
 
 impl Parseable for Atom {
@@ -137,6 +157,8 @@ impl TypedObject for Atom {
                 }
 
                 for top in results {
+                    let top_ = top.unspanned();
+
                     if let Some(asn) = crate::isinstance!(top.as_ref(), Assign).or_else(
                         || crate::isinstance!(top.as_ref(), Statement, Statement::Asn(n) => n),
                     ) {
@@ -144,6 +166,13 @@ impl TypedObject for Atom {
                             Ok(i) => return Ok(i),
                             Err(err) => ctx.exit_with_error(err),
                         }
+                    } else if let Some(klass) = crate::isinstance!(top.as_ref(), ClassDef).or_else(
+                        || crate::isinstance!(top_.as_ref(), Statement, Statement::Class(k) => k),
+                    ) {
+                        let mut ctx = ctx.clone();
+                        ctx.this = Some(top.clone());
+
+                        return Ok(crate::class::Class::new(&ctx, klass).type_id);
                     } else {
                         log::trace!("infer_type: lookup successfull! top={:?}", top.name());
                         let mut ctx = ctx.clone();
@@ -151,6 +180,7 @@ impl TypedObject for Atom {
 
                         match top.infer_type(&ctx) {
                             Err(err) => ctx.exit_with_error(err),
+                            Ok(TypeMap::TYPE) => panic!("{:?}", top),
                             Ok(i) => return Ok(i),
                         }
                     }

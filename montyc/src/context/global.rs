@@ -10,13 +10,25 @@ use std::{
 use cranelift_codegen::ir::condcodes::IntCC;
 use dashmap::DashMap;
 
-use crate::{CompilerOptions, VerifiedCompilerOptions, ast::{
+use crate::{
+    ast::{
         atom::{Atom, StringRef},
         import::{Import, ImportDecl},
         module::Module,
         primary::Primary,
         stmt::Statement,
-    }, class::Class, database::ObjectDatabase, func::Function, parser::SpanInterner, phantom::PhantomObject, prelude::*, scope::ScopedObject, typing::{Generic, LocalTypeId, TypeDescriptor}};
+    },
+    class::Class,
+    codegen::{context::CodegenLowerArg, TypePair, TypedValue},
+    database::ObjectDatabase,
+    func::Function,
+    parser::SpanInterner,
+    phantom::PhantomObject,
+    prelude::*,
+    scope::ScopedObject,
+    typing::{Generic, LocalTypeId, TypeDescriptor},
+    CompilerOptions, VerifiedCompilerOptions,
+};
 
 use super::{local::LocalContext, module::ModuleContext, resolver::InternalResolver, ModuleRef};
 
@@ -56,6 +68,19 @@ impl ToString for StringData {
     }
 }
 
+pub type RawBuiltinFn = for<'a> fn(
+    CodegenLowerArg<'_, '_, '_>,
+    &[crate::codegen::TypedValue],
+) -> Option<crate::codegen::TypedValue>;
+
+pub struct BuiltinFunction(pub RawBuiltinFn);
+
+impl std::fmt::Debug for BuiltinFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{{builtin function}}")
+    }
+}
+
 /// Used to track global compilation state per-compilation.
 #[derive(Debug)]
 pub struct GlobalContext {
@@ -64,6 +89,7 @@ pub struct GlobalContext {
     pub span_ref: Rc<RefCell<SpanInterner>>,
     pub type_map: TypeMap,
     pub builtins: HashMap<LocalTypeId, (Rc<Class>, ModuleRef)>,
+    pub builtin_functions: HashMap<NonZeroUsize, (Rc<Function>, BuiltinFunction)>,
     pub libstd: PathBuf,
     pub resolver: Rc<InternalResolver>,
     pub database: ObjectDatabase,
@@ -75,7 +101,7 @@ const MAGICAL_NAMES: &str = include_str!("../magical_names.py");
 
 impl GlobalContext {
     fn new_uninit() -> Self {
-        let span_ref: Rc<_> = Default::default();
+        let span_ref = Rc::new(RefCell::new(SpanInterner::default()));
         let type_map = TypeMap::correctly_initialized();
 
         let resolver = Rc::new(InternalResolver {
@@ -89,6 +115,7 @@ impl GlobalContext {
             span_ref,
             type_map,
             builtins: HashMap::new(),
+            builtin_functions: HashMap::new(),
             phantom_objects: vec![],
             libstd: PathBuf::default(),
             resolver,
@@ -123,7 +150,10 @@ impl GlobalContext {
         // HACK: Synthesize a module so that our `SpanRef` string/ident/comment interner is aware of certain builtin
         //       method names this is necessary when resolving binary expressions using "builtin" types (since they have)
         //       no module, hence "builtin", the name resolution logic fails.
-        let _ = ctx.parse_and_register_module(MAGICAL_NAMES.to_string().into_boxed_str(), "__monty:magical_names");
+        let _ = ctx.parse_and_register_module(
+            MAGICAL_NAMES.to_string().into_boxed_str(),
+            "__monty:magical_names",
+        );
 
         let c_char_p = ctx
             .type_map
@@ -131,9 +161,9 @@ impl GlobalContext {
                 inner: TypeMap::U8,
             }));
 
-        ctx.phantom_objects.push(Rc::new(PhantomObject {
-            name: ctx.magical_name_of("c_char_p").unwrap(),
-            infer_type: |ctx| {
+        ctx.phantom_objects.push(Rc::new(PhantomObject::new(
+            ctx.magical_name_of("c_char_p").unwrap(),
+            |ctx| {
                 Ok(ctx
                     .global_context
                     .type_map
@@ -141,13 +171,31 @@ impl GlobalContext {
                         inner: TypeMap::U8,
                     })))
             },
-        }));
+        )));
 
         use cranelift_codegen::ir::InstBuilder;
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |(_, builder), _value| {
-                builder.ins().iconst(cranelift_codegen::ir::types::I64, 0)
+            .add_coercion_rule(TypeMap::NONE_TYPE, c_char_p, |(ctx, builder), _value| {
+                let zero = builder.ins().iconst(cranelift_codegen::ir::types::I64, 0);
+
+                let c_char_p =
+                    ctx.codegen_backend
+                        .global_context
+                        .type_map
+                        .insert(TypeDescriptor::Generic(Generic::Pointer {
+                            inner: TypeMap::U8,
+                        }));
+
+                TypedValue::by_val(
+                    zero,
+                    TypePair(c_char_p, Some(cranelift_codegen::ir::types::I64)),
+                )
+            });
+
+        ctx.type_map
+            .add_coercion_rule(TypeMap::UNKNOWN, TypeMap::OBJECT, |(_, _builder), value| {
+                value
             });
 
         ctx.type_map
@@ -155,14 +203,19 @@ impl GlobalContext {
 
         ctx.type_map
             .add_coercion_rule(TypeMap::BOOL, TypeMap::INTEGER, |(ctx, builder), value| {
-                builder
-                    .ins()
-                    .bint(ctx.codegen_backend.types[&TypeMap::BOOL], value)
+                let bty = ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER);
+                let x = value.into_raw(builder);
+                let b = builder.ins().bint(bty, x);
+
+                TypedValue::by_val(b, TypePair(TypeMap::INTEGER, Some(bty)))
             });
 
         ctx.type_map
-            .add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |(_, builder), value| {
-                builder.ins().icmp_imm(IntCC::Equal, value, 1)
+            .add_coercion_rule(TypeMap::INTEGER, TypeMap::BOOL, |(ctx, builder), value| {
+                let bty = ctx.codegen_backend.scalar_type_of(TypeMap::BOOL);
+                let value = value.into_raw(builder);
+                let res = builder.ins().icmp_imm(IntCC::Equal, value, 1);
+                TypedValue::by_val(res, TypePair(TypeMap::BOOL, Some(bty)))
             });
 
         ctx.load_module(libstd.join("builtins.py"), |ctx, mref| {
@@ -208,11 +261,23 @@ impl GlobalContext {
                         "float" => TypeMap::FLOAT,
                         "str" => TypeMap::STRING,
                         "bool" => TypeMap::BOOL,
+                        "type" => TypeMap::TYPE,
+                        "object" => TypeMap::OBJECT,
                         st => panic!("unknown builtin {:?}", st),
                     };
 
-                    let mut klass: Class =
-                        item.with_context(ctx, |local, _| (&local, class_def).into());
+                    let klass_type = class_def.as_type_descriptor(type_id, mref.clone());
+                    let klass_type = ctx.type_map.entry(klass_type);
+
+                    let klass_scope = LocalScope::from(class_def.clone());
+
+                    let mut klass = Class {
+                        scope: klass_scope,
+                        kind: type_id,
+                        type_id: klass_type,
+                        name: class_def.name().unwrap(),
+                        properties: HashMap::default(),
+                    };
 
                     macro_rules! const_prop {
                         ($prop:ident($reciever:expr) := ($($arg:expr),* $(,)?) -> $ret:expr) => ({
@@ -269,10 +334,70 @@ impl GlobalContext {
 
                     let _ = ctx.builtins.insert(type_id, (Rc::new(klass), mref.clone()));
 
+                    let klass_entry = ctx.database.entry(Rc::clone(&item.object), &mref);
+                    let id = ctx.database.id_of(&klass_entry).unwrap();
+
+                    let _ = ctx.database.set_type_of(id, klass_type);
+
                     log::trace!(
                         "\tAssociated builtin with class definition! {:?}",
                         klass_name
                     );
+                }
+                else if let Some(funcdef) = crate::isinstance!(object_unspanned.as_ref(), Statement, Statement::FnDef(f) => crate::func::is_externaly_defined(f, ctx, &mref, None).then_some(f)).flatten() {
+                    let lctx = LocalContext {
+                        global_context: ctx,
+                        module_ref: mref.clone(),
+                        scope: item.scope.clone(),
+                        this: Some(item.object.clone()),
+                    };
+
+                    let func = Function::new(&item.object, &lctx).unwrap();
+
+                    let name = funcdef.name.reveal(&module_context.source).unwrap();
+
+                    let builtin_fn: RawBuiltinFn = match name {
+                        "id" => |(ctx, fx), args| {
+                            assert_eq!(args.len(), 1);
+                            let arg = &args[0];
+
+                            let raw = arg.ref_value(fx);
+                            let ty = ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER);
+
+                            Some(TypedValue::by_val(raw, TypePair(TypeMap::INTEGER, Some(ty))))
+                        },
+
+                        "isinstance" => |(ctx, fx), args| {
+                            if let [subject, kind] = args {
+
+                                let res = match ctx.codegen_backend.global_context.type_map.get_tagged::<Generic>(subject.kind().0) {
+                                    Some(Ok(crate::typing::TaggedType { inner: Generic::Union { inner: _ }, .. })) => todo!(),
+                                    _ => {
+                                        let tyid = subject.kind().0;
+                                        let tyid = fx.ins().iconst(ctx.codegen_backend.scalar_type_of(tyid), tyid.as_usize() as i64);
+
+                                        let k = kind.clone().into_raw(fx);
+
+                                        let r = fx.ins().icmp(IntCC::Equal, tyid, k);
+
+                                        TypedValue::by_val(r, TypePair(TypeMap::BOOL, Some(ctx.codegen_backend.scalar_type_of(TypeMap::BOOL))))
+                                    }
+                                };
+
+                                Some(res)
+
+                            } else {
+                                unreachable!("expected exactly two arguments to `isinstance` builtin.");
+                            }
+                        },
+
+                        _ => todo!(),
+                    };
+
+                    let _ = ctx.database.set_type_of(func.def_id, func.kind.type_id);
+                    let _ = ctx.builtin_functions.insert(funcdef.name().unwrap(), (func, BuiltinFunction(builtin_fn)));
+
+                    continue;  // skip the typechecking call below as it'll include this decl for codegen.
                 }
                 // run regular import machinery...
                 else if let Some(Statement::Import(import)) =
@@ -297,7 +422,6 @@ impl GlobalContext {
     }
 }
 
-
 impl GlobalContext {
     pub fn register_string_literal(&self, atom: &Spanned<Atom>, mref: ModuleRef) -> StringRef {
         let st_ref: StringRef = atom.inner.clone().try_into().unwrap();
@@ -314,7 +438,7 @@ impl GlobalContext {
         st_ref
     }
 
-    pub fn is_builtin(&self, t: &dyn AstObject) -> Option<LocalTypeId> {
+    pub fn is_builtin(&self, t: &dyn AstObject) -> Option<(LocalTypeId, LocalTypeId)> {
         log::trace!(
             "global_context:is_builtin: checking if object is a builtin ({:?})",
             t.name()
@@ -324,7 +448,7 @@ impl GlobalContext {
 
         for (type_id, (object, _)) in self.builtins.iter() {
             if self.span_ref.borrow().crosspan_eq(object.name, t_name) {
-                return Some(type_id.clone());
+                return Some((type_id.clone(), object.type_id));
             }
         }
 
@@ -340,7 +464,7 @@ impl GlobalContext {
             if let Some(Statement::Class(class_def)) = (o.as_ref()).downcast_ref() {
                 if class_def.is_named(name) {
                     let klass =
-                        obj.with_context(self, |local, _this| Class::from((&local, class_def)));
+                        obj.with_context(self, |local, _this| Class::new(&local, class_def));
 
                     return Some(Rc::new(klass));
                 }

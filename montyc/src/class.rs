@@ -4,7 +4,7 @@ use crate::{
     ast::class::ClassDef,
     context::LocalContext,
     prelude::SpanRef,
-    scope::LocalScope,
+    scope::{LocalScope, LookupTarget},
     typing::{FunctionType, LocalTypeId, TypeDescriptor, TypedObject},
 };
 
@@ -12,8 +12,28 @@ use crate::{
 pub struct Class {
     pub scope: LocalScope<ClassDef>,
     pub kind: LocalTypeId,
+    pub type_id: LocalTypeId,
     pub name: SpanRef,
     pub properties: HashMap<SpanRef, LocalTypeId>,
+}
+
+impl Class {
+    pub fn new(ctx: &LocalContext<'_>, def: &ClassDef) -> Self {
+        let (kind, kty) = match ctx.global_context.is_builtin(def) {
+            Some(type_id) => type_id,
+            None => unimplemented!("{:?}", def),
+        };
+
+        let scope = LocalScope::from(def.clone());
+
+        Self {
+            name: def.name.name().unwrap(),
+            scope,
+            kind,
+            type_id: kty,
+            properties: HashMap::new(),
+        }
+    }
 }
 
 impl Class {
@@ -54,11 +74,8 @@ impl Class {
 }
 
 impl TypedObject for Class {
-    fn infer_type<'a>(
-        &self,
-        _ctx: &crate::context::LocalContext<'a>,
-    ) -> crate::Result<LocalTypeId> {
-        todo!()
+    fn infer_type<'a>(&self, _ctx: &crate::context::LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        Ok(self.kind)
     }
 
     fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {

@@ -1,6 +1,23 @@
 from __monty import extern  # type: ignore
 
 @extern
+class object:
+    """The base class of the class hierarchy.
+
+    When called, it accepts no arguments and returns a new featureless
+    instance that has no instance attributes and cannot be given any.
+    """
+
+@extern
+class type:
+    """
+    type(object_or_name, bases, dict)
+    type(object) -> the object's type
+    type(name, bases, dict) -> a new type
+    """
+
+
+@extern
 class bool:
     """bool(x) -> bool
 
@@ -8,6 +25,7 @@ class bool:
     The builtins True and False are the only two instances of the class bool.
     The class bool is a subclass of the class int, and cannot be subclassed.
     """
+
 
 @extern
 class int:
@@ -54,3 +72,10 @@ class str:
     encoding defaults to sys.getdefaultencoding().
     errors defaults to 'strict'.
     """
+
+
+@extern
+def id(__obj: object) -> int: ...
+
+@extern
+def isinstance(__obj: object, __class_or_tuple: type) -> bool: ...

@@ -21,6 +21,11 @@ pub struct LocalTypeId(usize);
 
 impl LocalTypeId {
     #[inline]
+    pub fn as_usize(&self) -> usize {
+        self.0
+    }
+
+    #[inline]
     pub fn is_builtin(&self) -> bool {
         (0..=255).contains(&self.0)
     }
@@ -60,6 +65,8 @@ pub enum BuiltinTypeId {
     Ellipsis = 6,
     Module = 7,
     Unknown = 8,
+    Type = 9,
+    Object = 10,
 
     U8 = 100,
     U16 = 101,
@@ -95,6 +102,8 @@ impl std::fmt::Display for BuiltinTypeId {
             BuiltinTypeId::I16 => write!(f, "{{i16}}"),
             BuiltinTypeId::I32 => write!(f, "{{i32}}"),
             BuiltinTypeId::I64 => write!(f, "{{i64}}"),
+            BuiltinTypeId::Type => write!(f, "{{type}}"),
+            BuiltinTypeId::Object => write!(f, "{{object}}"),
         }
     }
 }
@@ -102,6 +111,7 @@ impl std::fmt::Display for BuiltinTypeId {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassType {
     pub name: SpanRef,
+    pub kind: LocalTypeId,
     pub mref: ModuleRef,
 }
 
@@ -141,8 +151,8 @@ pub trait TypedObject {
 
 pub type CoercionRule = for<'a, 'b, 'c> fn(
     CodegenLowerArg<'a, 'b, 'c>,
-    cranelift_codegen::ir::Value,
-) -> cranelift_codegen::ir::Value;
+    crate::codegen::TypedValue,
+) -> crate::codegen::TypedValue;
 
 pub struct TypeMap {
     last_id: Cell<usize>,
@@ -168,6 +178,8 @@ impl TypeMap {
     pub const ELLIPSIS: LocalTypeId = LocalTypeId(6);
     pub const MODULE: LocalTypeId = LocalTypeId(7);
     pub const UNKNOWN: LocalTypeId = LocalTypeId(8);
+    pub const TYPE: LocalTypeId = LocalTypeId(9);
+    pub const OBJECT: LocalTypeId = LocalTypeId(10);
     pub const NEVER: LocalTypeId = LocalTypeId(255);
 
     pub const U8: LocalTypeId = LocalTypeId(100);
@@ -192,11 +204,16 @@ impl TypeMap {
             Self::ELLIPSIS,
             TypeDescriptor::Simple(BuiltinTypeId::Ellipsis),
         );
+
         mapping.insert(Self::MODULE, TypeDescriptor::Simple(BuiltinTypeId::Module));
+        mapping.insert(Self::TYPE, TypeDescriptor::Simple(BuiltinTypeId::Type));
+        mapping.insert(Self::OBJECT, TypeDescriptor::Simple(BuiltinTypeId::Object));
+
         mapping.insert(
             Self::UNKNOWN,
             TypeDescriptor::Simple(BuiltinTypeId::Unknown),
         );
+
         mapping.insert(Self::NEVER, TypeDescriptor::Simple(BuiltinTypeId::Never));
 
         mapping.insert(Self::U8, TypeDescriptor::Simple(BuiltinTypeId::U8));
@@ -213,6 +230,10 @@ impl TypeMap {
             last_id: Cell::new(256),
             coercion_rules: DashMap::default(),
         }
+    }
+
+    pub fn is_class(&self, type_id: LocalTypeId) -> bool {
+        matches!(self.get_tagged::<ClassType>(type_id), Some(Ok(_)))
     }
 
     fn traverse_fields(
@@ -292,6 +313,10 @@ impl TypeMap {
 
     #[inline]
     pub fn coerce<'a, 'b>(&self, from: LocalTypeId, to: LocalTypeId) -> Option<CoercionRule> {
+        if to == Self::OBJECT {
+            return Some(|_, value| value);
+        }
+
         self.coercion_rules
             .get(&(from, to))
             .map(|rule| rule.value().clone())
@@ -311,6 +336,12 @@ impl TypeMap {
     }
 
     #[inline]
+    pub fn values(&self) -> impl Iterator<Item = (LocalTypeId, TypeDescriptor)> {
+        let it: Vec<_> = self.inner.iter().map(|refm| (refm.key().clone(), refm.value().clone())).collect();
+        it.into_iter()
+    }
+
+    #[inline]
     pub fn unify_call<'a>(
         &self,
         func_t: LocalTypeId,
@@ -321,8 +352,14 @@ impl TypeMap {
         let func = self.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
 
         for (idx, (actual, expected)) in callsite.cloned().zip(func.inner.args).enumerate() {
-            if actual == Self::UNKNOWN {
+            if actual == Self::UNKNOWN || expected == Self::OBJECT {
                 continue;
+            }
+
+            match self.get_tagged::<ClassType>(actual) {
+                Some(Ok(_)) if expected == TypeMap::TYPE => continue,
+                Some(_) => (),
+                None => unreachable!(),
             }
 
             if !self.type_eq(actual, expected) {
@@ -422,7 +459,10 @@ impl SizeOf<()> for BuiltinTypeId {
             | BuiltinTypeId::Ellipsis
             | BuiltinTypeId::Module
             | BuiltinTypeId::Unknown
+            | BuiltinTypeId::Type
             | BuiltinTypeId::Never => todo!(),
+
+            BuiltinTypeId::Object => return None,
 
             BuiltinTypeId::Invalid => unreachable!(),
 
@@ -446,7 +486,7 @@ impl SizeOf<&TypeMap> for TypeDescriptor {
         match self {
             TypeDescriptor::Simple(s) => s.size_of(()),
             TypeDescriptor::Function(_) => None,
-            TypeDescriptor::Class(_) => todo!(),
+            TypeDescriptor::Class(_) => BuiltinTypeId::Int.size_of(()),
             TypeDescriptor::Generic(inner) => match inner {
                 Generic::Pointer { inner: _ } => todo!(),
                 Generic::Struct { inner } => NonZeroU32::new(

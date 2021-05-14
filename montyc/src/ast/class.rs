@@ -1,6 +1,6 @@
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
-use crate::{prelude::*, typing::TypeDescriptor};
+use crate::{prelude::*, typing::{ClassType, TypeDescriptor}};
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 
@@ -11,34 +11,19 @@ pub struct ClassDef {
     pub body: Vec<Rc<Spanned<Statement>>>,
 }
 
-impl<'a> From<(&LocalContext<'a>, &ClassDef)> for crate::class::Class {
-    fn from((ctx, def): (&LocalContext<'a>, &ClassDef)) -> Self {
-        let type_id = match ctx.global_context.is_builtin(def) {
-            Some(type_id) => type_id,
-            None => {
-                let type_map = &ctx.global_context.type_map;
-
-                type_map.insert(TypeDescriptor::Class(crate::typing::ClassType {
-                    name: def.name.inner.name().unwrap(),
-                    mref: ctx.module_ref.clone(),
-                }))
-            }
-        };
-
-        let scope = LocalScope::from(def.clone());
-
-        Self {
-            name: def.name.name().unwrap(),
-            scope,
-            kind: type_id,
-            properties: HashMap::new(),
-        }
+impl ClassDef {
+    pub fn as_type_descriptor(&self, kind: LocalTypeId, mref: ModuleRef) -> TypeDescriptor {
+        TypeDescriptor::Class(ClassType {
+            name: self.name.name().unwrap(),
+            kind,
+            mref: mref.clone(),
+        })
     }
 }
 
 impl AstObject for ClassDef {
     fn span(&self) -> Option<logos::Span> {
-        todo!()
+        None
     }
 
     fn unspanned(&self) -> Rc<dyn AstObject> {
@@ -51,14 +36,8 @@ impl AstObject for ClassDef {
 }
 
 impl TypedObject for ClassDef {
-    fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
-        let this = ctx.this.as_ref().unwrap();
-
-        if let Some(type_id) = ctx.global_context.is_builtin(this.as_ref()) {
-            return Ok(type_id);
-        } else {
-            todo!();
-        }
+    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        Ok(TypeMap::TYPE)
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {

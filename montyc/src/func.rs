@@ -17,19 +17,15 @@ use crate::{
     typing::TaggedType,
 };
 
-
 pub fn is_externaly_defined(
-    func: &Function,
+    def: &FunctionDef,
     global_context: &GlobalContext,
+    mref: &ModuleRef,
     callcov: Option<&str>,
 ) -> bool {
-    let def = func.def(global_context).unwrap().unspanned();
-
-    let def: &FunctionDef = def.as_function().unwrap();
-
     let source = global_context
         .modules
-        .get(&func.scope.module_ref())
+        .get(mref)
         .as_ref()
         .unwrap()
         .source
@@ -86,7 +82,6 @@ pub fn is_externaly_defined(
     has_extern_tag && body_is_ellipsis
 }
 
-
 #[derive(Debug)]
 pub enum DataRef {
     StringConstant(StringRef),
@@ -97,15 +92,22 @@ pub enum DataRef {
     },
 }
 
-#[derive(Debug)]
 pub struct Function {
-    def_id: DefId,
+    pub def_id: DefId,
     has_extern_tag: bool,
 
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
     pub vars: DashMap<SpanRef, (LocalTypeId, Span)>,
     pub refs: RefCell<Vec<DataRef>>,
+}
+
+impl std::fmt::Debug for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Function")
+            .field("kind", &self.kind)
+            .finish()
+    }
 }
 
 impl Function {
@@ -119,17 +121,14 @@ impl Function {
         {
             let args = match args {
                 Some(args) => {
-                    let typed_args = args
-                        .iter()
-                        .cloned()
-                        .map(|(n, ann)| {
-                            let type_id = gctx
-                                .database
-                                .type_of(&(Rc::clone(&ann) as Rc<_>), None)
-                                .unwrap();
+                    let typed_args = args.iter().cloned().map(|(n, ann)| {
+                        let type_id = gctx
+                            .database
+                            .type_of(&(Rc::clone(&ann) as Rc<_>), None)
+                            .unwrap();
 
-                            (n, type_id)
-                        });
+                        (n, type_id)
+                    });
 
                     typed_args.collect()
                 }
@@ -180,7 +179,7 @@ impl Function {
         };
 
         let def = def.unspanned();
-        let func =
+        let funcdef =
             crate::isinstance!(def.as_ref(), Statement, Statement::FnDef(f) => f).unwrap();
 
         let mut scope = OpaqueScope::from(Rc::clone(&def) as Rc<_>);
@@ -205,9 +204,9 @@ impl Function {
 
         let vars = DashMap::default();
 
-        if let Some(args) = &func.args {
+        if let Some(args) = &funcdef.args {
             for (name, ann) in args.iter() {
-                let ty = ctx.with(Rc::clone(&ann), |ctx, ann| ann.infer_type(&ctx))?;
+                let ty = ctx.with(Rc::clone(&ann), |ctx, ann| ann.infer_type(&ctx)).unwrap_or_compiler_error(&ctx);
 
                 vars.insert(name.clone(), (ty, ann.span.clone()));
             }
@@ -222,7 +221,8 @@ impl Function {
             refs: Default::default(),
         };
 
-        func.has_extern_tag = is_externaly_defined(&func, &ctx.global_context, None);
+        func.has_extern_tag =
+            is_externaly_defined(funcdef, &ctx.global_context, &ctx.scope.module_ref(), None);
 
         let func = Rc::new(func);
 
@@ -252,7 +252,7 @@ impl TypedObject for Function {
             ctx.as_formattable(&self.kind.inner)
         );
 
-        if self.is_externaly_defined(){
+        if self.is_externaly_defined() {
             return Ok(());
         }
 

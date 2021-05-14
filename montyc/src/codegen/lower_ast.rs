@@ -8,6 +8,7 @@ use cranelift_codegen::ir::{
 use crate::{
     ast::{
         atom::{Atom, StringRef},
+        class::ClassDef,
         expr::{Expr, InfixOp},
         primary::Primary,
         stmt::Statement,
@@ -131,7 +132,43 @@ impl LowerCodegen for Atom {
 
             Atom::Float(_) => todo!(),
             Atom::Comment(_) => unreachable!(),
-            Atom::Name(n) => ctx.with_var_alloc(*n, |storage| Some(storage.as_ptr_value())),
+            Atom::Name(n) => {
+                if ctx.vars.contains_key(&n) {
+                    ctx.with_var_alloc(*n, |storage| Some(storage.as_ptr_value()))
+                } else {
+                    let def = self
+                        .resolve_name_to_definition(
+                            &ctx.func.scope,
+                            &ctx.codegen_backend.global_context,
+                        )
+                        .expect(&format!("{:?}", self));
+
+                    if let Some(klass) =
+                        crate::isinstance!(def.as_ref(), crate::ast::class::ClassDef)
+                    {
+                        let result = ctx
+                            .codegen_backend
+                            .global_context
+                            .database
+                            .query()
+                            .filter(|object| !(object.is_named(*n) && crate::isinstance!(object, ClassDef).or_else(|| crate::isinstance!(object, Statement, Statement::Class(k) => k)).is_some()))
+                            .into_iter()
+                            .next()
+                            .unwrap();
+
+                        let (type_id_original, _) = ctx.codegen_backend.global_context.type_map.values().filter(|(ty, desc)| matches!(desc, TypeDescriptor::Class(c) if c.name == *n)).next().unwrap();
+
+                        let type_id = builder.ins().iconst(
+                            ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER),
+                            type_id_original.as_usize() as i64,
+                        );
+
+                        Some(TypedValue::by_val(type_id, TypePair(TypeMap::TYPE, Some(ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER)))))
+                    } else {
+                        unimplemented!()
+                    }
+                }
+            }
         }
     }
 }
@@ -159,7 +196,12 @@ impl LowerCodegen for Primary {
 
                             let mut alloc_id = ctx.allocator.borrow_mut().alloc(storage);
 
-                            let value_t_d = ctx.codegen_backend.global_context.type_map.get(value_t).unwrap();
+                            let value_t_d = ctx
+                                .codegen_backend
+                                .global_context
+                                .type_map
+                                .get(value_t)
+                                .unwrap();
 
                             let storage = ctx.allocator.borrow().get(alloc_id);
 
@@ -197,7 +239,9 @@ impl LowerCodegen for Primary {
                                 let value_t = builder.func.dfg.value_type(value);
 
                                 let type_id = match value_t_d.value() {
-                                    TypeDescriptor::Generic(Generic::Struct { inner }) => inner[idx],
+                                    TypeDescriptor::Generic(Generic::Struct { inner }) => {
+                                        inner[idx]
+                                    }
                                     _ => unreachable!(),
                                 };
 
@@ -232,6 +276,7 @@ impl LowerCodegen for Primary {
                     .database
                     .type_of(&(Rc::clone(&func) as Rc<dyn AstObject>), Some(&mref))
                     .unwrap();
+
                 let func_t = ctx
                     .codegen_backend
                     .global_context
@@ -240,15 +285,7 @@ impl LowerCodegen for Primary {
                     .unwrap()
                     .unwrap();
 
-                let module = ctx
-                    .codegen_backend
-                    .names
-                    .get(&ctx.func.scope.module_ref())
-                    .unwrap();
-
-                let (target_name, target_fid) = module.functions.get(&func_name).unwrap();
-
-                let args = match args {
+                let mut args = match args {
                     Some(args) => args
                         .iter()
                         .zip(func_t.inner.args.iter().cloned())
@@ -256,45 +293,78 @@ impl LowerCodegen for Primary {
                             let arg_t = ctx.type_of(&arg).unwrap();
 
                             let value = arg.inner.lower((ctx.clone(), builder)).unwrap();
-                            let value = ctx.maybe_coerce(value, param_t, builder);
 
-                            value.into_raw(builder)
+                            ctx.maybe_coerce(value, param_t, builder)
                         })
                         .collect(),
 
                     None => vec![],
                 };
 
-                let func_ref = if let Some(signature) =
-                    ctx.codegen_backend.external_functions.get(target_fid)
-                {
-                    let sigref = builder.import_signature(signature.clone());
+                let module = ctx
+                    .codegen_backend
+                    .names
+                    .get(&ctx.func.scope.module_ref())
+                    .unwrap();
 
-                    builder.import_function(ExtFuncData {
-                        name: target_name.clone(),
-                        signature: sigref,
-                        colocated: false,
-                    })
-                } else {
-                    cranelift_module::Module::declare_func_in_func(
-                        &*ctx.codegen_backend.object_module.borrow(),
-                        *target_fid,
-                        &mut builder.func,
-                    )
-                };
+                match module.functions.get(&func_name) {
+                    Some((target_name, target_fid)) => {
+                        let func_ref = if let Some(signature) =
+                            ctx.codegen_backend.external_functions.get(target_fid)
+                        {
+                            let sigref = builder.import_signature(signature.clone());
 
-                let result = builder.ins().call(func_ref, args.as_slice());
+                            builder.import_function(ExtFuncData {
+                                name: target_name.clone(),
+                                signature: sigref,
+                                colocated: false,
+                            })
+                        } else {
+                            cranelift_module::Module::declare_func_in_func(
+                                &*ctx.codegen_backend.object_module.borrow(),
+                                *target_fid,
+                                &mut builder.func,
+                            )
+                        };
 
-                let mut builder = builder;
+                        let args: Vec<_> =
+                            args.drain(..).map(|arg| arg.into_raw(builder)).collect();
 
-                let value = builder.inst_results(result).first().cloned().unwrap();
+                        let result = builder.ins().call(func_ref, args.as_slice());
 
-                let ty = builder.func.dfg.value_type(value);
+                        let mut builder = builder;
 
-                Some(TypedValue::by_val(
-                    value,
-                    TypePair(func_t.inner.ret, Some(ty)),
-                ))
+                        let value = builder.inst_results(result).first().cloned().unwrap();
+
+                        let ty = builder.func.dfg.value_type(value);
+
+                        Some(TypedValue::by_val(
+                            value,
+                            TypePair(func_t.inner.ret, Some(ty)),
+                        ))
+                    }
+
+                    None => {
+                        if let Some((name, (f, builtin_func_handler))) = ctx
+                            .codegen_backend
+                            .global_context
+                            .builtin_functions
+                            .iter()
+                            .find(|(n, (f, _))| {
+                                **n == func_t.inner.name
+                                    && ctx
+                                        .codegen_backend
+                                        .global_context
+                                        .type_map
+                                        .unify_func(f.kind.type_id, &func_t.inner)
+                            })
+                        {
+                            (builtin_func_handler.0)((ctx.clone(), builder), &args)
+                        } else {
+                            todo!("uhhhh");
+                        }
+                    }
+                }
             }
 
             Primary::Attribute { left, attr } => todo!(),

@@ -223,7 +223,10 @@ where
         return f(object_entry.as_ref());
     }
 
-    log::warn!("Analyzing an unspanned but Rc'd object is discouraged {:?}", object.as_ref());
+    log::warn!(
+        "Analyzing an unspanned but Rc'd object is discouraged {:?}",
+        object.as_ref()
+    );
 
     f(object.as_ref())
 }

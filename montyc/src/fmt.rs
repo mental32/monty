@@ -64,9 +64,8 @@ impl fmt::Display for Formattable<'_, &ClassType> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "<type object @ name={:?}, module={:?}>",
-            self.gctx.resolver.resolve(self.mref.clone(), self.name),
-            self.mref,
+            "<class {:?}>",
+            self.gctx.resolver.resolve(self.mref.clone(), self.name).unwrap(),
         )
     }
 }

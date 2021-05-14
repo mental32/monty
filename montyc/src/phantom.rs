@@ -8,6 +8,15 @@ pub struct PhantomObject {
     pub(crate) infer_type: for<'a> fn(&'a LocalContext<'a>) -> crate::Result<LocalTypeId>,
 }
 
+impl PhantomObject {
+    pub fn new(
+        name: SpanRef,
+        infer_type: for<'a> fn(&'a LocalContext<'a>) -> crate::Result<LocalTypeId>,
+    ) -> Self {
+        Self { name, infer_type }
+    }
+}
+
 impl fmt::Debug for PhantomObject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PhantomObject").finish()

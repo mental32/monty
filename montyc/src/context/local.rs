@@ -3,10 +3,10 @@ use std::rc::Rc;
 use crate::{
     ast::AstObject,
     class::Class,
+    error::MontyError,
     fmt::Formattable,
     scope::Scope,
     typing::{LocalTypeId, TypeDescriptor},
-    error::MontyError,
 };
 
 use super::{global::GlobalContext, ModuleRef};

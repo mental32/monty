@@ -44,7 +44,7 @@ pub type Result<T> = std::result::Result<T, error::MontyError>;
 
 #[macro_export]
 macro_rules! isinstance {
-    ($e:expr, $t:ident) => {{
+    ($e:expr, $t:path) => {{
         if let Some($crate::ast::Spanned { inner, .. }) =
             $crate::ast::_downcast_ref::<$crate::ast::Spanned<$t>>($e)
         {
@@ -116,15 +116,14 @@ impl CompilerOptions {
     }
 
     pub fn codegen_settings(&self) -> Box<dyn cranelift_codegen::isa::TargetIsa> {
-        use cranelift_codegen::{isa, settings::{self, Configurable}};
+        use cranelift_codegen::{
+            isa,
+            settings::{self, Configurable},
+        };
 
         let mut flags_builder = cranelift_codegen::settings::builder();
 
-        let default_settings = vec![
-            "opt_level=none",
-            "is_pic=yes",
-            "enable_verifier=yes"
-        ];
+        let default_settings = vec!["opt_level=none", "is_pic=yes", "enable_verifier=yes"];
 
         let default_settings = default_settings.iter().map(ToString::to_string);
 

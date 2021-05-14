@@ -22,7 +22,14 @@ use crate::{
     typing::{LocalTypeId, TypeMap},
 };
 
-use cranelift_codegen::{Context, binemit, ir::{self, ExtFuncData, FuncRef, GlobalValue, GlobalValueData}, ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind}, isa::{self, CallConv, TargetIsa}, settings::{self, Configurable}, verify_function};
+use cranelift_codegen::{
+    binemit,
+    ir::{self, ExtFuncData, FuncRef, GlobalValue, GlobalValueData},
+    ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind},
+    isa::{self, CallConv, TargetIsa},
+    settings::{self, Configurable},
+    verify_function, Context,
+};
 
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataContext, DataId, FuncId, Linkage, Module};
@@ -126,29 +133,37 @@ where
 
         let TypePair(from, real) = value.kind;
 
+        log::trace!("codegen:maybe_coerce {:?} -> {:?}", from, into);
+
         if from != into {
-            let coerce = self
+            let coerce = match self
                 .codegen_backend
                 .global_context
                 .type_map
                 .coerce(from, into)
-                .unwrap();
+            {
+                Some(f) => f,
+                None => panic!(
+                    "No suitable coercion rule found for {:?} -> {:?}",
+                    from, into
+                ),
+            };
 
-            let raw = value.clone().deref_into_raw(fx);
-
-            let refined = (coerce)((self.clone(), fx), raw);
-            let refined_t = Some(fx.func.dfg.value_type(refined));
-
-            return TypedValue::by_val(refined, TypePair(into, refined_t));
-        }
-
-        if let Some(real) = real {
+            return (coerce)((self.clone(), fx), value);
+        } else if let Some(real) = real {
             let refined_t = self.codegen_backend.scalar_type_of(into);
 
             if real != refined_t {
                 // low-level coercion between CL values
                 match (real, refined_t) {
                     (ir::types::B8, ir::types::I64) => {
+                        let raw = value.clone().into_raw(fx);
+                        let refined = fx.ins().bint(ir::types::I64, raw);
+
+                        return TypedValue::by_val(refined, TypePair(into, Some(refined_t)));
+                    }
+
+                    (ir::types::B1, ir::types::I64) => {
                         let raw = value.clone().into_raw(fx);
                         let refined = fx.ins().bint(ir::types::I64, raw);
 
@@ -242,9 +257,12 @@ impl<'global> CodegenBackend<'global> {
         external_name
     }
 
-    pub(super) fn scalar_type_of(&self, type_id: LocalTypeId) -> ir::Type {
+    pub fn scalar_type_of(&self, type_id: LocalTypeId) -> ir::Type {
         match self.types.get(&type_id) {
             Some(ty) => *ty,
+            None if self.global_context.type_map.is_class(type_id) => {
+                self.scalar_type_of(TypeMap::INTEGER)
+            }
             None => {
                 panic!(
                     "Unable to translate type: {}",
@@ -274,7 +292,8 @@ impl<'global> CodegenBackend<'global> {
         }
 
         for param in func.kind.inner.args.iter() {
-            sig.params.push(ir::AbiParam::new(self.types[param]));
+            sig.params
+                .push(ir::AbiParam::new(self.scalar_type_of(*param)));
         }
 
         let func_def_name = func.name(self.global_context);
@@ -534,10 +553,7 @@ impl<'global> CodegenBackend<'global> {
             .unwrap();
     }
 
-    pub fn new(
-        global_context: &'global GlobalContext,
-        isa: Box<dyn TargetIsa>,
-    ) -> Self {
+    pub fn new(global_context: &'global GlobalContext, isa: Box<dyn TargetIsa>) -> Self {
         let flags = isa.flags().clone();
         let object_builder = ObjectBuilder::new(
             isa,
@@ -558,6 +574,8 @@ impl<'global> CodegenBackend<'global> {
                 )),
                 ir::types::I64,
             );
+
+            types.insert(TypeMap::TYPE, ir::types::I64);
 
             types.insert(TypeMap::STRING, ir::types::I64);
         }

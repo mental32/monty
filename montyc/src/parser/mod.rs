@@ -32,13 +32,11 @@ pub struct Parser {
     span_ref: Rc<RefCell<SpanInterner>>,
 }
 
-impl From<(Rc<str>, Rc<RefCell<SpanInterner>>)> for Parser {
-    fn from((source, span_ref): (Rc<str>, Rc<RefCell<SpanInterner>>)) -> Self {
+impl Parser {
+    pub fn new(source: Rc<str>, span_ref: Rc<RefCell<SpanInterner>>) -> Self {
         Self { source, span_ref }
     }
-}
 
-impl Parser {
     #[inline]
     fn token_sequence(&self, module_ref: ModuleRef) -> Box<[Token]> {
         let token_stream = TokenStreamIter {
@@ -66,7 +64,7 @@ where
     R: AstObject,
 {
     let parser = match span_ref {
-        Some(span_ref) => Parser::from((source, span_ref)),
+        Some(span_ref) => Parser::new(source, span_ref),
         None => Parser {
             source,
             span_ref: Default::default(),

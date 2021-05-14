@@ -6,13 +6,7 @@ use parser::SpanRef;
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{
-    func::DataRef,
-    parser,
-    prelude::*,
-    scope::LookupOrder,
-    typing::{Generic, TaggedType},
-};
+use crate::{func::DataRef, parser, phantom::PhantomObject, prelude::*, scope::LookupOrder, typing::{Generic, TaggedType}};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primary {
@@ -214,7 +208,11 @@ impl TypedObject for Primary {
                         .unwrap_or_compiler_error(ctx)
                         .iter()
                         .map(|o| o.unspanned())
-                        .find_map(|o| crate::isinstance!(o.as_ref(), FunctionDef).or_else(|| crate::isinstance!(o.as_ref(), Statement, Statement::FnDef(f) => f)).map(|f| f.name()))
+                        .find_map(|o| {
+                            crate::isinstance!(o.as_ref(), FunctionDef)
+                                .or_else(|| crate::isinstance!(o.as_ref(), Statement, Statement::FnDef(f) => f)).map(|f| f.name())
+                                .or_else(|| crate::isinstance!(o.as_ref(), PhantomObject, object => object.name()))
+                        })
                         .unwrap();
 
                     host.refs.borrow_mut().push(DataRef::FunctionRef {
@@ -271,9 +269,11 @@ impl TypedObject for Primary {
                     .as_ref()
                     .map(|args| {
                         args.iter()
-                            .map(|arg| {
+                            .enumerate()
+                            .map(|(_, arg)| {
                                 let mut ctx = ctx.clone();
                                 ctx.this = Some(arg.clone());
+                                arg.typecheck(&ctx).unwrap_or_compiler_error(&ctx);
                                 arg.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
                             })
                             .collect::<Vec<_>>()

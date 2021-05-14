@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{func::Function, prelude::*};
+use crate::{func::Function, prelude::*, typing::ClassType};
 
 use super::{atom::Atom, expr::Expr, primary::Primary, AstObject, Spanned};
 
@@ -61,13 +61,14 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         ret_ctx.this = def.returns.clone().map(|r| Rc::new(r) as Rc<_>);
 
         let ret = match def.returns.as_ref() {
-            Some(node) => match node.infer_type(&ret_ctx) {
-                Ok(tid) => tid,
-                Err(_) => ctx.exit_with_error(MontyError::UndefinedVariable {
-                    node: Rc::new(def.returns.clone().unwrap()),
-                }),
-            },
+            Some(node) => node.infer_type(&ret_ctx).unwrap_or_compiler_error(ctx),
             None => TypeMap::NONE_TYPE,
+        };
+
+        let ret = match ctx.global_context.type_map.get_tagged::<ClassType>(ret) {
+            Some(Ok(klass)) => klass.inner.kind,
+            Some(Err(_)) => ret,
+            None => unreachable!()
         };
 
         let name = if let Atom::Name(n) = def.name.inner {
@@ -83,9 +84,12 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
                 let mut ctx = ctx.clone();
                 ctx.this = Some(arg_ann.clone());
 
-                let type_id = match arg_ann.infer_type(&ctx) {
-                    Ok(tyid) => tyid,
-                    Err(err) => ctx.exit_with_error(err),
+                let type_id = arg_ann.infer_type(&ctx).unwrap_or_compiler_error(&ctx);
+
+                let type_id = match ctx.global_context.type_map.get_tagged::<ClassType>(type_id) {
+                    Some(Ok(klass)) => klass.inner.kind,
+                    Some(Err(_)) => type_id,
+                    None => unreachable!()
                 };
 
                 args.push(type_id);

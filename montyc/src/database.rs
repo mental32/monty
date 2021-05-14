@@ -166,7 +166,12 @@ impl ObjectDatabase {
     }
 
     pub fn id_of(&self, object: &Rc<dyn AstObject>) -> Option<DefId> {
-        self.find(object)
+        self.find(object).or_else(|| {
+            self.entries
+                .iter()
+                .find(|entry| Weak::as_ptr(&entry.value().object) == Rc::as_ptr(object))
+                .map(|entry| entry.key().clone())
+        })
     }
 
     pub fn as_weak_object(&self, id: DefId) -> Option<Rc<dyn AstObject>> {
@@ -178,22 +183,13 @@ impl ObjectDatabase {
         object: &Rc<dyn AstObject>,
         mref: Option<&ModuleRef>,
     ) -> Option<LocalTypeId> {
-        let id = self.find(object).or_else(|| {
-            log::warn!(
-                "database:type_of falling back to a span-based search for {:?}",
-                object
-            );
-
-            let mref = mref?;
-            let span = object.span()?;
-
-            self.find_by_span(mref, span)
-        })?;
+        let id = self.find(object)?;
 
         let entry = self.entries.get(&id)?;
 
-        let x = entry.value().infered_type.borrow().clone()?.ok();
-        x
+        let type_id = entry.value().infered_type.borrow().clone()?.ok();
+
+        type_id
     }
 
     pub fn set_type_of(&self, id: DefId, ty: LocalTypeId) -> Option<LocalTypeId> {
@@ -252,8 +248,6 @@ impl ObjectDatabase {
     }
 
     pub fn entry(&self, entry: Rc<dyn AstObject>, mref: &ModuleRef) -> Rc<dyn AstObject> {
-        let span = entry.span().expect("AstDatabase entries must be spanned!");
-
         assert_eq!(self.entries.len(), self.by_pointer.len());
 
         if let Some(id) = self.by_pointer.get(&(Rc::as_ptr(&entry) as *const ())) {
@@ -261,6 +255,8 @@ impl ObjectDatabase {
 
             return Rc::clone(entry.value()) as Rc<_>;
         }
+
+        let span = entry.span().expect("AstDatabase entries must be spanned!");
 
         log::trace!("database:entry Inserting new DefEntry = {:?}", entry);
 
@@ -316,8 +312,9 @@ impl<'a> Iterator for LazyDefEntries<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let def_id = self.inner.pop()?;
         let def_entry = self.database.entries.get(&def_id)?.value().clone();
+        let object = def_entry.object.upgrade()?;
 
-        Some(def_entry as Rc<_>)
+        Some(object)
     }
 }
 

@@ -269,6 +269,12 @@ impl<'a> LookupIter<'a> {
                     results.push(classdef as Rc<_>);
                 }
             }
+
+            for (name, (func, _)) in global_context.builtin_functions.iter() {
+                if *name == target {
+                    results.push(func.def(&global_context).unwrap() as Rc<_>);
+                }
+            }
         }
 
         Ok(results)
