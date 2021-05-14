@@ -225,13 +225,20 @@ where
     }
 }
 
+#[derive(Debug)]
+pub struct GlobalData {
+    pub data_id: DataId,
+    pub type_id: LocalTypeId,
+}
+
 pub struct CodegenBackend<'a> {
-    pub(crate) strings: HashMap<StringRef, DataId>,
+    pub strings: HashMap<StringRef, DataId>,
     pub(crate) names: HashMap<ModuleRef, ModuleNames>,
     pub(crate) types: HashMap<LocalTypeId, ir::Type>,
     pub(crate) external_functions: HashMap<FuncId, Signature>,
+    pub(crate) globals: HashMap<(ModuleRef, NonZeroUsize), GlobalData>,
 
-    pub(crate) global_context: &'a GlobalContext,
+    pub global_context: &'a GlobalContext,
     pub(crate) object_module: RefCell<ObjectModule>,
     pub(crate) flags: settings::Flags,
 
@@ -273,6 +280,30 @@ impl<'global> CodegenBackend<'global> {
                 )
             }
         }
+    }
+
+    pub fn declare_global_in_module(
+        &mut self,
+        key: (ModuleRef, NonZeroUsize),
+        symbol: &str,
+        writeable: bool,
+        linkage: Linkage,
+        f: impl Fn(&mut Self) -> (LocalTypeId, DataContext),
+    ) {
+        let (type_id, mut dctx) = f(self);
+
+        let data_id = self
+            .object_module
+            .borrow_mut()
+            .declare_data(symbol, linkage, writeable, false)
+            .unwrap();
+
+        self.object_module
+            .borrow_mut()
+            .define_data(data_id, &mut dctx)
+            .unwrap();
+
+        self.globals.insert(key, GlobalData { data_id, type_id });
     }
 
     fn declare_function(
@@ -350,6 +381,8 @@ impl<'global> CodegenBackend<'global> {
 
                     {
                         let mut dctx = DataContext::new();
+                        dctx.set_align(16); // _shrug_
+
                         let string = st_ref.resolve_as_string(&self.global_context).unwrap();
                         let string = std::ffi::CString::new(string).unwrap();
                         let string = string.into_bytes_with_nul();
@@ -589,6 +622,7 @@ impl<'global> CodegenBackend<'global> {
 
             types,
             names: HashMap::new(),
+            globals: HashMap::new(),
             external_functions: HashMap::new(),
             strings: HashMap::new(),
         }

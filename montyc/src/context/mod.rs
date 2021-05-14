@@ -24,6 +24,10 @@ impl ModuleRef {
         self.0.hash(&mut hasher);
         hasher.finish()
     }
+
+    pub fn module_name(&self) -> String {
+        self.0.file_stem().unwrap().to_string_lossy().to_string()
+    }
 }
 
 use std::fmt;

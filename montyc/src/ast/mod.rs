@@ -7,13 +7,7 @@ use std::{
 use logos::Span;
 use typing::TypedObject;
 
-use crate::{
-    context::LocalContext,
-    database::DefEntry,
-    parser::SpanRef,
-    scope::LookupTarget,
-    typing::{self, LocalTypeId},
-};
+use crate::{ast::{assign::Assign, class::ClassDef}, context::LocalContext, database::DefEntry, parser::SpanRef, scope::LookupTarget, typing::{self, LocalTypeId}};
 
 use self::{funcdef::FunctionDef, stmt::Statement};
 
@@ -100,6 +94,15 @@ impl dyn AstObject {
         } else {
             None
         }
+    }
+
+    pub fn is_def_node(&self) -> bool {
+        let unspanned = self.unspanned();
+
+        crate::isinstance!(self, FunctionDef).is_some()
+        || crate::isinstance!(self, Assign).is_some()
+        || crate::isinstance!(self, ClassDef).is_some()
+        || crate::isinstance!(unspanned.as_ref(), Statement, Statement::Class(_) | Statement::Asn(_) | Statement::FnDef(_) => ()).is_some()
     }
 
     pub fn as_function(&self) -> Option<&FunctionDef> {

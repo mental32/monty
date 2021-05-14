@@ -102,10 +102,14 @@ impl TypedObject for Assign {
                 }
             }
         } else {
-            log::warn!(
-                "typecheck:assign unbound assignment in non-function scope {:?}",
+            log::trace!(
+                "typecheck:assign assignment in non-function scope being treated as global {:?}",
                 self
             );
+
+            let mctx = ctx.global_context.modules.get(&ctx.module_ref).unwrap();
+
+            mctx.globals.insert(self.name.name().unwrap(), Rc::clone(&self.value));
         }
 
         Ok(())

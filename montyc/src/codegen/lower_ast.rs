@@ -4,9 +4,11 @@ use cranelift_codegen::ir::{
     self, condcodes::IntCC, ExtFuncData, ExternalName, GlobalValueData, MemFlags, StackSlotData,
     StackSlotKind, TrapCode,
 };
+use cranelift_module::Module;
 
 use crate::{
     ast::{
+        assign::Assign,
         atom::{Atom, StringRef},
         class::ClassDef,
         expr::{Expr, InfixOp},
@@ -141,7 +143,8 @@ impl LowerCodegen for Atom {
                             &ctx.func.scope,
                             &ctx.codegen_backend.global_context,
                         )
-                        .expect(&format!("{:?}", self));
+                        .expect(&format!("{:?}", self))
+                        .unspanned();
 
                     if let Some(klass) =
                         crate::isinstance!(def.as_ref(), crate::ast::class::ClassDef)
@@ -163,7 +166,25 @@ impl LowerCodegen for Atom {
                             type_id_original.as_usize() as i64,
                         );
 
-                        Some(TypedValue::by_val(type_id, TypePair(TypeMap::TYPE, Some(ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER)))))
+                        Some(TypedValue::by_val(
+                            type_id,
+                            TypePair(
+                                TypeMap::TYPE,
+                                Some(ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER)),
+                            ),
+                        ))
+                    } else if let Some(asn) = crate::isinstance!(def.as_ref(), Assign).or_else(|| crate::isinstance!(def.as_ref(), Statement, Statement::Asn(a) => a)) {
+                        let name = asn.name.inner.name().unwrap();
+                        let mref = ctx.func.scope.module_ref();
+
+                        let global = ctx.codegen_backend.globals.get(&(mref, name)).unwrap();
+
+                        let value = ctx.codegen_backend.object_module.borrow_mut().declare_data_in_func(global.data_id, &mut builder.func);
+                        let value = builder.ins().global_value(ir::types::I64, value);
+
+                        let ptr = Pointer::new(value);
+
+                        Some(TypedValue::by_ref(ptr, TypePair(global.type_id, Some(ctx.codegen_backend.scalar_type_of(global.type_id)))))
                     } else {
                         unimplemented!()
                     }
@@ -673,7 +694,7 @@ impl LowerCodegen for Statement {
 
                         let refined = ctx.maybe_coerce(value, ctx.func.kind.inner.ret, builder);
 
-                        refined.into_raw(builder)
+                        refined.deref_into_raw(builder)
                     };
 
                     builder.ins().return_(&[value]);

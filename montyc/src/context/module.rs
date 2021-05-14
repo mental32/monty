@@ -1,10 +1,15 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{num::NonZeroUsize, path::PathBuf, rc::Rc};
 
-use crate::{ast::module::Module, scope::Scope};
+use crate::{
+    ast::{expr::Expr, module::Module},
+    prelude::Spanned,
+    scope::Scope,
+};
 
 use super::{global::GlobalContext, local::LocalContext, ModuleRef};
 
 use bitflags::bitflags;
+use dashmap::DashMap;
 
 bitflags! {
     pub struct ModuleFlags: u32 {
@@ -20,6 +25,7 @@ pub struct ModuleContext {
     pub(super) scope: Rc<dyn Scope>,
     pub source: Rc<str>,
     pub flags: ModuleFlags,
+    pub globals: DashMap<NonZeroUsize, Rc<Spanned<Expr>>>,
 }
 
 impl ModuleContext {

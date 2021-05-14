@@ -1,11 +1,11 @@
 use std::{convert::TryFrom, rc::Rc};
 
-use crate::{ast::class::ClassDef, prelude::*, scope::LookupOrder, typing::Generic};
+use crate::{ast::{class::ClassDef, module::Module}, prelude::*, scope::LookupOrder, typing::Generic};
 
 use super::{assign::Assign, expr::Expr, stmt::Statement, AstObject};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StringRef(pub(crate) SpanRef);
+pub struct StringRef(pub SpanRef);
 
 impl StringRef {
     pub fn resolve_as_string(&self, global_context: &GlobalContext) -> Option<String> {
@@ -160,7 +160,7 @@ impl TypedObject for Atom {
                     let top_ = top.unspanned();
 
                     if let Some(asn) = crate::isinstance!(top.as_ref(), Assign).or_else(
-                        || crate::isinstance!(top.as_ref(), Statement, Statement::Asn(n) => n),
+                        || crate::isinstance!(top_.as_ref(), Statement, Statement::Asn(n) => n),
                     ) {
                         match asn.value.inner.infer_type(ctx) {
                             Ok(i) => return Ok(i),
@@ -180,7 +180,6 @@ impl TypedObject for Atom {
 
                         match top.infer_type(&ctx) {
                             Err(err) => ctx.exit_with_error(err),
-                            Ok(TypeMap::TYPE) => panic!("{:?}", top),
                             Ok(i) => return Ok(i),
                         }
                     }
@@ -212,6 +211,7 @@ impl TypedObject for Atom {
 
                 match ctx.scope.root() {
                     ScopeRoot::Func(f) => f.refs.borrow_mut().push(DataRef::StringConstant(st_ref)),
+                    ScopeRoot::AstObject(obj) if crate::isinstance!(obj.as_ref(), Module).is_some() => (),  // `register_string_literal` has already taken care of adding the string to the module's context. 
                     ScopeRoot::AstObject(_) | ScopeRoot::Class(_) => unimplemented!(),
                 }
             }

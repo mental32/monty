@@ -730,6 +730,7 @@ impl GlobalContext {
                 path,
                 scope,
                 source,
+                globals: DashMap::new(),
                 flags: ModuleFlags::EMPTY,
             },
         ) {

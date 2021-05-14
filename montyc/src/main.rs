@@ -1,5 +1,6 @@
-use cranelift_module::Linkage;
-use montyc::{context::GlobalContext, prelude::*, CompilerOptions};
+use cranelift_codegen::ir::Type;
+use cranelift_module::{DataContext, Linkage};
+use montyc::{CompilerOptions, ast::{atom::{Atom, StringRef}, expr::Expr, primary::Primary}, context::GlobalContext, prelude::*};
 
 use structopt::StructOpt;
 
@@ -26,6 +27,67 @@ fn main() {
     });
 
     let mut cctx = montyc::codegen::context::CodegenBackend::new(&global_context, isa);
+
+    for (mref, mctx) in global_context.modules.iter() {
+        for (name, global) in mctx.globals.iter().map(|refm| (refm.key().clone(), refm.value().clone())) {
+
+            let symbol = format!("{}.{}", mref.module_name(), global_context.resolver.resolve_ident(name).unwrap());
+
+            cctx.declare_global_in_module((mref.clone(), name), &symbol, true, Linkage::Hidden, |cctx| {
+                let atom = if let Expr::Primary(Spanned { inner: Primary::Atomic(atom), ..}) = &global.inner {
+                    atom
+                } else {
+                    unimplemented!();
+                };
+
+                let mut dctx = DataContext::new();
+
+                let type_id = match &atom.inner {
+                    Atom::None => TypeMap::NONE_TYPE,
+                    Atom::Ellipsis => TypeMap::ELLIPSIS,
+                    Atom::Int(i) => {
+                        dctx.set_align(8);
+                        dctx.define(Box::new(i.to_ne_bytes()));
+
+                        TypeMap::INTEGER
+                    },
+
+                    Atom::Str(st) => {
+                        let string = StringRef(*st).resolve_as_string(&cctx.global_context).unwrap();
+                        let string = std::ffi::CString::new(string).unwrap();
+                        let string = string.into_bytes_with_nul();
+                        let string = string.into_boxed_slice();
+
+                        dctx.set_align(16);
+                        dctx.define(string);
+
+                        TypeMap::STRING
+                    },
+
+                    Atom::Bool(b) => {
+                        dctx.set_align(1);
+                        dctx.define(Box::new(if *b { [1u8] } else { [0u8] }));
+
+                        TypeMap::BOOL
+                    },
+
+                    Atom::Float(f) => {
+                        dctx.set_align(8);
+                        dctx.define(Box::new(f.to_ne_bytes()));
+
+                        TypeMap::FLOAT
+                    },
+
+                    Atom::Tuple(_) => unimplemented!(),
+                    Atom::Comment(_) => unreachable!(),
+                    Atom::Name(_) => unimplemented!(),
+                };
+
+                (type_id, dctx)
+            });
+
+        }
+    }
 
     cctx.declare_functions(global_context.functions.borrow().iter().enumerate().map(
         |(idx, func)| {

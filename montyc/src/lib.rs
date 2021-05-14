@@ -54,11 +54,11 @@ macro_rules! isinstance {
         }
     }};
 
-    ($e:expr, $t:ident, $p:pat => $a:expr) => {{
+    ($e:expr, $t:ident, $( $pattern:pat )|+ $( if $guard: expr )? $(,)? => $a:expr) => {{
         let result = crate::isinstance!($e, $t); // result: Some(ref $t)
 
         match &result {
-            Some($p) => Some($a),
+            Some($( $pattern )|+ $( if $guard )?) => Some($a),
             _ => None,
         }
     }};
