@@ -65,7 +65,7 @@ impl fmt::Display for Formattable<'_, &ClassType> {
         write!(
             f,
             "<class {:?}>",
-            self.gctx.resolver.resolve(self.mref.clone(), self.name).unwrap(),
+            self.gctx.resolver.resolve_ident(self.name).unwrap(),
         )
     }
 }

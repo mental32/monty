@@ -14,6 +14,18 @@ pub struct InternalResolver {
 }
 
 impl InternalResolver {
+    pub fn resolve_ident(&self, name: SpanRef) -> Option<String> {
+        let (span, mref) = self.span_ref.borrow().get_traced(name)?;
+
+        let source = self
+            .sources
+            .get(&mref)
+            .expect("module does not exist!")
+            .clone();
+
+        source.get(span).map(|st| st.to_string())
+    }
+
     pub fn resolve(&self, mref: ModuleRef, name: SpanRef) -> Option<String> {
         let reference = name.into();
 

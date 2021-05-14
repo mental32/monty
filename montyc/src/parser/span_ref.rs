@@ -98,6 +98,14 @@ impl SpanInterner {
     }
 
     #[inline]
+    pub fn get_traced<'a>(&self, reference: SpanRef) -> Option<(Span, ModuleRef)> {
+        let (mref, _) = self.span_trace_map.get(&reference)?;
+        let span = self.get(reference)?;
+
+        Some((span, mref.clone()))
+    }
+
+    #[inline]
     pub fn get<'a>(&self, reference: SpanRef) -> Option<Span> {
         self.seq
             .get(usize::from(reference).saturating_sub(1))
