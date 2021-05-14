@@ -30,26 +30,27 @@ impl<'a> Iterator for TokenStreamIter<'a> {
     type Item = Result<super::Token, &'static str>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut token = self.lexer.next()?;
+        let token = self.lexer.next()?;
+
         let span = (self.lexer.span(), self.lexer.slice());
+        let span_range = span.0.clone();
 
-        let mut span_range = span.0.clone();
+        let (token, span_range) = match token {
+            PyToken::RawIdent => {
+                let ident = self.span_ref.borrow_mut().push_noclobber(
+                    span_range.clone(),
+                    &self.source,
+                    self.module_ref.clone(),
+                );
 
-        if let PyToken::RawIdent = token {
-            let ident = self.span_ref.borrow_mut().push_noclobber(
-                span_range.clone(),
-                &self.source,
-                self.module_ref.clone(),
-            );
+                (PyToken::Ident(ident), span_range)
+            }
 
-            token = PyToken::Ident(ident);
-        } else if let PyToken::Invalid = token {
             // we're not letting logos handle string literal or comment
             // parsing so `Invalid` may be produced when encountering
             // this. we deal with parsing and interning the string spans
             // manually.
-
-            match &span {
+            PyToken::Invalid => match &span {
                 (range, slice) if slice.len() == 1 => {
                     let ch = slice.chars().nth(0).unwrap();
                     let rest = &self.lexer.source().get(range.start..).unwrap();
@@ -74,7 +75,7 @@ impl<'a> Iterator for TokenStreamIter<'a> {
                         None => return Some(Err("fatal[1]: unrecoverable lexing error.")),
                     };
 
-                    span_range = range.start..(range.start + capture.0.end);
+                    let span_range = range.start..(range.start + capture.0.end);
 
                     let (n, offset) = {
                         let n = self.span_ref.borrow_mut().push(span_range.clone());
@@ -82,18 +83,22 @@ impl<'a> Iterator for TokenStreamIter<'a> {
                         (n, bump)
                     };
 
-                    token = if is_comment {
+                    let token = if is_comment {
                         PyToken::CommentRef(n)
                     } else {
                         PyToken::StringRef(n)
                     };
 
                     self.lexer.bump(offset - 1);
+
+                    (token, span_range)
                 }
 
                 _ => return Some(Err("fatal[2]: unrecoverable lexing error.")),
-            }
-        }
+            },
+
+            _ => (token, span_range),
+        };
 
         assert_ne!(token, PyToken::Invalid, "{:?}", span);
 

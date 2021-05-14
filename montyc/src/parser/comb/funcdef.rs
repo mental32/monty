@@ -142,7 +142,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
             if let Ok((remaining, _)) =
                 expect_many_n_var(indent_level.unwrap(), PyToken::Whitespace)(remaining)
             {
-                let (remaining, part)  = statement(remaining)?;
+                let (remaining, part) = statement(remaining)?;
 
                 body.push(Rc::new(part) as Rc<_>);
                 stream = remaining;

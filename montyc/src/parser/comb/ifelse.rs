@@ -180,7 +180,6 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
                 .unwrap_or((else_stream, vec![]));
 
         if let Ok((stream, else_)) = expect(else_stream, PyToken::Else) {
-
             let (mut stream, (_, _, _)) = tuple((
                 expect_many_n::<0>(PyToken::Whitespace),
                 expect_(PyToken::Colon),
