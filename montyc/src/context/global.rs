@@ -7,7 +7,7 @@ use std::{
     rc::Rc,
 };
 
-use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::{self, condcodes::IntCC};
 use dashmap::DashMap;
 
 use crate::{
@@ -193,10 +193,11 @@ impl GlobalContext {
                 )
             });
 
-        ctx.type_map
-            .add_coercion_rule(TypeMap::UNKNOWN, TypeMap::OBJECT, |(_, _builder), value| {
-                value
-            });
+        ctx.type_map.add_coercion_rule(
+            TypeMap::UNKNOWN,
+            TypeMap::OBJECT,
+            |(_, _builder), value| value,
+        );
 
         ctx.type_map
             .add_coercion_rule(TypeMap::STRING, c_char_p, |_, value| value);
@@ -371,7 +372,27 @@ impl GlobalContext {
                             if let [subject, kind] = args {
 
                                 let res = match ctx.codegen_backend.global_context.type_map.get_tagged::<Generic>(subject.kind().0) {
-                                    Some(Ok(crate::typing::TaggedType { inner: Generic::Union { inner: _ }, .. })) => todo!(),
+                                    Some(Ok(TaggedType { inner, type_id: _ })) =>  {
+
+                                        if let Generic::Struct { inner } = inner {
+                                            match inner.as_slice() {
+                                                [TypeMap::I64, maybe_union] if ctx.codegen_backend.global_context.type_map.is_union(*maybe_union) => {
+                                                    let ptr = subject.as_ptr();
+                                                    let union_tag = ptr.load(ir::types::I64, 0, fx);
+
+                                                    let k = kind.clone().into_raw(fx);
+                                                    let r = fx.ins().icmp(IntCC::Equal, union_tag, k);
+
+                                                    TypedValue::by_val(r, TypePair(TypeMap::BOOL, Some(ctx.codegen_backend.scalar_type_of(TypeMap::BOOL))))
+                                                },
+
+                                                _ => unimplemented!(),
+                                            }
+                                        } else {
+                                            todo!()
+                                        }
+                                    },
+
                                     _ => {
                                         let tyid = subject.kind().0;
                                         let tyid = fx.ins().iconst(ctx.codegen_backend.scalar_type_of(tyid), tyid.as_usize() as i64);
@@ -634,7 +655,9 @@ impl GlobalContext {
             let qualname: Vec<&str> = qualname
                 .into_iter()
                 .map(|atom| match atom {
-                    Atom::Name((n, _)) => source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap(),
+                    Atom::Name((n, _)) => {
+                        source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap()
+                    }
                     _ => unreachable!(),
                 })
                 .collect();

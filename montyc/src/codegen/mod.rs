@@ -1,7 +1,3 @@
-#![allow(warnings)]
-
-use crate::typing::LocalTypeId;
-
 use self::context::CodegenLowerArg;
 
 pub mod context;
@@ -10,12 +6,10 @@ pub mod lower_ast;
 pub mod structbuf {
     use std::convert::TryFrom;
 
-    use cranelift_codegen::ir::{self, stackslot::StackSize, MemFlags, StackSlot, Value};
-
-    use crate::typing::LocalTypeId;
+    use cranelift_codegen::ir::{Value};
 
     use super::{
-        context::{CodegenContext, CodegenLowerArg},
+        context::{CodegenLowerArg},
         pointer::Pointer,
         tvalue::TypePair,
     };
@@ -70,7 +64,7 @@ pub mod structbuf {
         pub fn read(
             &self,
             field: usize,
-            (ctx, builder): CodegenLowerArg<'_, '_, '_>,
+            (_, builder): CodegenLowerArg<'_, '_, '_>,
         ) -> Option<Value> {
             let field = self.fields.get(field)?;
 
@@ -90,33 +84,21 @@ pub mod structbuf {
             &self,
             field: usize,
             value: Value,
-            (ctx, builder): CodegenLowerArg<'_, '_, '_>,
+            (_, builder): CodegenLowerArg<'_, '_, '_>,
         ) -> Option<Pointer> {
             let field = self.fields.get(field)?;
 
-            let kind = if let TypePair(_, Some(kind)) = field.kind {
-                kind
-            } else {
-                unreachable!()
-            };
-
-            let ptr = self.pointer.store(kind, value, field.offset, builder);
+            let ptr = self.pointer.store(value, field.offset, builder);
 
             Some(ptr)
         }
 
         pub fn addr(
             &self,
-            (ctx, builder): CodegenLowerArg<'_, '_, '_>,
+            (_, builder): CodegenLowerArg<'_, '_, '_>,
             field: usize,
         ) -> Option<Pointer> {
             let field = self.fields.get(field)?;
-
-            let kind = if let TypePair(_, Some(kind)) = field.kind {
-                kind
-            } else {
-                unreachable!()
-            };
 
             let ptr = self.pointer.offset(field.offset, builder);
 
@@ -180,6 +162,13 @@ mod tvalue {
             }
         }
 
+        pub fn as_ptr(&self) -> Pointer {
+            match &self.inner {
+                InnerValue::ByValue(_) => unimplemented!(),
+                InnerValue::ByRef(ptr) => ptr.clone(),
+            }
+        }
+
         pub fn ref_value(&self, fx: &mut FunctionBuilder) -> Value {
             match self.inner {
                 InnerValue::ByValue(_) => unreachable!(),
@@ -200,7 +189,7 @@ mod tvalue {
             match self.inner {
                 InnerValue::ByValue(v) => v,
                 InnerValue::ByRef(_) => self.ref_value(fx),
-                _ => unreachable!(),
+                // _ => unreachable!(),
             }
         }
     }
@@ -240,7 +229,6 @@ mod pointer {
 
         pub fn store(
             &self,
-            ty: ir::Type,
             value: Value,
             offset: i32,
             fx: &mut FunctionBuilder,
@@ -256,7 +244,7 @@ mod pointer {
             }
         }
 
-        pub fn offset(&self, offset: i32, fx: &mut FunctionBuilder) -> Pointer {
+        pub fn offset(&self, offset: i32, _fx: &mut FunctionBuilder) -> Pointer {
             Self {
                 base: self.base,
                 offset: self.offset + offset,
@@ -275,12 +263,8 @@ mod pointer {
 }
 
 mod storage {
-    use std::convert::TryFrom;
-
-    use cranelift_codegen::ir::{StackSlot, StackSlotData, StackSlotKind};
+    use cranelift_codegen::ir::{StackSlotData, StackSlotKind};
     use cranelift_frontend::FunctionBuilder;
-
-    use crate::typing::LocalTypeId;
 
     use super::{context::CodegenLowerArg, pointer::Pointer, tvalue::TypedValue};
     use super::{structbuf::StructBuf, tvalue::TypePair};
@@ -298,7 +282,7 @@ mod storage {
 
     impl Storage {
         pub fn new_stack_slot((ctx, builder): CodegenLowerArg<'_, '_, '_>, kind: TypePair) -> Self {
-            let (size, layout) = ctx
+            let (size, _) = ctx
                 .size_and_layout_of(kind.clone())
                 .expect("Type must not be zero-sized!");
 
@@ -317,12 +301,9 @@ mod storage {
 
         pub fn write(&self, tvalue: TypedValue, fx: &mut FunctionBuilder) {
             let ptr = self.as_ptr();
-
-            let ty = tvalue.kind.1.unwrap();
-
             let value = tvalue.into_raw(fx);
 
-            ptr.store(ty, value, 0, fx);
+            ptr.store(value, 0, fx);
         }
 
         pub fn as_ptr_value(&self) -> TypedValue {
@@ -337,7 +318,7 @@ mod storage {
             }
         }
 
-        pub fn as_mut_struct(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> StructBuf {
+        pub fn as_mut_struct(&self, (ctx, _): CodegenLowerArg<'_, '_, '_>) -> StructBuf {
             let type_id = self.kind.0;
             let fields = ctx
                 .codegen_backend

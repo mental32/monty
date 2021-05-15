@@ -236,6 +236,20 @@ impl TypeMap {
         matches!(self.get_tagged::<ClassType>(type_id), Some(Ok(_)))
     }
 
+    pub fn is_scalar(&self, type_id: LocalTypeId) -> bool {
+        matches!(self.get_tagged::<BuiltinTypeId>(type_id), Some(Ok(_)))
+    }
+
+    pub fn is_union(&self, type_id: LocalTypeId) -> bool {
+        matches!(
+            self.get_tagged::<Generic>(type_id),
+            Some(Ok(TaggedType {
+                inner: Generic::Union { .. },
+                ..
+            }))
+        )
+    }
+
     fn traverse_fields(
         &self,
         elements: &[LocalTypeId],
@@ -247,20 +261,49 @@ impl TypeMap {
 
             let tydesc = tydesc.value();
 
-            if let TypeDescriptor::Generic(Generic::Struct { inner }) = tydesc {
-                fields.extend(self.traverse_fields(inner.as_slice()));
-            } else {
-                let size = SizeOf::size_of(tydesc, self).unwrap().get();
-                let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
+            match tydesc {
+                TypeDescriptor::Generic(Generic::Pointer { .. })
+                | TypeDescriptor::Simple(_) => {
+                    let size = SizeOf::size_of(tydesc, self).unwrap().get();
+                    let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
 
-                let layout =
-                    std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
+                    let layout =
+                        std::alloc::Layout::from_size_align(size as usize, align as usize).unwrap();
 
-                fields.push((layout, *kind))
+                    fields.push((layout, *kind))
+                }
+
+                TypeDescriptor::Generic(Generic::Struct { inner }) => {
+                    fields.extend(self.traverse_fields(inner.as_slice()))
+                },
+
+                TypeDescriptor::Generic(Generic::Union { inner }) => {
+                    let (ty, (_, layout)) = inner
+                        .iter()
+                        .filter_map(|type_id| Some((*type_id, self.size_and_layout(*type_id)?)))
+                        .max_by_key(|(s, _)| *s)
+                        .expect("ZST union!");
+
+                    fields.extend(self.traverse_fields(&[Self::I64]));
+                    fields.push((layout, ty));
+                }
+
+                TypeDescriptor::Function(_) | TypeDescriptor::Class(_) => todo!(),
             }
         }
 
         fields.into_iter()
+    }
+
+    #[inline]
+    pub fn tagged_union(&self, variants: Vec<LocalTypeId>) -> LocalTypeId {
+        let inner_union = self.entry(TypeDescriptor::Generic(Generic::Union { inner: variants }));
+
+        let tagged_union = Generic::Struct {
+            inner: vec![Self::I64, inner_union],
+        };
+
+        self.entry(TypeDescriptor::Generic(tagged_union))
     }
 
     #[inline]
@@ -337,7 +380,11 @@ impl TypeMap {
 
     #[inline]
     pub fn values(&self) -> impl Iterator<Item = (LocalTypeId, TypeDescriptor)> {
-        let it: Vec<_> = self.inner.iter().map(|refm| (refm.key().clone(), refm.value().clone())).collect();
+        let it: Vec<_> = self
+            .inner
+            .iter()
+            .map(|refm| (refm.key().clone(), refm.value().clone()))
+            .collect();
         it.into_iter()
     }
 
@@ -496,6 +543,7 @@ impl SizeOf<&TypeMap> for TypeDescriptor {
                         .map(|n| n.get())
                         .sum(),
                 ),
+
                 Generic::Union { inner } => {
                     let tag_size = BuiltinTypeId::I64.size_of(())?.get();
                     let largest = inner

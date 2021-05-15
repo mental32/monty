@@ -1,9 +1,8 @@
-use std::{any::Any, collections::HashSet, convert::TryFrom, rc::Rc};
+#![allow(warnings)]
 
-use cranelift_codegen::ir::{
-    self, condcodes::IntCC, ExtFuncData, ExternalName, GlobalValueData, MemFlags, StackSlotData,
-    StackSlotKind, TrapCode,
-};
+use std::{convert::TryFrom, rc::Rc};
+
+use cranelift_codegen::ir::{self, condcodes::IntCC, ExtFuncData, TrapCode};
 use cranelift_module::Module;
 
 use crate::{
@@ -16,16 +15,11 @@ use crate::{
         stmt::Statement,
     },
     codegen::{pointer::Pointer, storage::Storage, tvalue::TypedValue},
-    fmt::Formattable,
     prelude::*,
     typing::{Generic, TaggedType},
 };
 
-use super::{
-    context::{CodegenContext, CodegenLowerArg},
-    tvalue::TypePair,
-    LowerCodegen,
-};
+use super::{context::CodegenLowerArg, tvalue::TypePair, LowerCodegen};
 
 impl LowerCodegen for Atom {
     fn lower(
@@ -159,7 +153,14 @@ impl LowerCodegen for Atom {
                             .next()
                             .unwrap();
 
-                        let (type_id_original, _) = ctx.codegen_backend.global_context.type_map.values().filter(|(ty, desc)| matches!(desc, TypeDescriptor::Class(c) if c.name == *n)).next().unwrap();
+                        let type_id_original = ctx
+                            .codegen_backend
+                            .global_context
+                            .type_map
+                            .values()
+                            .filter_map(|(_, desc)| match desc { TypeDescriptor::Class(c) if c.name == *n => Some(c.kind), _ => None })
+                            .next()
+                            .unwrap();
 
                         let type_id = builder.ins().iconst(
                             ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER),
@@ -173,18 +174,30 @@ impl LowerCodegen for Atom {
                                 Some(ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER)),
                             ),
                         ))
-                    } else if let Some(asn) = crate::isinstance!(def.as_ref(), Assign).or_else(|| crate::isinstance!(def.as_ref(), Statement, Statement::Asn(a) => a)) {
+                    } else if let Some(asn) = crate::isinstance!(def.as_ref(), Assign).or_else(
+                        || crate::isinstance!(def.as_ref(), Statement, Statement::Asn(a) => a),
+                    ) {
                         let name = asn.name.inner.name().unwrap();
                         let mref = ctx.func.scope.module_ref();
 
                         let global = ctx.codegen_backend.globals.get(&(mref, name)).unwrap();
 
-                        let value = ctx.codegen_backend.object_module.borrow_mut().declare_data_in_func(global.data_id, &mut builder.func);
+                        let value = ctx
+                            .codegen_backend
+                            .object_module
+                            .borrow_mut()
+                            .declare_data_in_func(global.data_id, &mut builder.func);
                         let value = builder.ins().global_value(ir::types::I64, value);
 
                         let ptr = Pointer::new(value);
 
-                        Some(TypedValue::by_ref(ptr, TypePair(global.type_id, Some(ctx.codegen_backend.scalar_type_of(global.type_id)))))
+                        Some(TypedValue::by_ref(
+                            ptr,
+                            TypePair(
+                                global.type_id,
+                                Some(ctx.codegen_backend.scalar_type_of(global.type_id)),
+                            ),
+                        ))
                     } else {
                         unimplemented!()
                     }
@@ -215,7 +228,7 @@ impl LowerCodegen for Primary {
                                 TypePair(value_t, None),
                             );
 
-                            let mut alloc_id = ctx.allocator.borrow_mut().alloc(storage);
+                            let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
 
                             let value_t_d = ctx
                                 .codegen_backend
@@ -226,7 +239,7 @@ impl LowerCodegen for Primary {
 
                             let storage = ctx.allocator.borrow().get(alloc_id);
 
-                            let value = f((ctx.clone(), builder), &*storage).unwrap();
+                            let _value = f((ctx.clone(), builder), &*storage).unwrap();
 
                             if let Expr::Primary(Spanned {
                                 inner: Primary::Atomic(atom),
@@ -311,8 +324,6 @@ impl LowerCodegen for Primary {
                         .iter()
                         .zip(func_t.inner.args.iter().cloned())
                         .map(|(arg, param_t)| {
-                            let arg_t = ctx.type_of(&arg).unwrap();
-
                             let value = arg.inner.lower((ctx.clone(), builder)).unwrap();
 
                             ctx.maybe_coerce(value, param_t, builder)
@@ -353,8 +364,6 @@ impl LowerCodegen for Primary {
 
                         let result = builder.ins().call(func_ref, args.as_slice());
 
-                        let mut builder = builder;
-
                         let value = builder.inst_results(result).first().cloned().unwrap();
 
                         let ty = builder.func.dfg.value_type(value);
@@ -372,7 +381,7 @@ impl LowerCodegen for Primary {
                             .builtin_functions
                             .iter()
                             .find(|(n, (f, _))| {
-                                **n == func_t.inner.name.1
+                                **n == func_t.inner.name.0
                                     && ctx
                                         .codegen_backend
                                         .global_context
@@ -427,7 +436,9 @@ impl LowerCodegen for Expr {
                         (body_ty, false)
                     };
 
-                assert!(ctx.codegen_backend.types.contains_key(&ty));
+                if !is_union {
+                    assert!(ctx.codegen_backend.types.contains_key(&ty));
+                }
 
                 let size = ctx
                     .codegen_backend
@@ -467,26 +478,37 @@ impl LowerCodegen for Expr {
                         builder.ins().brnz(cc, body_block, &[]);
                         builder.ins().jump(orelse_block, &[]);
 
+                        let sbuf = storage.as_mut_struct((ctx.clone(), builder));
+
                         builder.switch_to_block(body_block);
                         let body_v = body.inner.lower((ctx.clone(), builder)).unwrap();
 
-                        storage.write(body_v.clone(), builder);
+                        let body_ty = ctx.type_of(&body).unwrap();
+                        let body_ty = builder
+                            .ins()
+                            .iconst(ir::types::I64, body_ty.as_usize() as i64);
+
+                        sbuf.write(0, body_ty, (ctx.clone(), builder));
+                        sbuf.write(1, body_v.into_raw(builder), (ctx.clone(), builder));
 
                         builder.ins().jump(escape_block, &[]);
 
                         builder.switch_to_block(orelse_block);
                         let orelse_v = orelse.inner.lower((ctx.clone(), builder)).unwrap();
 
-                        storage.write(orelse_v, builder);
+                        let orelse_ty = ctx.type_of(&orelse).unwrap();
+                        let orelse_ty = builder
+                            .ins()
+                            .iconst(ir::types::I64, orelse_ty.as_usize() as i64);
+
+                        sbuf.write(0, orelse_ty, (ctx.clone(), builder));
+                        sbuf.write(1, orelse_v.into_raw(builder), (ctx.clone(), builder));
+
                         builder.ins().jump(escape_block, &[]);
 
                         builder.switch_to_block(escape_block);
 
-                        let raw = body_v.into_raw(builder);
-
-                        let ty = builder.func.dfg.value_type(raw);
-
-                        todo!()
+                        Some(storage.as_ptr_value())
                     });
 
                     None
@@ -634,6 +656,21 @@ impl LowerCodegen for Expr {
                                 ))
                             }
 
+                            (TypeMap::BOOL, TypeMap::BOOL) => {
+                                let lvalue = left_v.clone().deref_into_raw(builder);
+                                let lvalue = builder.ins().bint(ir::types::I64, lvalue);
+
+                                let rvalue = right_v.clone().deref_into_raw(builder);
+                                let rvalue = builder.ins().bint(ir::types::I64, rvalue);
+
+                                let result = builder.ins().icmp(IntCC::Equal, lvalue, rvalue);
+
+                                Some(TypedValue::by_val(
+                                    result,
+                                    TypePair(TypeMap::BOOL, Some(ir::types::B1)),
+                                ))
+                            }
+
                             _ => todo!(),
                         },
 
@@ -684,8 +721,7 @@ impl LowerCodegen for Statement {
                             None => {
                                 if let Some((layout, f)) = ctx.pending_rvalue.borrow_mut().take() {
                                     let storage = todo!();
-
-                                    f((ctx.clone(), builder), storage);
+                                    // f((ctx.clone(), builder), storage);
                                 } else {
                                     panic!("return expression should produce a value.");
                                 }
@@ -706,11 +742,20 @@ impl LowerCodegen for Statement {
             }
 
             Statement::Asn(assign) => {
-                let mut value = assign
-                    .value
-                    .inner
-                    .lower((ctx.clone(), builder))
-                    .expect("return expression should produce a value.");
+                let mut value = match assign.value.inner.lower((ctx.clone(), builder)) {
+                    Some(value) => value,
+                    None => match ctx.pending_rvalue.borrow_mut().take() {
+                        Some((layout, f)) => {
+                            let value_t = ctx.type_of(&assign.value).unwrap();
+
+                            return ctx.with_var_alloc(assign.name.name().unwrap(), |storage| {
+                                f((ctx.clone(), builder), storage)
+                            });
+                        }
+
+                        None => panic!("assignment value expression should produce a value."),
+                    },
+                };
 
                 if let Some(ann) = &assign.kind {
                     let expected = ctx.type_of(ann).unwrap();

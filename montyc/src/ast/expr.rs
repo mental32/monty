@@ -192,12 +192,8 @@ impl TypedObject for Expr {
                 let right = ctx.with(Rc::clone(orelse), |ctx, orelse| orelse.infer_type(&ctx))?;
 
                 let ty = if left != right {
-                    // create a union[left, right]
-                    ctx.global_context.type_map.entry(TypeDescriptor::Generic(
-                        crate::typing::Generic::Union {
-                            inner: vec![left, right],
-                        },
-                    ))
+                    // synthesize a C tagged union this is the equivelent to a typing.Union[left, right].
+                    ctx.global_context.type_map.tagged_union(vec![left, right])
                 } else {
                     left
                 };

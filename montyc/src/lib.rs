@@ -187,6 +187,6 @@ pub mod prelude {
         lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanRef},
         scope::{ChainedScope, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot},
-        typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject},
+        typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject, Generic, ClassType, TaggedType},
     };
 }

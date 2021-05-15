@@ -1,4 +1,4 @@
-use cranelift_codegen::ir::Type;
+
 use cranelift_module::{DataContext, Linkage};
 use montyc::{CompilerOptions, ast::{atom::{Atom, StringRef}, expr::Expr, primary::Primary}, context::GlobalContext, prelude::*};
 

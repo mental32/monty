@@ -1,44 +1,33 @@
-#![allow(warnings)]
-
 use std::alloc;
 use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, path::Path, rc::Rc};
 
 use crate::{
-    ast::{
-        atom::Atom,
-        expr::{Expr, InfixOp},
-        primary::Primary,
-        stmt::Statement,
-    },
     ast::{atom::StringRef, retrn::Return},
+    ast::{expr::Expr, stmt::Statement},
     codegen::LowerCodegen,
     context::ModuleRef,
     fmt::Formattable,
     func::Function,
     layout::Block,
-    lowering::{Lower, LowerWith},
+    lowering::Lower,
     prelude::*,
-    scope::LookupTarget,
     typing::{LocalTypeId, TypeMap},
 };
 
 use cranelift_codegen::{
     binemit,
-    ir::{self, ExtFuncData, FuncRef, GlobalValue, GlobalValueData},
-    ir::{types, ExternalName, Signature, StackSlot, StackSlotData, StackSlotKind},
-    isa::{self, CallConv, TargetIsa},
-    settings::{self, Configurable},
-    verify_function, Context,
+    ir::{self, GlobalValue, GlobalValueData},
+    ir::{ExternalName, Signature},
+    isa::{CallConv, TargetIsa},
+    settings, verify_function, Context,
 };
 
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataContext, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-use dashmap::DashMap;
 
 use super::{
     storage::Storage,
-    structbuf,
     tvalue::{self, TypePair, TypedValue},
 };
 
@@ -246,7 +235,7 @@ pub struct CodegenBackend<'a> {
 }
 
 impl<'global> CodegenBackend<'global> {
-    fn produce_external_name(&mut self, fn_name: NonZeroUsize, mref: &ModuleRef) -> ExternalName {
+    fn produce_external_name(&mut self, _fn_name: NonZeroUsize, mref: &ModuleRef) -> ExternalName {
         let n = self.names.len();
         let names = self
             .names
@@ -357,7 +346,6 @@ impl<'global> CodegenBackend<'global> {
         Some((fid, clfn))
     }
 
-    #[allow(warnings)]
     fn build_function(&mut self, fid: FuncId, func: &Function, cl_func: &mut ir::Function) {
         use ir::InstBuilder;
 
@@ -392,7 +380,8 @@ impl<'global> CodegenBackend<'global> {
 
                         self.object_module
                             .borrow_mut()
-                            .define_data(data_id, &mut dctx);
+                            .define_data(data_id, &mut dctx)
+                            .unwrap();
                     }
 
                     self.strings.insert(st_ref.clone(), data_id);
@@ -431,9 +420,9 @@ impl<'global> CodegenBackend<'global> {
                 |pred: &Block<Rc<dyn AstObject>>, succ: &Block<Rc<dyn AstObject>>| {
                     fn as_ret(object: &Rc<dyn AstObject>) -> Option<()> {
                         crate::isinstance!(object.as_ref(), Return, _ => ()).or(
-                            crate::isinstance!(object.as_ref(), Statement, Statement::Ret(r) => ()),
+                            crate::isinstance!(object.as_ref(), Statement, Statement::Ret(_r) => ()),
                         )
-                    };
+                    }
 
                     pred.nodes.iter().find_map(as_ret).is_none()
                         && succ.nodes.iter().find_map(as_ret).is_none()
@@ -446,7 +435,7 @@ impl<'global> CodegenBackend<'global> {
         let mut builder_ctx = FunctionBuilderContext::new();
         let mut builder = FunctionBuilder::new(cl_func, &mut builder_ctx);
 
-        let mut vars = HashMap::new();
+        let vars = HashMap::new();
 
         let ctx = CodegenContext {
             codegen_backend: self,
@@ -461,17 +450,10 @@ impl<'global> CodegenBackend<'global> {
         for var in func.vars.iter() {
             let ((var, _), ty) = (var.key().clone(), (var.0));
 
-            let size = crate::typing::SizeOf::size_of(
-                self.global_context.type_map.get(ty).unwrap().value(),
-                &self.global_context.type_map,
-            )
-            .unwrap()
-            .get();
+            let scalar_ty = self.global_context.type_map.is_scalar(ty).then(|| self.scalar_type_of(ty));
 
-            let storage = Storage::new_stack_slot(
-                (ctx.clone(), &mut builder),
-                TypePair(ty, Some(self.scalar_type_of(ty))),
-            );
+            let storage =
+                Storage::new_stack_slot((ctx.clone(), &mut builder), TypePair(ty, scalar_ty));
 
             let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
 
@@ -488,7 +470,7 @@ impl<'global> CodegenBackend<'global> {
             func: ctx.func,
         };
 
-        let mut implicit_return = true;
+        let _implicit_return = true;
         let mut it = layout.iter_from(layout.start);
 
         match it.next() {
@@ -500,7 +482,8 @@ impl<'global> CodegenBackend<'global> {
 
                 let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
-                for (((name, _), kind), value) in func.args(&self.global_context).zip(params.iter()) {
+                for (((name, _), kind), value) in func.args(&self.global_context).zip(params.iter())
+                {
                     let alloc_id = vars.get(&name).unwrap().clone();
 
                     let alloc = ctx.allocator.borrow();
@@ -607,6 +590,15 @@ impl<'global> CodegenBackend<'global> {
                 )),
                 ir::types::I64,
             );
+
+            types.insert(TypeMap::I64, ir::types::I64);
+            types.insert(TypeMap::U64, ir::types::I64);
+            types.insert(TypeMap::I32, ir::types::I32);
+            types.insert(TypeMap::U32, ir::types::I32);
+            types.insert(TypeMap::I16, ir::types::I16);
+            types.insert(TypeMap::U16, ir::types::I16);
+            types.insert(TypeMap::I8, ir::types::I8);
+            types.insert(TypeMap::U8, ir::types::I8);
 
             types.insert(TypeMap::TYPE, ir::types::I64);
 
