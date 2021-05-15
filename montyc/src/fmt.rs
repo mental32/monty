@@ -41,7 +41,7 @@ impl fmt::Display for Formattable<'_, &FunctionType> {
 
         let source = self.gctx.resolver.sources.get(&self.module_ref).unwrap();
 
-        let name = self.gctx.span_ref.borrow().get(self.name).unwrap();
+        let name = self.gctx.span_ref.borrow().get(self.name.1).unwrap();
         let name = source.value().get(name).unwrap();
 
         let ret = if let Some(inner) = self.gctx.type_map.get(self.ret) {

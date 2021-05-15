@@ -47,7 +47,7 @@ impl Class {
                 .global_context
                 .span_ref
                 .borrow()
-                .crosspan_eq(*name, template.name)
+                .crosspan_eq(*name, template.name.1)
             {
                 if ctx
                     .global_context

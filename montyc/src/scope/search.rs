@@ -162,7 +162,7 @@ impl<'a> LookupIter<'a> {
             _ => vec![],
         };
 
-        for (name, object) in extra {
+        for ((name, _), object) in extra {
             log::trace!(
                 "lookup:search_undordered checking function arg: {:?} = {:?}",
                 name,

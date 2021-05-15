@@ -37,12 +37,12 @@ impl Default for SpanInterner {
 
 impl SpanInterner {
     #[inline]
-    pub fn push_noclobber(
+    pub fn push_grouped(
         &mut self,
         value: Range<usize>,
         source: &str,
         mref: ModuleRef,
-    ) -> SpanRef {
+    ) -> (SpanRef, SpanRef) {
         let expected = source.get(value.clone()).unwrap();
 
         let hash = {
@@ -51,23 +51,38 @@ impl SpanInterner {
             s.finish()
         };
 
-        if let Some((clobber_span, mut srefs)) = self.clobber_map.get_mut(&hash).cloned() {
-            if srefs.iter().find(|(_, m)| *m == mref).is_none() {
-                let sref = self.push(value);
-                srefs.push((sref, mref.clone()));
-                self.span_trace_map.insert(sref, (mref.clone(), hash));
-            }
+        if let Some((group_span, mut srefs)) = self.clobber_map.get_mut(&hash).cloned() {
+            let sref = match srefs.iter().find(|(_, m)| *m == mref) {
+                Some((sref, _)) => *sref,
 
-            clobber_span
+                None => {
+                    let sref = self.push(value);
+                    srefs.push((sref, mref.clone()));
+                    self.span_trace_map.insert(sref, (mref.clone(), hash));
+                    sref
+                }
+            };
+
+            (group_span, sref)
         } else {
-            let clobber_span = self.push(value);
+            // Never before seen group, the spanref of the first entry is
+            // the deciding spanref for the entire group.
+
+            let group_span = self.push(value);
 
             self.clobber_map
-                .insert(hash, (clobber_span, vec![((clobber_span, mref.clone()))]));
-            self.span_trace_map.insert(clobber_span, (mref, hash));
+                .insert(hash, (group_span, vec![((group_span, mref.clone()))]));
 
-            clobber_span
+            self.span_trace_map.insert(group_span, (mref, hash));
+
+            (group_span, group_span)
         }
+    }
+
+    #[inline]
+    pub fn get_group(&self, group: SpanRef) -> Option<&[(NonZeroUsize, ModuleRef)]> {
+        let (_, hash) = self.span_trace_map.get(&group)?;
+        self.clobber_map.get(hash).as_ref().map(|(_, v)| v.as_slice())
     }
 
     #[inline]

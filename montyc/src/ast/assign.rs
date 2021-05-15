@@ -86,7 +86,7 @@ impl TypedObject for Assign {
                 if let Some((ty, span)) = func.vars.get(name).map(|kv| kv.value().clone()) {
                     if !ctx.global_context.type_map.type_eq(ty, actual) {
                         ctx.exit_with_error(MontyError::IncompatibleReassignment {
-                            name: name.clone(),
+                            name: name.1.clone(),
                             first_assigned: span.clone(),
                             incorrectly_reassigned: ctx.this.clone().unwrap().span().unwrap(),
                             expected: ty,

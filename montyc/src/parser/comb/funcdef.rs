@@ -152,18 +152,18 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         }
     }
 
-    let args: Option<Vec<(SpanRef, _)>> = if arguments.is_empty() {
+    let args: Option<Vec<(_, _)>> = if arguments.is_empty() {
         None
     } else {
-        Some(
-            arguments
-                .iter()
-                .map(|(l, r)| match (l.inner, r) {
-                    (PyToken::Ident(l), r) => (l, Rc::new(r.clone())),
-                    _ => unreachable!(),
-                })
-                .collect(),
-        )
+        let args = arguments
+            .iter()
+            .map(|(l, r)| match (l.inner, r) {
+                (PyToken::Ident(l), r) => (l, Rc::new(r.clone())),
+                _ => unreachable!(),
+            })
+            .collect();
+
+        Some(args)
     };
 
     let span = ident.span;

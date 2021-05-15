@@ -459,7 +459,7 @@ impl<'global> CodegenBackend<'global> {
         let mut vars = HashMap::new();
 
         for var in func.vars.iter() {
-            let (var, ty) = (var.key().clone(), (var.0));
+            let ((var, _), ty) = (var.key().clone(), (var.0));
 
             let size = crate::typing::SizeOf::size_of(
                 self.global_context.type_map.get(ty).unwrap().value(),
@@ -500,7 +500,7 @@ impl<'global> CodegenBackend<'global> {
 
                 let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
-                for ((name, kind), value) in func.args(&self.global_context).zip(params.iter()) {
+                for (((name, _), kind), value) in func.args(&self.global_context).zip(params.iter()) {
                     let alloc_id = vars.get(&name).unwrap().clone();
 
                     let alloc = ctx.allocator.borrow();

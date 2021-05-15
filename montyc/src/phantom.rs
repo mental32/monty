@@ -4,13 +4,13 @@ use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct PhantomObject {
-    pub(crate) name: SpanRef,
+    pub(crate) name: (SpanRef, SpanRef),
     pub(crate) infer_type: for<'a> fn(&'a LocalContext<'a>) -> crate::Result<LocalTypeId>,
 }
 
 impl PhantomObject {
     pub fn new(
-        name: SpanRef,
+        name: (SpanRef, SpanRef),
         infer_type: for<'a> fn(&'a LocalContext<'a>) -> crate::Result<LocalTypeId>,
     ) -> Self {
         Self { name, infer_type }
@@ -39,11 +39,11 @@ impl AstObject for PhantomObject {
 
 impl LookupTarget for PhantomObject {
     fn is_named(&self, target: SpanRef) -> bool {
-        Some(target == self.name).unwrap_or(false)
+        Some(target == self.name.1).unwrap_or(false)
     }
 
     fn name(&self) -> Option<SpanRef> {
-        Some(self.name)
+        Some(self.name.1)
     }
 }
 

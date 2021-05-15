@@ -134,7 +134,7 @@ impl LowerCodegen for Atom {
 
             Atom::Float(_) => todo!(),
             Atom::Comment(_) => unreachable!(),
-            Atom::Name(n) => {
+            Atom::Name((n, _)) => {
                 if ctx.vars.contains_key(&n) {
                     ctx.with_var_alloc(*n, |storage| Some(storage.as_ptr_value()))
                 } else {
@@ -281,7 +281,7 @@ impl LowerCodegen for Primary {
             }
 
             Primary::Call { func, args } => {
-                let func_name = match &func.inner {
+                let (func_name, _) = match &func.inner {
                     Primary::Atomic(atom) => match atom.as_ref().inner {
                         Atom::Name(n) => n,
                         _ => unreachable!(),
@@ -372,7 +372,7 @@ impl LowerCodegen for Primary {
                             .builtin_functions
                             .iter()
                             .find(|(n, (f, _))| {
-                                **n == func_t.inner.name
+                                **n == func_t.inner.name.1
                                     && ctx
                                         .codegen_backend
                                         .global_context

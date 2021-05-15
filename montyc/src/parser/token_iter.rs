@@ -37,7 +37,7 @@ impl<'a> Iterator for TokenStreamIter<'a> {
 
         let (token, span_range) = match token {
             PyToken::RawIdent => {
-                let ident = self.span_ref.borrow_mut().push_noclobber(
+                let ident = self.span_ref.borrow_mut().push_grouped(
                     span_range.clone(),
                     &self.source,
                     self.module_ref.clone(),

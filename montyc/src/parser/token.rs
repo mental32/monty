@@ -186,7 +186,7 @@ pub enum PyToken {
     #[regex("[a-zA-Z_][_a-zA-Z0-9]*")]
     RawIdent,
 
-    Ident(SpanRef),
+    Ident((SpanRef, SpanRef)),
 
     StringRef(SpanRef),
 
@@ -196,7 +196,7 @@ pub enum PyToken {
 impl From<PyToken> for Option<SpanRef> {
     fn from(token: PyToken) -> Self {
         match token {
-            PyToken::StringRef(n) | PyToken::CommentRef(n) | PyToken::Ident(n) => Some(n),
+            PyToken::StringRef(n) | PyToken::CommentRef(n) | PyToken::Ident((n, _)) => Some(n),
             _ => unreachable!(),
         }
     }

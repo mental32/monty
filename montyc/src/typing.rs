@@ -40,7 +40,7 @@ pub struct TaggedType<T> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionType {
     pub reciever: Option<LocalTypeId>,
-    pub name: SpanRef,
+    pub name: (SpanRef, SpanRef),
     pub args: Vec<LocalTypeId>,
     pub ret: LocalTypeId,
     pub module_ref: ModuleRef,

@@ -203,18 +203,4 @@ mod tests {
             matches!(atom, Spanned { span, inner } if (span == (0..2) && inner == Atom::Int(42)))
         );
     }
-
-    const NAME: &[Token] = &[(
-        PyToken::Ident(unsafe { NonZeroUsize::new_unchecked(1) }),
-        0..1,
-    )];
-
-    #[test]
-    fn test_parse_name() {
-        let (stream, atom) = atom(NAME).unwrap();
-        assert!(stream.is_empty());
-        assert!(
-            matches!(atom, Spanned { span, inner } if (span == (0..1) && inner == Atom::Name(unsafe { NonZeroUsize::new_unchecked(1) })))
-        );
-    }
 }

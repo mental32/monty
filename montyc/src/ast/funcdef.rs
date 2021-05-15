@@ -48,7 +48,7 @@ impl TypedObject for TypedFuncArg {
 pub struct FunctionDef {
     pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
-    pub args: Option<Vec<(SpanRef, Rc<Spanned<Primary>>)>>,
+    pub args: Option<Vec<((SpanRef, SpanRef), Rc<Spanned<Primary>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
     pub decorator_list: Vec<Rc<Spanned<Primary>>>,
     pub returns: Option<Rc<Spanned<Expr>>>,

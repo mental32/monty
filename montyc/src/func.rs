@@ -98,7 +98,7 @@ pub struct Function {
 
     pub scope: LocalScope<FunctionDef>,
     pub kind: TaggedType<FunctionType>,
-    pub vars: DashMap<SpanRef, (LocalTypeId, Span)>,
+    pub vars: DashMap<(SpanRef, SpanRef), (LocalTypeId, Span)>,
     pub refs: RefCell<Vec<DataRef>>,
 }
 
@@ -115,7 +115,7 @@ impl Function {
         gctx.database.as_weak_object(self.def_id)
     }
 
-    pub fn args(&self, gctx: &GlobalContext) -> impl Iterator<Item = (SpanRef, LocalTypeId)> {
+    pub fn args(&self, gctx: &GlobalContext) -> impl Iterator<Item = ((SpanRef, SpanRef), LocalTypeId)> {
         if let Some(FunctionDef { args, .. }) =
             self.def(gctx).unwrap().unspanned().as_ref().as_function()
         {

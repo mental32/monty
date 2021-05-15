@@ -288,7 +288,7 @@ impl GlobalContext {
 
                             let func = FunctionType {
                                 reciever: Some($reciever),
-                                name: $prop.clone(),
+                                name: ($prop.clone(), $prop.clone()),
                                 ret: $ret,
                                 args: vec![$($arg,)*],
                                 module_ref: ModuleRef(PathBuf::from("__monty:magical_names")),
@@ -496,7 +496,7 @@ impl GlobalContext {
         let qualname: Vec<String> = parts
             .into_iter()
             .map(|atom| match atom {
-                Atom::Name(n) => self.resolver.resolve(mref.clone(), n).unwrap(),
+                Atom::Name((n, _)) => self.resolver.resolve(mref.clone(), n).unwrap(),
                 _ => unreachable!(),
             })
             .collect();
@@ -509,7 +509,7 @@ impl GlobalContext {
                 // its a magical builtin
                 let item = item.inner.components();
 
-                let item = if let [atom] = item.as_slice() {
+                let (item, _) = if let [atom] = item.as_slice() {
                     match atom {
                         Atom::Name(n) => n.clone(),
                         _ => unreachable!(),
@@ -520,7 +520,7 @@ impl GlobalContext {
 
                 self.phantom_objects
                     .iter()
-                    .find(|obj| self.span_ref.borrow().crosspan_eq(obj.name, item))
+                    .find(|obj| self.span_ref.borrow().crosspan_eq(obj.name.1, item))
                     .map(|obj| Rc::clone(&obj) as Rc<_>)
             }
 
@@ -541,8 +541,9 @@ impl GlobalContext {
         todo!()
     }
 
-    pub fn magical_name_of(&self, st: impl AsRef<str>) -> Option<NonZeroUsize> {
-        self.span_ref.borrow().find(st)
+    pub fn magical_name_of(&self, st: impl AsRef<str>) -> Option<(NonZeroUsize, NonZeroUsize)> {
+        let group = self.span_ref.borrow().find(st)?;
+        Some((group, group))
     }
 
     pub fn load_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
@@ -633,7 +634,7 @@ impl GlobalContext {
             let qualname: Vec<&str> = qualname
                 .into_iter()
                 .map(|atom| match atom {
-                    Atom::Name(n) => source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap(),
+                    Atom::Name((n, _)) => source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap(),
                     _ => unreachable!(),
                 })
                 .collect();

@@ -54,7 +54,7 @@ pub enum Atom {
     Float(f64),
     Tuple(Vec<Rc<Spanned<Expr>>>),
     Comment(SpanRef),
-    Name(SpanRef),
+    Name((SpanRef, SpanRef)),
 }
 
 impl Atom {
@@ -63,7 +63,7 @@ impl Atom {
         scope: &dyn Scope,
         global_context: &GlobalContext,
     ) -> Option<Rc<dyn AstObject>> {
-        let target = if let Self::Name(t) = self { t } else { todo!() };
+        let target = if let Self::Name((t, _)) = self { t } else { todo!() };
 
         scope
             .lookup_def(
@@ -138,7 +138,7 @@ impl TypedObject for Atom {
                 Ok(ty)
             }
 
-            Atom::Name(target) => {
+            Atom::Name((target, _)) => {
                 log::trace!("infer_type:atom performing name lookup on atom {:?}", self);
 
                 let results = ctx
@@ -233,15 +233,12 @@ impl TypedObject for Atom {
 
 impl LookupTarget for Atom {
     fn is_named(&self, target: SpanRef) -> bool {
-        match self {
-            Self::Name(n) => *n == target,
-            _ => false,
-        }
+        matches!(self, Self::Name((n, _)) if *n == target)
     }
 
     fn name(&self) -> Option<SpanRef> {
         match self {
-            Self::Name(n) => Some(n.clone()),
+            Self::Name((n, _)) => Some(n.clone()),
             _ => None,
         }
     }

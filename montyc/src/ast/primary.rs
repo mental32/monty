@@ -190,7 +190,7 @@ impl TypedObject for Primary {
                 };
 
                 if let ScopeRoot::Func(host) = ctx.scope.root() {
-                    let func = match &func.inner {
+                    let (func, _) = match &func.inner {
                         Primary::Atomic(atom) => match atom.as_ref().inner {
                             Atom::Name(n) => n,
                             _ => unreachable!(),
@@ -338,7 +338,7 @@ impl TypedObject for Primary {
 
 impl LookupTarget for Primary {
     fn is_named(&self, target: SpanRef) -> bool {
-        matches!(self, Self::Atomic(atom) if matches!(atom.as_ref(), Spanned { inner: Atom::Name(n), .. } if n.clone() == target))
+        matches!(self, Self::Atomic(atom) if matches!(atom.as_ref(), Spanned { inner: Atom::Name((n, _)), .. } if n.clone() == target))
     }
 
     fn name(&self) -> Option<SpanRef> {
