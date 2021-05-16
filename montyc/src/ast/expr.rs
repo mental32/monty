@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
-use crate::prelude::*;
-
+use crate::{class::Class, prelude::*};
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -29,6 +28,7 @@ pub enum InfixOp {
     Eq,
     And,
     Or,
+    Xor,
 }
 
 impl AstObject for InfixOp {
@@ -83,6 +83,7 @@ impl InfixOp {
             InfixOp::Eq => "==",
             InfixOp::And => "and",
             InfixOp::Or => "or",
+            InfixOp::Xor => "^",
         }
     }
 }
@@ -105,6 +106,7 @@ impl AsRef<str> for InfixOp {
             InfixOp::Eq => "eq",
             InfixOp::And => "and",
             InfixOp::Or => "or",
+            InfixOp::Xor => "xor",
         }
     }
 }
@@ -202,48 +204,61 @@ impl TypedObject for Expr {
             }
 
             Expr::BinOp { left, op, right } => {
-                let left_ty = ctx.with(Rc::clone(left), |ctx, this| this.infer_type(&ctx))?;
-                let right_ty = ctx.with(Rc::clone(right), |ctx, this| this.infer_type(&ctx))?;
+                fn binop_method_from_raw_parts<T>(
+                    ctx: &LocalContext<'_>,
+                    node: &Rc<T>,
+                    name: &str,
+                    arg_t: LocalTypeId,
+                ) -> crate::Result<(FunctionType, Rc<Class>)>
+                where
+                    T: AstObject,
+                {
+                    let name = ctx.global_context.magical_name_of(name).expect(name);
 
-                let ltr_name = ctx
-                    .global_context
-                    .magical_name_of(&format!("__{}__", op.as_ref()))
-                    .unwrap();
+                    let type_id = ctx
+                        .with(Rc::clone(node), |ctx, this| this.infer_type(&ctx))?
+                        .canonicalize(&ctx.global_context.type_map);
 
-                let rtl_name = ctx
-                    .global_context
-                    .magical_name_of(&format!("__{}__", op.as_ref()))
-                    .unwrap();
+                    ctx.cache_type(&(Rc::clone(node) as Rc<_>), type_id);
 
-                let ltr = FunctionType {
-                    reciever: Some(left_ty),
-                    name: ltr_name,
-                    args: vec![right_ty],
-                    ret: TypeMap::UNKNOWN,
-                    module_ref: "__monty:magical_names".into(),
+                    let func_t = FunctionType {
+                        reciever: Some(type_id),
+                        name,
+                        args: vec![arg_t],
+                        ret: TypeMap::UNKNOWN,
+                        module_ref: "__monty:magical_names".into(),
+                    };
+
+                    let class = ctx.try_get_class_of_type(type_id).unwrap();
+
+                    Ok((func_t, class))
+                }
+
+                let (mut ltr, lhs_class) = binop_method_from_raw_parts(
+                    &ctx,
+                    left,
+                    &format!("__{}__", op.as_ref()),
+                    TypeMap::UNKNOWN,
+                )?;
+
+                let (mut rtl, rhs_class) = match op.as_ref() {
+                    "eq" => binop_method_from_raw_parts(&ctx, right, "__eq__", TypeMap::UNKNOWN)?,
+                    op => binop_method_from_raw_parts(&ctx, right, &format!("__r{}__", op), TypeMap::UNKNOWN)?,
                 };
 
-                let rtl = FunctionType {
-                    reciever: Some(right_ty),
-                    name: rtl_name,
-                    args: vec![left_ty],
-                    ret: TypeMap::UNKNOWN,
-                    module_ref: "__monty:magical_names".into(),
-                };
-
-                let left_class = ctx.try_get_class_of_type(left_ty).unwrap();
-                let right_class = ctx.try_get_class_of_type(right_ty).unwrap();
+                ltr.args[0] = rtl.reciever.unwrap();
+                rtl.args[0] = ltr.reciever.unwrap();
 
                 // unify(ltr) or unify(rtl)
 
-                let method = left_class
+                let method = lhs_class
                     .try_unify_method(ctx, &ltr)
-                    .or(right_class.try_unify_method(ctx, &rtl));
+                    .or(rhs_class.try_unify_method(ctx, &rtl));
 
                 method.ok_or(MontyError::BadBinaryOp {
                     span: ctx.this.as_ref().unwrap().span().unwrap(),
-                    left: left_ty,
-                    right: right_ty,
+                    left: ltr.reciever.unwrap(),
+                    right: rtl.reciever.unwrap(),
                     op: op.clone(),
                 })
             }

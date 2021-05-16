@@ -245,7 +245,7 @@ impl GlobalContext {
 
                     if dec_name != "extern" {
                         module_context
-                            .local_context(ctx)
+                            .unbound_local_context(ctx)
                             .exit_with_error(
                                 MontyError::Unsupported {
                                         span: dec_span,
@@ -755,7 +755,6 @@ impl GlobalContext {
                 scope,
                 source,
                 globals: DashMap::new(),
-                flags: ModuleFlags::EMPTY,
             },
         ) {
             panic!(

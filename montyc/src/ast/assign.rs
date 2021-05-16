@@ -97,7 +97,7 @@ impl TypedObject for Assign {
                     log::trace!("typecheck:assign setting var {:?} = {:?}", name, apparent);
                     func.vars.insert(
                         name.clone(),
-                        (apparent, ctx.this.clone().unwrap().span().unwrap()),
+                        (apparent.canonicalize(&ctx.global_context.type_map), ctx.this.clone().unwrap().span().unwrap()),
                     );
                 }
             }

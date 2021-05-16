@@ -115,7 +115,10 @@ impl Function {
         gctx.database.as_weak_object(self.def_id)
     }
 
-    pub fn args(&self, gctx: &GlobalContext) -> impl Iterator<Item = ((SpanRef, SpanRef), LocalTypeId)> {
+    pub fn args(
+        &self,
+        gctx: &GlobalContext,
+    ) -> impl Iterator<Item = ((SpanRef, SpanRef), LocalTypeId)> {
         if let Some(FunctionDef { args, .. }) =
             self.def(gctx).unwrap().unspanned().as_ref().as_function()
         {
@@ -206,7 +209,10 @@ impl Function {
 
         if let Some(args) = &funcdef.args {
             for (name, ann) in args.iter() {
-                let ty = ctx.with(Rc::clone(&ann), |ctx, ann| ann.infer_type(&ctx)).unwrap_or_compiler_error(&ctx);
+                let ty = ctx
+                    .with(Rc::clone(&ann), |ctx, ann| ann.infer_type(&ctx))
+                    .unwrap_or_compiler_error(&ctx)
+                    .canonicalize(&ctx.global_context.type_map);
 
                 vars.insert(name.clone(), (ty, ann.span.clone()));
             }

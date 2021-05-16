@@ -1,5 +1,5 @@
 #![deny(warnings)]
-#![feature(variant_count, bool_to_option, drain_filter, assert_matches)]
+#![feature(variant_count, bool_to_option, drain_filter, assert_matches, box_syntax)]
 
 pub mod ast;
 pub mod class;
@@ -8,6 +8,7 @@ pub mod context;
 pub mod fmt;
 pub mod func;
 pub mod layout;
+pub(crate) mod ssamap;
 
 pub mod lowering {
     pub trait Lower<Output> {
@@ -180,7 +181,7 @@ impl CompilerOptions {
 pub mod prelude {
     pub use crate::{
         ast::{AstObject, Spanned},
-        context::{GlobalContext, LocalContext, ModuleContext, ModuleFlags, ModuleRef},
+        context::{GlobalContext, LocalContext, ModuleContext, ModuleRef},
         error::{CompilerError, MontyError},
         func::{DataRef, Function},
         layout::{BlockId, Layout},
@@ -188,5 +189,6 @@ pub mod prelude {
         parser::{token::PyToken, Parseable, ParserT, Span, SpanRef},
         scope::{ChainedScope, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot},
         typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject, Generic, ClassType, TaggedType},
+        codegen::CodegenModule,
     };
 }

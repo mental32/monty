@@ -126,7 +126,7 @@ impl TypedObject for Atom {
                 let mut inner = vec![];
 
                 for value in values {
-                    let ty = ctx.with(Rc::clone(value), |ctx, value| value.infer_type(&ctx))?;
+                    let ty = ctx.with(Rc::clone(value), |ctx, value| value.infer_type(&ctx))?.canonicalize(&ctx.global_context.type_map);
                     inner.push(ty);
                 }
 

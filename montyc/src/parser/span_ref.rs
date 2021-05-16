@@ -5,7 +5,7 @@ use std::{
     ops::Range,
 };
 
-use crate::context::ModuleRef;
+use crate::{context::ModuleRef, ssamap::SSAMap};
 
 use super::Span;
 
@@ -17,18 +17,19 @@ pub(self) type SpanHash = u64;
 
 #[derive(Debug)]
 pub struct SpanInterner {
-    ptr: usize,
-    seq: Vec<Range<usize>>,
-
+    inner: SSAMap<usize, Range<usize>>,
     clobber_map: BTreeMap<SpanHash, (SpanRef, Vec<(SpanRef, ModuleRef)>)>,
     span_trace_map: BTreeMap<SpanRef, (ModuleRef, SpanHash)>,
 }
 
 impl Default for SpanInterner {
     fn default() -> Self {
+        let mut inner = SSAMap::new();
+
+        assert_eq!(inner.insert(usize::MAX..usize::MIN), 0);
+
         Self {
-            ptr: 1,
-            seq: vec![usize::MAX..usize::MIN],
+            inner,
             clobber_map: BTreeMap::new(),
             span_trace_map: BTreeMap::new(),
         }
@@ -102,13 +103,8 @@ impl SpanInterner {
 
     #[inline]
     pub(super) fn push(&mut self, value: Range<usize>) -> SpanRef {
-        self.ptr += 1;
-        let key = self.ptr;
-        self.seq.push(value);
-
-        // SAFETY: `Self` gets constructed with `self.ptr = 1`
-        //         and `key` is `self.ptr + 1` so even if `self.ptr == 0`
-        //         `key` would not be zero.
+        let key = self.inner.insert(value);
+        assert_ne!(key, 0);
         unsafe { NonZeroUsize::new_unchecked(key) }
     }
 
@@ -122,8 +118,8 @@ impl SpanInterner {
 
     #[inline]
     pub fn get<'a>(&self, reference: SpanRef) -> Option<Span> {
-        self.seq
-            .get(usize::from(reference).saturating_sub(1))
+        self.inner
+            .get(usize::from(reference))
             .cloned()
     }
 

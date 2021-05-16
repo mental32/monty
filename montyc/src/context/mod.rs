@@ -12,7 +12,7 @@ pub(crate) mod resolver;
 pub use self::{
     global::GlobalContext,
     local::LocalContext,
-    module::{ModuleContext, ModuleFlags},
+    module::{ModuleContext},
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::From)]

@@ -26,7 +26,7 @@ fn main() {
         }
     });
 
-    let mut cctx = montyc::codegen::context::CodegenBackend::new(&global_context, isa);
+    let mut cctx = montyc::prelude::CodegenModule::new(&global_context, isa);
 
     for (mref, mctx) in global_context.modules.iter() {
         for (name, global) in mctx.globals.iter().map(|refm| (refm.key().clone(), refm.value().clone())) {

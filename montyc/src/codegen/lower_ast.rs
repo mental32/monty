@@ -14,18 +14,15 @@ use crate::{
         primary::Primary,
         stmt::Statement,
     },
-    codegen::{pointer::Pointer, storage::Storage, tvalue::TypedValue},
+    codegen::{context::RValueAlloc, pointer::Pointer, storage::Storage, tvalue::TypedValue},
     prelude::*,
     typing::{Generic, TaggedType},
 };
 
-use super::{context::CodegenLowerArg, tvalue::TypePair, LowerCodegen};
+use super::{context::CodegenLowerArg, tvalue::TypePair, LowerCodegen, Value};
 
 impl LowerCodegen for Atom {
-    fn lower(
-        &self,
-        (ctx, builder): CodegenLowerArg<'_, '_, '_>,
-    ) -> Option<super::tvalue::TypedValue> {
+    fn lower<'g>(&self, (ctx, builder): CodegenLowerArg<'g, '_, '_>) -> Option<Value<'g>> {
         use cranelift_codegen::ir::InstBuilder;
 
         match self {
@@ -68,12 +65,16 @@ impl LowerCodegen for Atom {
                 let elements = elements.clone();
                 let (_, layout) = ctx.size_and_layout_of(TypePair(kind, None)).unwrap();
 
-                ctx.alloca_rvalue(layout, move |(ctx, builder), mut storage| {
+                let alloca = box move |(ctx, builder): CodegenLowerArg<'_, '_, '_>,
+                                       storage: &Storage| {
                     {
                         let mut sbuf = storage.as_mut_struct((ctx.clone(), builder));
 
                         for (field, elem) in elements.iter().enumerate() {
-                            let value = elem.inner.lower((ctx.clone(), builder)).unwrap();
+                            let value = match elem.inner.lower((ctx.clone(), builder)).unwrap() {
+                                Ok(v) => v,
+                                Err(_) => todo!(),
+                            };
 
                             sbuf.write(field, value.into_raw(builder), (ctx.clone(), builder));
                         }
@@ -82,9 +83,9 @@ impl LowerCodegen for Atom {
                     let pointer = storage.as_ptr_value();
 
                     Some(pointer)
-                });
+                };
 
-                None
+                Some(Err((layout, alloca)))
             }
 
             Atom::None => todo!(),
@@ -95,10 +96,10 @@ impl LowerCodegen for Atom {
                     ir::immediates::Imm64::new(i64::try_from(*n).unwrap()),
                 );
 
-                Some(TypedValue::by_val(
+                Some(Ok(TypedValue::by_val(
                     value,
                     TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
-                ))
+                )))
             }
             Atom::Str(n) => {
                 let str_global_value = ctx
@@ -112,7 +113,7 @@ impl LowerCodegen for Atom {
                     TypedValue::by_ref(ptr, TypePair(TypeMap::STRING, Some(ir::types::I64)))
                 };
 
-                Some(ptr)
+                Some(Ok(ptr))
             }
 
             Atom::Bool(b) => {
@@ -120,17 +121,17 @@ impl LowerCodegen for Atom {
 
                 let value = builder.ins().bconst(ir_ty, *b);
 
-                Some(TypedValue::by_val(
+                Some(Ok(TypedValue::by_val(
                     value,
                     TypePair(TypeMap::BOOL, Some(ir_ty)),
-                ))
+                )))
             }
 
             Atom::Float(_) => todo!(),
             Atom::Comment(_) => unreachable!(),
             Atom::Name((n, _)) => {
                 if ctx.vars.contains_key(&n) {
-                    ctx.with_var_alloc(*n, |storage| Some(storage.as_ptr_value()))
+                    ctx.with_var_alloc(*n, |storage| Some(Ok(storage.as_ptr_value())))
                 } else {
                     let def = self
                         .resolve_name_to_definition(
@@ -158,8 +159,10 @@ impl LowerCodegen for Atom {
                             .global_context
                             .type_map
                             .values()
-                            .filter_map(|(_, desc)| match desc { TypeDescriptor::Class(c) if c.name == *n => Some(c.kind), _ => None })
-                            .next()
+                            .find_map(|(_, desc)| match desc {
+                                TypeDescriptor::Class(c) if c.name == *n => Some(c.kind),
+                                _ => None,
+                            })
                             .unwrap();
 
                         let type_id = builder.ins().iconst(
@@ -167,13 +170,13 @@ impl LowerCodegen for Atom {
                             type_id_original.as_usize() as i64,
                         );
 
-                        Some(TypedValue::by_val(
+                        Some(Ok(TypedValue::by_val(
                             type_id,
                             TypePair(
                                 TypeMap::TYPE,
                                 Some(ctx.codegen_backend.scalar_type_of(TypeMap::INTEGER)),
                             ),
-                        ))
+                        )))
                     } else if let Some(asn) = crate::isinstance!(def.as_ref(), Assign).or_else(
                         || crate::isinstance!(def.as_ref(), Statement, Statement::Asn(a) => a),
                     ) {
@@ -191,13 +194,13 @@ impl LowerCodegen for Atom {
 
                         let ptr = Pointer::new(value);
 
-                        Some(TypedValue::by_ref(
+                        Some(Ok(TypedValue::by_ref(
                             ptr,
                             TypePair(
                                 global.type_id,
                                 Some(ctx.codegen_backend.scalar_type_of(global.type_id)),
                             ),
-                        ))
+                        )))
                     } else {
                         unimplemented!()
                     }
@@ -208,7 +211,7 @@ impl LowerCodegen for Atom {
 }
 
 impl LowerCodegen for Primary {
-    fn lower(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> Option<TypedValue> {
+    fn lower<'g>(&self, (ctx, builder): CodegenLowerArg<'g, '_, '_>) -> Option<Value<'g>> {
         use ir::InstBuilder;
 
         log::trace!("codegen:primary {:?}", self);
@@ -220,76 +223,71 @@ impl LowerCodegen for Primary {
                 let value_t = ctx.type_of(value).unwrap();
 
                 let value = match value.inner.lower((ctx.clone(), builder)) {
-                    Some(ty) => todo!("subscript on scalar value."),
-                    None => match ctx.pending_rvalue.borrow_mut().take() {
-                        Some((layout, f)) => {
-                            let storage = Storage::new_stack_slot(
-                                (ctx.clone(), builder),
-                                TypePair(value_t, None),
-                            );
+                    None => unreachable!(),
+                    Some(Ok(_)) => todo!("subscript on scalar value."),
+                    Some(Err((layout, f))) => {
+                        let storage = Storage::new_stack_slot(
+                            (ctx.clone(), builder),
+                            TypePair(value_t, None),
+                        );
 
-                            let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
+                        let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
 
-                            let value_t_d = ctx
-                                .codegen_backend
-                                .global_context
-                                .type_map
-                                .get(value_t)
-                                .unwrap();
+                        let value_t_d = ctx
+                            .codegen_backend
+                            .global_context
+                            .type_map
+                            .get(value_t)
+                            .unwrap();
 
-                            let storage = ctx.allocator.borrow().get(alloc_id);
+                        let storage = ctx.allocator.borrow().get(alloc_id);
 
-                            let _value = f((ctx.clone(), builder), &*storage).unwrap();
+                        let _value = f((ctx.clone(), builder), &*storage).unwrap();
 
-                            if let Expr::Primary(Spanned {
-                                inner: Primary::Atomic(atom),
-                                ..
-                            }) = &index.inner
-                            {
-                                let n = match atom.inner {
-                                    Atom::Ellipsis
-                                    | Atom::Str(_)
-                                    | Atom::Tuple(_)
-                                    | Atom::Comment(_)
-                                    | Atom::Name(_)
-                                    | Atom::Float(_)
-                                    | Atom::None => {
-                                        unreachable!();
-                                    }
+                        if let Expr::Primary(Spanned {
+                            inner: Primary::Atomic(atom),
+                            ..
+                        }) = &index.inner
+                        {
+                            let n = match atom.inner {
+                                Atom::Ellipsis
+                                | Atom::Str(_)
+                                | Atom::Tuple(_)
+                                | Atom::Comment(_)
+                                | Atom::Name(_)
+                                | Atom::Float(_)
+                                | Atom::None => {
+                                    unreachable!();
+                                }
 
-                                    Atom::Int(n) => n,
-                                    Atom::Bool(b) => b.then_some(1).unwrap_or(0),
-                                };
+                                Atom::Int(n) => n,
+                                Atom::Bool(b) => b.then_some(1).unwrap_or(0),
+                            };
 
-                                let sbuf = storage.as_mut_struct((ctx.clone(), builder));
+                            let sbuf = storage.as_mut_struct((ctx.clone(), builder));
 
-                                let idx = if n < 0 {
-                                    sbuf.field_count() - usize::try_from(-n).unwrap()
-                                } else {
-                                    usize::try_from(n).unwrap()
-                                };
+                            let idx = if n < 0 {
+                                sbuf.field_count() - usize::try_from(-n).unwrap()
+                            } else {
+                                usize::try_from(n).unwrap()
+                            };
 
-                                let value = sbuf.read(idx, (ctx.clone(), builder)).unwrap();
-                                let value_t = builder.func.dfg.value_type(value);
+                            let value = sbuf.read(idx, (ctx.clone(), builder)).unwrap();
+                            let value_t = builder.func.dfg.value_type(value);
 
-                                let type_id = match value_t_d.value() {
-                                    TypeDescriptor::Generic(Generic::Struct { inner }) => {
-                                        inner[idx]
-                                    }
-                                    _ => unreachable!(),
-                                };
+                            let type_id = match value_t_d.value() {
+                                TypeDescriptor::Generic(Generic::Struct { inner }) => inner[idx],
+                                _ => unreachable!(),
+                            };
 
-                                return Some(TypedValue::by_val(
-                                    value,
-                                    TypePair(type_id, Some(value_t)),
-                                ));
-                            }
-
-                            todo!();
+                            return Some(Ok(TypedValue::by_val(
+                                value,
+                                TypePair(type_id, Some(value_t)),
+                            )));
                         }
 
-                        None => unreachable!(),
-                    },
+                        todo!();
+                    }
                 };
             }
 
@@ -324,7 +322,10 @@ impl LowerCodegen for Primary {
                         .iter()
                         .zip(func_t.inner.args.iter().cloned())
                         .map(|(arg, param_t)| {
-                            let value = arg.inner.lower((ctx.clone(), builder)).unwrap();
+                            let value = match arg.inner.lower((ctx.clone(), builder)).unwrap() {
+                                Ok(v) => v,
+                                Err(_) => todo!(),
+                            };
 
                             ctx.maybe_coerce(value, param_t, builder)
                         })
@@ -368,10 +369,10 @@ impl LowerCodegen for Primary {
 
                         let ty = builder.func.dfg.value_type(value);
 
-                        Some(TypedValue::by_val(
+                        Some(Ok(TypedValue::by_val(
                             value,
                             TypePair(func_t.inner.ret, Some(ty)),
-                        ))
+                        )))
                     }
 
                     None => {
@@ -389,7 +390,7 @@ impl LowerCodegen for Primary {
                                         .unify_func(f.kind.type_id, &func_t.inner)
                             })
                         {
-                            (builtin_func_handler.0)((ctx.clone(), builder), &args)
+                            (builtin_func_handler.0)((ctx.clone(), builder), &args).map(Ok)
                         } else {
                             todo!("uhhhh");
                         }
@@ -404,7 +405,7 @@ impl LowerCodegen for Primary {
 }
 
 impl LowerCodegen for Expr {
-    fn lower(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> Option<TypedValue> {
+    fn lower<'g>(&self, (ctx, builder): CodegenLowerArg<'g, '_, '_>) -> Option<Value<'g>> {
         use ir::InstBuilder;
 
         match self {
@@ -464,16 +465,15 @@ impl LowerCodegen for Expr {
                     .unwrap();
 
                 if is_union {
-                    ctx.alloca_rvalue(layout, move |(ctx, builder), storage| {
+                    let alloca: Box<RValueAlloc<'_>> = box move |(ctx, builder), storage| {
                         let escape_block = builder.create_block();
                         let body_block = builder.create_block();
                         let orelse_block = builder.create_block();
 
-                        let cc = test
-                            .inner
-                            .lower((ctx.clone(), builder))
-                            .unwrap()
-                            .into_raw(builder);
+                        let cc = match test.inner.lower((ctx.clone(), builder)).unwrap() {
+                            Ok(v) => v.into_raw(builder),
+                            Err(_) => todo!(),
+                        };
 
                         builder.ins().brnz(cc, body_block, &[]);
                         builder.ins().jump(orelse_block, &[]);
@@ -481,7 +481,10 @@ impl LowerCodegen for Expr {
                         let sbuf = storage.as_mut_struct((ctx.clone(), builder));
 
                         builder.switch_to_block(body_block);
-                        let body_v = body.inner.lower((ctx.clone(), builder)).unwrap();
+                        let body_v = match body.inner.lower((ctx.clone(), builder)).unwrap() {
+                            Ok(v) => v,
+                            Err(_) => todo!(),
+                        };
 
                         let body_ty = ctx.type_of(&body).unwrap();
                         let body_ty = builder
@@ -494,7 +497,10 @@ impl LowerCodegen for Expr {
                         builder.ins().jump(escape_block, &[]);
 
                         builder.switch_to_block(orelse_block);
-                        let orelse_v = orelse.inner.lower((ctx.clone(), builder)).unwrap();
+                        let orelse_v = match orelse.inner.lower((ctx.clone(), builder)).unwrap() {
+                            Ok(v) => v,
+                            Err(_) => todo!(),
+                        };
 
                         let orelse_ty = ctx.type_of(&orelse).unwrap();
                         let orelse_ty = builder
@@ -509,9 +515,9 @@ impl LowerCodegen for Expr {
                         builder.switch_to_block(escape_block);
 
                         Some(storage.as_ptr_value())
-                    });
+                    };
 
-                    None
+                    Some(Err((layout, alloca)))
                 } else {
                     let escape_block = builder.create_block();
                     builder.append_block_param(
@@ -522,27 +528,29 @@ impl LowerCodegen for Expr {
                     let body_block = builder.create_block();
                     let orelse_block = builder.create_block();
 
-                    let cc = test
-                        .inner
-                        .lower((ctx.clone(), builder))
-                        .unwrap()
-                        .into_raw(builder);
+                    let cc = match test.inner.lower((ctx.clone(), builder)).unwrap() {
+                        Ok(v) => v.into_raw(builder),
+                        Err(_) => todo!(),
+                    };
 
                     builder.ins().brnz(cc, body_block, &[]);
                     builder.ins().jump(orelse_block, &[]);
 
                     builder.switch_to_block(body_block);
-                    let body_v = body.inner.lower((ctx.clone(), builder)).unwrap();
+                    let body_v = match body.inner.lower((ctx.clone(), builder)).unwrap() {
+                        Ok(v) => v,
+                        Err(_) => todo!(),
+                    };
+
                     let body_v_raw = body_v.clone().into_raw(builder);
 
                     builder.ins().jump(escape_block, &[body_v_raw]);
 
                     builder.switch_to_block(orelse_block);
-                    let orelse_v = orelse
-                        .inner
-                        .lower((ctx.clone(), builder))
-                        .unwrap()
-                        .into_raw(builder);
+                    let orelse_v = match orelse.inner.lower((ctx.clone(), builder)).unwrap() {
+                        Ok(v) => v.into_raw(builder),
+                        Err(_) => todo!(),
+                    };
 
                     builder.ins().jump(escape_block, &[orelse_v]);
 
@@ -552,7 +560,7 @@ impl LowerCodegen for Expr {
 
                     let value = builder.block_params(escape_block)[0];
 
-                    Some(TypedValue::by_val(value, TypePair(body_ty, Some(ty))))
+                    Some(Ok(TypedValue::by_val(value, TypePair(body_ty, Some(ty)))))
                 }
             }
 
@@ -561,8 +569,15 @@ impl LowerCodegen for Expr {
                 let right_t = ctx.type_of(right).unwrap();
 
                 if left_t.is_builtin() && right_t.is_builtin() {
-                    let left_v = left.inner.lower((ctx.clone(), builder)).unwrap();
-                    let right_v = right.inner.lower((ctx.clone(), builder)).unwrap();
+                    let left_v = match left.inner.lower((ctx.clone(), builder)).unwrap() {
+                        Ok(v) => v,
+                        Err(_) => todo!(),
+                    };
+
+                    let right_v = match right.inner.lower((ctx.clone(), builder)).unwrap() {
+                        Ok(v) => v,
+                        Err(_) => todo!(),
+                    };
 
                     match op {
                         InfixOp::Add => match (left_t, right_t) {
@@ -585,7 +600,7 @@ impl LowerCodegen for Expr {
                                     TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
                                 );
 
-                                Some(value)
+                                Some(Ok(value))
                             }
 
                             _ => todo!(),
@@ -611,7 +626,7 @@ impl LowerCodegen for Expr {
                                     TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
                                 );
 
-                                Some(value)
+                                Some(Ok(value))
                             }
 
                             _ => todo!(),
@@ -637,7 +652,7 @@ impl LowerCodegen for Expr {
                                     TypePair(TypeMap::INTEGER, Some(ir::types::I64)),
                                 );
 
-                                Some(value)
+                                Some(Ok(value))
                             }
 
                             _ => todo!(),
@@ -650,10 +665,10 @@ impl LowerCodegen for Expr {
 
                                 let result = builder.ins().icmp(IntCC::Equal, lvalue, rvalue);
 
-                                Some(TypedValue::by_val(
+                                Some(Ok(TypedValue::by_val(
                                     result,
                                     TypePair(TypeMap::BOOL, Some(ir::types::B1)),
-                                ))
+                                )))
                             }
 
                             (TypeMap::BOOL, TypeMap::BOOL) => {
@@ -665,10 +680,10 @@ impl LowerCodegen for Expr {
 
                                 let result = builder.ins().icmp(IntCC::Equal, lvalue, rvalue);
 
-                                Some(TypedValue::by_val(
+                                Some(Ok(TypedValue::by_val(
                                     result,
                                     TypePair(TypeMap::BOOL, Some(ir::types::B1)),
-                                ))
+                                )))
                             }
 
                             _ => todo!(),
@@ -681,10 +696,10 @@ impl LowerCodegen for Expr {
 
                                 let result = builder.ins().icmp(IntCC::NotEqual, lvalue, rvalue);
 
-                                Some(TypedValue::by_val(
+                                Some(Ok(TypedValue::by_val(
                                     result,
                                     TypePair(TypeMap::BOOL, Some(ir::types::B1)),
-                                ))
+                                )))
                             }
 
                             _ => todo!(),
@@ -705,7 +720,7 @@ impl LowerCodegen for Expr {
 }
 
 impl LowerCodegen for Statement {
-    fn lower(&self, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> Option<TypedValue> {
+    fn lower<'g>(&self, (ctx, builder): CodegenLowerArg<'g, '_, '_>) -> Option<Value<'g>> {
         use ir::InstBuilder;
 
         match self {
@@ -716,16 +731,9 @@ impl LowerCodegen for Statement {
             Statement::Ret(ret) => {
                 if let Some(expr) = &ret.value {
                     let value = {
-                        let value = match expr.inner.lower((ctx.clone(), builder)) {
-                            Some(value) => value,
-                            None => {
-                                if let Some((layout, f)) = ctx.pending_rvalue.borrow_mut().take() {
-                                    let storage = todo!();
-                                    // f((ctx.clone(), builder), storage);
-                                } else {
-                                    panic!("return expression should produce a value.");
-                                }
-                            }
+                        let value = match expr.inner.lower((ctx.clone(), builder)).unwrap() {
+                            Ok(v) => v,
+                            Err(_) => todo!(),
                         };
 
                         let refined = ctx.maybe_coerce(value, ctx.func.kind.inner.ret, builder);
@@ -742,19 +750,17 @@ impl LowerCodegen for Statement {
             }
 
             Statement::Asn(assign) => {
-                let mut value = match assign.value.inner.lower((ctx.clone(), builder)) {
-                    Some(value) => value,
-                    None => match ctx.pending_rvalue.borrow_mut().take() {
-                        Some((layout, f)) => {
-                            let value_t = ctx.type_of(&assign.value).unwrap();
+                let mut value = match assign.value.inner.lower((ctx.clone(), builder)).unwrap() {
+                    Ok(value) => value,
+                    Err((layout, f)) => {
+                        let value_t = ctx.type_of(&assign.value).unwrap();
 
-                            return ctx.with_var_alloc(assign.name.name().unwrap(), |storage| {
+                        return ctx
+                            .with_var_alloc(assign.name.name().unwrap(), |storage| {
                                 f((ctx.clone(), builder), storage)
-                            });
-                        }
-
-                        None => panic!("assignment value expression should produce a value."),
-                    },
+                            })
+                            .map(Ok);
+                    }
                 };
 
                 if let Some(ann) = &assign.kind {
@@ -793,13 +799,16 @@ impl LowerCodegen for Statement {
 
                     builder.switch_to_block(head_block);
 
-                    let cc = ifstmt
+                    let cc = match ifstmt
                         .inner
                         .test
                         .inner
                         .lower((ctx.clone(), builder))
                         .unwrap()
-                        .into_raw(builder);
+                    {
+                        Ok(v) => v.into_raw(builder),
+                        Err(_) => todo!(),
+                    };
 
                     builder.ins().brnz(cc, body_block, &[]);
                     builder.ins().jump(local_escape_block, &[]);
@@ -853,12 +862,10 @@ impl LowerCodegen for Statement {
 
                 builder.switch_to_block(head);
 
-                let cc = while_
-                    .test
-                    .inner
-                    .lower((ctx.clone(), builder))
-                    .unwrap()
-                    .into_raw(builder);
+                let cc = match while_.test.inner.lower((ctx.clone(), builder)).unwrap() {
+                    Ok(v) => v.into_raw(builder),
+                    Err(_) => todo!(),
+                };
 
                 builder.ins().brnz(cc, body, &[]);
                 builder.ins().jump(escape, &[]);

@@ -26,6 +26,14 @@ impl LocalTypeId {
     }
 
     #[inline]
+    pub fn canonicalize(&self, tym: &TypeMap) -> LocalTypeId {
+        match tym.get_tagged::<ClassType>(*self) {
+            Some(Ok(t)) => t.inner.kind,
+            _ => *self,
+        }
+    }
+
+    #[inline]
     pub fn is_builtin(&self) -> bool {
         (0..=255).contains(&self.0)
     }
@@ -288,7 +296,7 @@ impl TypeMap {
                     fields.push((layout, ty));
                 }
 
-                TypeDescriptor::Function(_) | TypeDescriptor::Class(_) => todo!(),
+                TypeDescriptor::Function(_) | TypeDescriptor::Class(_) => todo!("{:?}", tydesc),
             }
         }
 
