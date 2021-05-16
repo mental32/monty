@@ -3,12 +3,7 @@ use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, rc::Rc};
 use cranelift_codegen::ir::{self, ExternalName, GlobalValue, GlobalValueData};
 use cranelift_frontend::FunctionBuilder;
 
-use crate::{
-    ast::atom::StringRef,
-    prelude::{AstObject, Function, LocalTypeId},
-    scope::Scope,
-    ssamap::SSAMap,
-};
+use crate::{ast::atom::StringRef, fmt::Formattable, prelude::{AstObject, Function, LocalTypeId}, scope::Scope, ssamap::SSAMap};
 
 use super::{
     module::CodegenModule,
@@ -121,9 +116,19 @@ where
                 .coerce(from, into)
             {
                 Some(f) => f,
+
+                None if self.codegen_backend.global_context.type_map.is_variant_of_tagged_union(into, from) => {
+                    let sbuf = value.as_ptr().as_mut_struct((self.clone(), fx), from);
+
+                    let raw = sbuf.read(1, (self.clone(), fx)).unwrap();
+                    let ty = fx.func.dfg.value_type(raw);
+
+                    return TypedValue::by_val(raw, TypePair(into, Some(ty)))
+                },
+
                 None => panic!(
-                    "No suitable coercion rule found for {:?} -> {:?}",
-                    from, into
+                    "No suitable coercion rule found for {} -> {}",
+                    Formattable { inner: from, gctx: &self.codegen_backend.global_context }, Formattable { inner: into, gctx: &self.codegen_backend.global_context }
                 ),
             };
 

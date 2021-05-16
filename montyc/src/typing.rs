@@ -7,11 +7,7 @@ use std::{
 
 use dashmap::DashMap;
 
-use crate::{
-    codegen::context::CodegenLowerArg,
-    context::{GlobalContext, LocalContext, ModuleRef},
-    prelude::SpanRef,
-};
+use crate::{codegen::context::CodegenLowerArg, context::{GlobalContext, LocalContext, ModuleRef}, prelude::SpanRef};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -258,6 +254,40 @@ impl TypeMap {
         )
     }
 
+    pub fn is_tagged_union(&self, type_id: LocalTypeId) -> bool {
+        matches!(
+            self.get_tagged::<Generic>(type_id),
+            Some(Ok(TaggedType {
+                inner: Generic::Struct { inner },
+                ..
+            })) if inner.get(1).map(|ty| self.is_union(*ty)).unwrap_or(false)
+        )
+    }
+
+    #[allow(warnings)]
+    pub fn is_variant_of_tagged_union(&self, elem: LocalTypeId, tunion: LocalTypeId) -> bool {
+        let variants = match self.get_tagged::<Generic>(tunion).unwrap() {
+            Ok(TaggedType {
+                inner: Generic::Struct { inner },
+                ..
+            }) => match inner.get(1).and_then(|ty| self.get_tagged(*ty)) {
+                Some(Ok(TaggedType {
+                    inner: Generic::Union { inner },
+                    ..
+                })) => inner,
+                _ => return false,
+            },
+
+            _ => return false,
+        };
+
+        let elem = elem.canonicalize(self);
+
+        variants
+            .iter()
+            .any(|variant| variant.canonicalize(self) == elem)
+    }
+
     fn traverse_fields(
         &self,
         elements: &[LocalTypeId],
@@ -270,8 +300,7 @@ impl TypeMap {
             let tydesc = tydesc.value();
 
             match tydesc {
-                TypeDescriptor::Generic(Generic::Pointer { .. })
-                | TypeDescriptor::Simple(_) => {
+                TypeDescriptor::Generic(Generic::Pointer { .. }) | TypeDescriptor::Simple(_) => {
                     let size = SizeOf::size_of(tydesc, self).unwrap().get();
                     let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
 
@@ -283,7 +312,7 @@ impl TypeMap {
 
                 TypeDescriptor::Generic(Generic::Struct { inner }) => {
                     fields.extend(self.traverse_fields(inner.as_slice()))
-                },
+                }
 
                 TypeDescriptor::Generic(Generic::Union { inner }) => {
                     let (ty, (_, layout)) = inner
@@ -429,7 +458,7 @@ impl TypeMap {
     pub fn unify_func(&self, func_t: LocalTypeId, mold: &FunctionType) -> bool {
         let func = self.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
 
-        if (func.inner.name != mold.name)
+        if (func.inner.name.0 != mold.name.0)
             || (func.inner.args.len() != mold.args.len())
             || (mold.ret != Self::UNKNOWN && mold.ret != func.inner.ret)
         {
