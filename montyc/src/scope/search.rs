@@ -47,6 +47,8 @@ impl<'a> LookupIter<'a> {
             ScopeRoot::Class(klass) => todo!(),
         };
 
+        log::trace!("lookup:search_ordered Generated layout for the function body.");
+
         let end = match layout.blocks.iter().find(|(id, block)| {
             block
                 .nodes
@@ -186,9 +188,10 @@ impl<'a> LookupIter<'a> {
 
         for (object, original) in self.0.nodes.iter().map(|o| (o.unspanned(), Rc::clone(&o))) {
             let item = object.as_ref();
+            let unspanned = object.unspanned();
 
             if let Some(import) =
-                crate::isinstance!(object.as_ref(), Statement, Statement::Import(i) => i)
+                crate::isinstance!(unspanned.as_ref(), Statement, Statement::Import(i) => i).or_else(|| crate::isinstance!(unspanned.as_ref(), Import))
             {
                 let (module, item) = match import {
                     Import::Names(names) => (
