@@ -1,5 +1,11 @@
 #![deny(warnings)]
-#![feature(variant_count, bool_to_option, drain_filter, assert_matches, box_syntax)]
+#![feature(
+    variant_count,
+    bool_to_option,
+    drain_filter,
+    assert_matches,
+    box_syntax
+)]
 
 pub mod ast;
 pub mod class;
@@ -9,6 +15,73 @@ pub mod fmt;
 pub mod func;
 pub mod layout;
 pub(crate) mod ssamap;
+
+pub(crate) mod utils {
+    use std::rc::Rc;
+
+    use crate::{
+        ast::expr::{Expr, InfixOp},
+        context::LocalContext,
+        prelude::{AstObject, LocalTypeId, TypedObject},
+    };
+
+    fn lens_object(
+        o: &dyn AstObject,
+        predicate: &dyn Fn(&dyn AstObject) -> bool,
+    ) -> Option<Rc<dyn AstObject>> {
+        for subnode in o.walk()? {
+            if predicate(&*subnode) {
+                return Some(Rc::clone(&subnode));
+            }
+
+            match lens_object(&*subnode, predicate) {
+                s @ Some(_) => return s,
+                None => continue,
+            }
+        }
+
+        None
+    }
+
+    pub fn try_parse_union_literal(
+        ctx: &LocalContext<'_>,
+        e: &Expr,
+        in_binop: bool,
+    ) -> crate::Result<Option<Vec<LocalTypeId>>> {
+        if let Expr::BinOp {
+            left,
+            right,
+            op: InfixOp::Or,
+        } = e
+        {
+            let l = ctx.with(left.clone(), |ctx, left| try_parse_union_literal(&ctx, &left.inner, true))?;
+            let r = ctx.with(right.clone(), |ctx, right| try_parse_union_literal(&ctx, &right.inner, true))?;
+
+            let mut v = l.unwrap_or_default();
+            v.extend(r.unwrap_or_default());
+
+            if v.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(v))
+            }
+        } else if in_binop {
+            Ok(Some(vec![e.infer_type(ctx)?.canonicalize(&ctx.global_context.type_map)]))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn lens<T>(
+        object: &Rc<T>,
+        predicate: impl Fn(&dyn AstObject) -> bool,
+    ) -> Option<Rc<dyn AstObject>>
+    where
+        T: AstObject,
+    {
+        lens_object(&*(Rc::clone(object) as Rc<dyn AstObject>), &predicate)
+    }
+}
 
 pub mod lowering {
     pub trait Lower<Output> {
@@ -181,6 +254,7 @@ impl CompilerOptions {
 pub mod prelude {
     pub use crate::{
         ast::{AstObject, Spanned},
+        codegen::CodegenModule,
         context::{GlobalContext, LocalContext, ModuleContext, ModuleRef},
         error::{CompilerError, MontyError},
         func::{DataRef, Function},
@@ -188,7 +262,9 @@ pub mod prelude {
         lowering::{Lower, LowerWith},
         parser::{token::PyToken, Parseable, ParserT, Span, SpanRef},
         scope::{ChainedScope, LocalScope, LookupTarget, OpaqueScope, Scope, ScopeRoot},
-        typing::{FunctionType, LocalTypeId, TypeDescriptor, TypeMap, TypedObject, Generic, ClassType, TaggedType},
-        codegen::CodegenModule,
+        typing::{
+            ClassType, FunctionType, Generic, LocalTypeId, TaggedType, TypeDescriptor, TypeMap,
+            TypedObject,
+        },
     };
 }

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use super::{atom::Atom, primary::Primary, AstObject, Spanned};
+use super::{primary::Primary, AstObject, Spanned};
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -52,11 +52,11 @@ impl Import {
 
 impl AstObject for Import {
     fn span(&self) -> Option<logos::Span> {
-        todo!()
+        None
     }
 
     fn unspanned(&self) -> Rc<dyn AstObject> {
-        todo!()
+        Rc::new(self.clone())
     }
 
     fn walk(&self) -> Option<super::ObjectIter> {
@@ -80,7 +80,7 @@ impl TypedObject for Import {
         &self,
         _ctx: &crate::context::LocalContext<'a>,
     ) -> crate::Result<LocalTypeId> {
-        todo!()
+        unreachable!()
     }
 
     fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {
@@ -89,17 +89,11 @@ impl TypedObject for Import {
 }
 
 impl LookupTarget for Import {
-    fn is_named(&self, target: SpanRef) -> bool {
-        let names = match self {
-            Import::Names(names) | Import::From { names, .. } => names,
-        };
-
-        names
-            .iter()
-            .any(|name| matches!(&name.inner, Primary::Atomic(atom) if matches!(atom.as_ref(), Spanned { inner: Atom::Name((n, _)), .. } if *n == target)))
+    fn is_named(&self, _: SpanRef) -> bool {
+        false
     }
 
     fn name(&self) -> Option<SpanRef> {
-        todo!()
+        None
     }
 }

@@ -2,11 +2,7 @@ use std::rc::Rc;
 
 use nom::{branch::alt, error, multi::many0, sequence::terminated, IResult};
 
-use crate::{
-    ast::{atom::Atom, funcdef::FunctionDef, primary::Primary, Spanned},
-    parser::{comb::expect_many_n_var, token::PyToken, TokenSlice},
-    prelude::SpanRef,
-};
+use crate::{ast::{Spanned, atom::Atom, expr::Expr, funcdef::FunctionDef, primary::Primary}, parser::{comb::expect_many_n_var, token::PyToken, TokenSlice}, prelude::SpanRef};
 
 use super::{
     class::decorator_list, expect, expect_, expect_ident, expect_many_n, expr::expression, primary,
@@ -24,7 +20,7 @@ fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyTok
 #[inline]
 fn argument_annotated<'a>(
     stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, (Spanned<PyToken>, Spanned<Primary>)> {
+) -> IResult<TokenSlice<'a>, (Spanned<PyToken>, Spanned<Expr>)> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, name) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -32,15 +28,7 @@ fn argument_annotated<'a>(
     let (stream, kind) = match expect(stream, PyToken::Colon) {
         Ok((stream, _)) => {
             let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-            let (stream, kind) = primary(stream)?;
-
-            match &kind.inner {
-                Primary::Atomic(_) => {}
-                Primary::Subscript { value: _, index: _ } => {}
-                Primary::Call { func: _, args: _ } => {}
-                Primary::Attribute { left: _, attr: _ } => {}
-                Primary::Await(_) => unreachable!(),
-            }
+            let (stream, kind) = expression(stream)?;
 
             (stream, kind)
         }
@@ -63,7 +51,7 @@ fn arguments<'a>(
     TokenSlice<'a>,
     (
         Option<Spanned<PyToken>>,
-        Vec<(Spanned<PyToken>, Spanned<Primary>)>,
+        Vec<(Spanned<PyToken>, Spanned<Expr>)>,
     ),
 > {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;

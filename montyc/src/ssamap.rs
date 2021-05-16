@@ -38,6 +38,22 @@ where
         K::from(key)
     }
 
+    pub fn get_or_insert(&mut self, key: K, f: impl Fn() -> V) -> &mut V
+    where
+        K: Into<SSAKey>,
+    {
+        let key = key.into();
+
+        let key = if self.get_raw(key).is_none() {
+            let key = self.insert(f());
+            key.into()
+        } else {
+            key
+        };
+
+        self.get_raw_mut(key).unwrap()
+    }
+
     pub fn entry(&mut self, value: impl Into<V>) -> K
     where
         V: PartialEq,
@@ -58,7 +74,18 @@ where
         self.inner.get(key.into())
     }
 
+    pub fn get_mut(&mut self, key: K) -> Option<&mut V>
+    where
+        K: Into<SSAKey>,
+    {
+        self.inner.get_mut(key.into())
+    }
+
     pub fn get_raw(&self, key: SSAKey) -> Option<&V> {
         self.inner.get(key)
+    }
+
+    pub fn get_raw_mut(&mut self, key: SSAKey) -> Option<&mut V> {
+        self.inner.get_mut(key)
     }
 }

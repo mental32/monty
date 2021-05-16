@@ -44,7 +44,7 @@ impl From<StringRef> for SpanRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Atom {
     None,
     Ellipsis,
@@ -55,6 +55,32 @@ pub enum Atom {
     Tuple(Vec<Rc<Spanned<Expr>>>),
     Comment(SpanRef),
     Name((SpanRef, SpanRef)),
+}
+
+impl Atom {
+    pub fn as_name(&self) -> Option<(SpanRef, SpanRef)> {
+        match self {
+            Self::Name(t) => Some(t.clone()),
+            _ => None,
+        }
+    }
+}
+
+impl PartialEq for Atom {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bool(a), Self::Bool(k)) => a == k,
+            (Self::Int(n), Self::Int(i)) => n == i,
+            (Self::Str(s), Self::Str(t)) => s == t,
+            (Self::Name((a, _)), Self::Name((b, _))) => a == b,
+
+
+            (Self::Ellipsis, Self::Ellipsis)
+            | (Self::None, Self::None) => true,
+
+            _ => unimplemented!(),
+        }
+    }
 }
 
 impl Atom {
@@ -162,10 +188,21 @@ impl TypedObject for Atom {
                     if let Some(asn) = crate::isinstance!(top.as_ref(), Assign).or_else(
                         || crate::isinstance!(top_.as_ref(), Statement, Statement::Asn(n) => n),
                     ) {
-                        match asn.value.inner.infer_type(ctx) {
-                            Ok(i) => return Ok(i),
-                            Err(err) => ctx.exit_with_error(err),
+                        if let Some(ty) = ctx.global_context.database.type_of(&top, None) {
+                            return Ok(ty)
                         }
+
+                        let expected = {
+                            let mut ctx = ctx.clone();
+                            ctx.this = Some(Rc::clone(&top));
+                            asn.expected(&ctx)?
+                        };
+
+                        return match expected {
+                            Some((ty, _)) => Ok(ty),
+                            None => asn.value.inner.infer_type(ctx)
+                        };
+
                     } else if let Some(klass) = crate::isinstance!(top.as_ref(), ClassDef).or_else(
                         || crate::isinstance!(top_.as_ref(), Statement, Statement::Class(k) => k),
                     ) {

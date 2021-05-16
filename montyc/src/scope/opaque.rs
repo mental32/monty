@@ -85,6 +85,7 @@ impl Scope for OpaqueScope {
                 module_ref: scoped.scope.module_ref(),
                 scope: scoped.scope,
                 this: Some(object.clone()),
+                current_branch: None,
             };
 
             Some((object, ctx))

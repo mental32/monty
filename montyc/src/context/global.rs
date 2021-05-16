@@ -20,7 +20,7 @@ use crate::{
     },
     class::Class,
     codegen::{context::CodegenLowerArg, TypePair, TypedValue},
-    database::ObjectDatabase,
+    database::{DefId, ObjectDatabase},
     func::Function,
     parser::SpanInterner,
     phantom::PhantomObject,
@@ -95,6 +95,7 @@ pub struct GlobalContext {
     pub database: ObjectDatabase,
     pub phantom_objects: Vec<Rc<PhantomObject>>,
     pub strings: DashMap<StringRef, StringData>,
+    pub branches: RefCell<HashMap<DefId, HashMap<DefId, Vec<LocalTypeId>>>>,
 }
 
 const MAGICAL_NAMES: &str = include_str!("../magical_names.py");
@@ -120,6 +121,7 @@ impl GlobalContext {
             libstd: PathBuf::default(),
             resolver,
             database: Default::default(),
+            branches: RefCell::new(HashMap::new()),
             strings: DashMap::new(),
         }
     }
@@ -350,6 +352,7 @@ impl GlobalContext {
                         global_context: ctx,
                         module_ref: mref.clone(),
                         scope: item.scope.clone(),
+                        current_branch: None,
                         this: Some(item.object.clone()),
                     };
 
@@ -729,6 +732,7 @@ impl GlobalContext {
                 global_context: self,
                 module_ref: module_ref.clone(),
                 scope,
+                current_branch: None,
                 this: Some(Rc::clone(&object)),
             };
 

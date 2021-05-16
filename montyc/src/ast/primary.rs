@@ -6,9 +6,16 @@ use parser::SpanRef;
 use super::{
     atom::Atom, expr::Expr, funcdef::FunctionDef, stmt::Statement, AstObject, ObjectIter, Spanned,
 };
-use crate::{func::DataRef, parser, phantom::PhantomObject, prelude::*, scope::LookupOrder, typing::{Generic, TaggedType}};
+use crate::{
+    func::DataRef,
+    parser,
+    phantom::PhantomObject,
+    prelude::*,
+    scope::LookupOrder,
+    typing::{Generic, TaggedType},
+};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Primary {
     Atomic(Rc<Spanned<Atom>>),
 
@@ -32,6 +39,15 @@ pub enum Primary {
 
     /// `(await +)+<primary>`
     Await(Rc<Spanned<Primary>>),
+}
+
+impl PartialEq for Primary {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Atomic(a), Self::Atomic(b)) => a.inner == b.inner,
+            _ => false,
+        }
+    }
 }
 
 impl Primary {
@@ -265,16 +281,32 @@ impl TypedObject for Primary {
                     }),
                 };
 
+                let current_branch = ctx.current_branch.unwrap();
+                let branches = ctx.global_context.branches.borrow();
+                let current_branch = branches.get(&current_branch).unwrap();
+
                 let callsite = args
                     .as_ref()
                     .map(|args| {
                         args.iter()
-                            .enumerate()
-                            .map(|(_, arg)| {
+                            .map(|arg| {
                                 let mut ctx = ctx.clone();
                                 ctx.this = Some(arg.clone());
                                 arg.typecheck(&ctx).unwrap_or_compiler_error(&ctx);
-                                arg.infer_type(&ctx).unwrap_or_compiler_error(&ctx)
+
+                                let reprs = current_branch.iter().find_map(|(id, reprs)| {
+                                    let obj =
+                                        ctx.global_context.database.as_weak_object(*id).unwrap();
+
+                                    match crate::isinstance!(obj.as_ref(), Expr) {
+                                        Some(e) => (*e == arg.inner).then_some(reprs),
+                                        None => None,
+                                    }
+                                });
+
+                                let ty = arg.infer_type(&ctx).unwrap_or_compiler_error(&ctx);
+
+                                dbg!((ty, reprs))
                             })
                             .collect::<Vec<_>>()
                     })

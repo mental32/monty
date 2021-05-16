@@ -1,12 +1,6 @@
 use std::{fmt::Debug, rc::Rc};
 
-use crate::{
-    ast::{assign::Assign, class::ClassDef, funcdef::TypedFuncArg, stmt::Statement, AstObject},
-    context::{GlobalContext, LocalContext, ModuleRef},
-    func::Function,
-    phantom::PhantomObject,
-    prelude::SpanRef,
-};
+use crate::{ast::{AstObject, assign::Assign, class::ClassDef, funcdef::TypedFuncArg, import::Import, stmt::Statement}, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, phantom::PhantomObject, prelude::SpanRef};
 
 mod local;
 mod object;

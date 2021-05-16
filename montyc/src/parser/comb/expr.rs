@@ -207,13 +207,13 @@ fn shift_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Exp
 #[inline]
 fn bitwise_and<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, base) = sum(stream)?;
+    let (stream, base) = shift_expr(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
     if let Ok((stream, tok)) = expect_any_token([PyToken::And])(stream) {
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
-        let (stream, value) = shift_expr(stream)?;
+        let (stream, value) = bitwise_and(stream)?;
 
         let span = base.span.start..value.span.end;
 
@@ -233,13 +233,13 @@ fn bitwise_and<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
 #[inline]
 fn bitwise_xor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, base) = sum(stream)?;
+    let (stream, base) = bitwise_and(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
     if let Ok((stream, tok)) = expect_any_token([PyToken::Caret])(stream) {
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
-        let (stream, value) = bitwise_and(stream)?;
+        let (stream, value) = bitwise_xor(stream)?;
 
         let span = base.span.start..value.span.end;
 
@@ -259,13 +259,13 @@ fn bitwise_xor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
 #[inline]
 fn bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, base) = sum(stream)?;
+    let (stream, base) = bitwise_xor(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
     if let Ok((stream, tok)) = expect_any_token([PyToken::Pipe])(stream) {
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
-        let (stream, value) = bitwise_xor(stream)?;
+        let (stream, value) = bitwise_or(stream)?;
 
         let span = base.span.start..value.span.end;
 

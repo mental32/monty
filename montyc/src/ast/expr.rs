@@ -111,7 +111,7 @@ impl AsRef<str> for InfixOp {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     If {
         test: Rc<Spanned<Expr>>,
@@ -136,6 +136,21 @@ pub enum Expr {
     },
 
     Primary(Spanned<Primary>),
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other)  {
+            (Self::Primary(p), Self::Primary(r)) => p.inner == r.inner,
+            (Self::If { test: ltest, body: lbody, orelse: lorelse}, Self::If { test: rtest, body: rbody, orelse: rorelse}) => {
+                (ltest.inner == rtest.inner)
+                && (lbody.inner == rbody.inner)
+                && (lorelse.inner == rorelse.inner)
+            },
+
+            _ => false,
+        }
+    }
 }
 
 impl Parseable for Expr {
@@ -276,7 +291,7 @@ impl TypedObject for Expr {
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         match self {
-            Expr::If { test, .. } => {
+            Expr::If { test, body, orelse } => {
                 let test_type = ctx.with(Rc::clone(&test), |ctx, test| test.infer_type(&ctx))?;
 
                 if !ctx
@@ -291,6 +306,9 @@ impl TypedObject for Expr {
                 }
 
                 let _ = self.infer_type(ctx)?;
+
+                let _ = ctx.with(body.clone(), |ctx, this| { this.infer_type(&ctx)?; this.typecheck(&ctx) })?;
+                let _ = ctx.with(orelse.clone(), |ctx, this| { this.infer_type(&ctx)?; this.typecheck(&ctx) })?;
 
                 Ok(())
             }

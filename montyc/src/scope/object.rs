@@ -24,6 +24,7 @@ impl ScopedObject {
             this: Some(Rc::clone(&self.object)),
             global_context,
             module_ref: self.scope.module_ref(),
+            current_branch: None,
         };
 
         f(ctx, Rc::clone(&self.object))

@@ -1,6 +1,10 @@
 use cranelift_codegen::ir::{self, InstBuilder, MemFlags, StackSlot, Value};
 use cranelift_frontend::FunctionBuilder;
 
+use crate::prelude::LocalTypeId;
+
+use super::{TypePair, context::CodegenLowerArg, structbuf::StructBuf};
+
 #[derive(Debug, Clone)]
 pub struct Pointer {
     pub(super) base: PointerBase,
@@ -13,6 +17,25 @@ impl Pointer {
             base: PointerBase::Address(addr),
             offset: 0,
         }
+    }
+
+    pub fn as_mut_struct(&self, (ctx, _): CodegenLowerArg<'_, '_, '_>, type_id: LocalTypeId) -> StructBuf {
+        let fields = ctx
+            .codegen_backend
+            .global_context
+            .type_map
+            .fields_of(type_id)
+            .unwrap()
+            .drain(..)
+            .map(|(layout, type_id)| {
+                (
+                    layout,
+                    TypePair(type_id, Some(ctx.codegen_backend.scalar_type_of(type_id))),
+                )
+            })
+            .collect();
+
+        StructBuf::new(self.clone(), fields)
     }
 
     pub fn stack_slot(ss: StackSlot) -> Self {

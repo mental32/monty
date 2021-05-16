@@ -1,21 +1,15 @@
-use std::{cell::RefCell, marker::PhantomData, num::NonZeroUsize, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::{
+use crate::{ast::{
         atom::{Atom, StringRef},
         expr::Expr,
         funcdef::FunctionDef,
         primary::Primary,
         retrn::Return,
         stmt::Statement,
-    },
-    database::DefId,
-    prelude::*,
-    scope::ScopeRoot,
-    typing::TaggedType,
-};
+    }, database::DefId, prelude::*, scope::{ScopeRoot, ScopedObject}, typing::TaggedType};
 
 pub fn is_externaly_defined(
     def: &FunctionDef,
@@ -96,7 +90,7 @@ pub struct Function {
     pub def_id: DefId,
     has_extern_tag: bool,
 
-    pub scope: LocalScope<FunctionDef>,
+    pub scope: Rc<LocalScope<FunctionDef>>,
     pub kind: TaggedType<FunctionType>,
     pub vars: DashMap<(SpanRef, SpanRef), (LocalTypeId, Span)>,
     pub refs: RefCell<Vec<DataRef>>,
@@ -209,10 +203,24 @@ impl Function {
 
         if let Some(args) = &funcdef.args {
             for (name, ann) in args.iter() {
-                let ty = ctx
-                    .with(Rc::clone(&ann), |ctx, ann| ann.infer_type(&ctx))
-                    .unwrap_or_compiler_error(&ctx)
-                    .canonicalize(&ctx.global_context.type_map);
+
+                let (ty, _) = {
+                    let ty = match crate::utils::try_parse_union_literal(ctx, &ann.inner, false)? {
+                        Some(tys) => (ctx.global_context.type_map.tagged_union(tys), true),
+                        None => {
+                            let mut ctx = ctx.clone();
+                            ctx.this = Some(Rc::clone(ann) as Rc<_>);
+                            let ty = ann.infer_type(&ctx).unwrap_or_compiler_error(&ctx);
+                            (ty, false)
+                        }
+                    };
+    
+                    ctx.cache_type(&(Rc::clone(ann) as Rc<dyn AstObject>), ty.0);
+    
+                    ty
+                };
+
+                let ty = ty.canonicalize(&ctx.global_context.type_map);
 
                 vars.insert(name.clone(), (ty, ann.span.clone()));
             }
@@ -221,7 +229,7 @@ impl Function {
         let mut func = Self {
             has_extern_tag: false,
             def_id,
-            scope,
+            scope: Rc::new(scope),
             kind,
             vars,
             refs: Default::default(),
@@ -264,10 +272,28 @@ impl TypedObject for Function {
 
         assert_matches!(self.scope.root(), ScopeRoot::Func(_));
 
-        for scoped_object in self.scope.iter() {
-            assert_matches!(scoped_object.scope.root(), ScopeRoot::Func(_));
 
-            scoped_object.with_context(ctx.global_context, |local_context, object| {
+        let (def_span, def_node) = {
+            let def = ctx.this.clone().expect("`ctx.this` is not set.");
+            let span = def.span().expect("definition must be spanned.");
+
+            (span, def.unspanned())
+        };
+
+        let funcdef = def_node
+            .as_function()
+            .expect("Function::def must be a FunctionDef node!");
+
+        ctx.global_context.branches.borrow_mut().insert(self.def_id, HashMap::new());
+
+        for scoped_object in self.scope.iter() {
+            let scoped_object = ScopedObject {
+                object: scoped_object.object,
+                scope: Rc::clone(&self.scope) as Rc<_>
+            };
+
+            scoped_object.with_context(ctx.global_context, |mut local_context, object| {
+                local_context.current_branch = Some(self.def_id);
                 object.typecheck(&local_context)
             })?;
         }
@@ -279,17 +305,6 @@ impl TypedObject for Function {
         {
             // This function returns something (i.e. not `None`)
             // check the "tailing" blocks of the layout and make sure they're all Return statements.
-
-            let (def_span, def_node) = {
-                let def = ctx.this.clone().expect("`ctx.this` is not set.");
-                let span = def.span().expect("definition must be spanned.");
-
-                (span, def.unspanned())
-            };
-
-            let funcdef = def_node
-                .as_function()
-                .expect("Function::def must be a FunctionDef node!");
 
             let layout = {
                 let mut layout = funcdef.lower();

@@ -429,25 +429,50 @@ impl TypeMap {
     pub fn unify_call<'a>(
         &self,
         func_t: LocalTypeId,
-        callsite: impl Iterator<Item = &'a LocalTypeId>,
+        callsite: impl Iterator<Item = &'a (LocalTypeId, Option<&'a Vec<LocalTypeId>>)>,
     ) -> Result<LocalTypeId, (LocalTypeId, LocalTypeId, usize)> {
-        log::trace!("typing:unify_call {:?}", func_t);
-
         let func = self.get_tagged::<FunctionType>(func_t).unwrap().unwrap();
 
-        for (idx, (actual, expected)) in callsite.cloned().zip(func.inner.args).enumerate() {
-            if actual == Self::UNKNOWN || expected == Self::OBJECT {
+        log::trace!("typing:unify_call {:?}", func.inner);
+
+        for (idx, ((actual, reprs), expected)) in callsite.cloned().zip(func.inner.args).enumerate()
+        {
+            let representable_as_otherly_type = if let Some(reprs) = reprs {
+                log::trace!("typing:unify_call argument at idx={:?} has multiple legal types ({:?})", idx, reprs);
+
+                reprs.iter().cloned().any(|actual| {
+                    if actual == Self::UNKNOWN || expected == Self::OBJECT {
+                        return true;
+                    }
+
+                    match self.get_tagged::<ClassType>(actual) {
+                        Some(Ok(_)) if expected == TypeMap::TYPE => return true,
+                        Some(_) => (),
+                        None => unreachable!(),
+                    }
+
+                    self.type_eq(actual, expected)
+                })
+            } else {
+                false
+            };
+
+            if dbg!(representable_as_otherly_type) {
                 continue;
-            }
+            } else {
+                if actual == Self::UNKNOWN || expected == Self::OBJECT {
+                    continue;
+                }
 
-            match self.get_tagged::<ClassType>(actual) {
-                Some(Ok(_)) if expected == TypeMap::TYPE => continue,
-                Some(_) => (),
-                None => unreachable!(),
-            }
+                match self.get_tagged::<ClassType>(actual) {
+                    Some(Ok(_)) if expected == TypeMap::TYPE => continue,
+                    Some(_) => (),
+                    None => unreachable!(),
+                }
 
-            if !self.type_eq(actual, expected) {
-                return Err((expected, actual, idx));
+                if !self.type_eq(actual, expected) {
+                    return Err((expected, actual, idx));
+                }
             }
         }
 
@@ -497,7 +522,9 @@ impl TypeMap {
 
     #[inline]
     pub fn type_eq(&self, left: LocalTypeId, right: LocalTypeId) -> bool {
-        left == right || self.coercion_rules.contains_key(&(left, right))
+        let eq = dbg!(left == right) || dbg!(self.coercion_rules.contains_key(&(left, right)));
+        log::trace!("typing:type_eq ({:?} == {:?}) = {:?}", left, right, eq);
+        eq
     }
 
     #[inline]

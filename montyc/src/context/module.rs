@@ -13,7 +13,7 @@ use dashmap::DashMap;
 #[derive(Debug, Clone)]
 pub struct ModuleContext {
     pub(super) path: PathBuf,
-    pub(crate) module: Rc<Module>,
+    pub module: Rc<Module>,
     pub(super) scope: Rc<dyn Scope>,
     pub source: Rc<str>,
     pub globals: DashMap<NonZeroUsize, Rc<Spanned<Expr>>>,
@@ -26,6 +26,7 @@ impl ModuleContext {
             module_ref: ModuleRef::from(self.path.clone()),
             scope: self.scope.clone(),
             this: None,
+            current_branch: None,
         }
     }
 

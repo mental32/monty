@@ -65,8 +65,7 @@ impl LowerCodegen for Atom {
                 let elements = elements.clone();
                 let (_, layout) = ctx.size_and_layout_of(TypePair(kind, None)).unwrap();
 
-                let alloca = box move |(ctx, builder): CodegenLowerArg<'_, '_, '_>,
-                                       storage: &Storage| {
+                let alloca: Box<RValueAlloc<'_>> = box move |(ctx, builder), storage| {
                     {
                         let mut sbuf = storage.as_mut_struct((ctx.clone(), builder));
 
@@ -135,7 +134,7 @@ impl LowerCodegen for Atom {
                 } else {
                     let def = self
                         .resolve_name_to_definition(
-                            &ctx.func.scope,
+                            &*ctx.func.scope,
                             &ctx.codegen_backend.global_context,
                         )
                         .expect(&format!("{:?}", self))
@@ -242,7 +241,7 @@ impl LowerCodegen for Primary {
 
                         let storage = ctx.allocator.borrow().get(alloc_id);
 
-                        let _value = f((ctx.clone(), builder), &*storage).unwrap();
+                        let _ = f((ctx.clone(), builder), &*storage).unwrap();
 
                         if let Expr::Primary(Spanned {
                             inner: Primary::Atomic(atom),
@@ -416,6 +415,7 @@ impl LowerCodegen for Expr {
                     .database
                     .type_of(&(Rc::clone(body) as Rc<_>), None)
                     .unwrap();
+
                 let orelse_ty = ctx
                     .codegen_backend
                     .global_context
@@ -750,24 +750,54 @@ impl LowerCodegen for Statement {
             }
 
             Statement::Asn(assign) => {
+                let name = assign.name().unwrap();
+
                 let mut value = match assign.value.inner.lower((ctx.clone(), builder)).unwrap() {
                     Ok(value) => value,
                     Err((layout, f)) => {
                         let value_t = ctx.type_of(&assign.value).unwrap();
 
                         return ctx
-                            .with_var_alloc(assign.name.name().unwrap(), |storage| {
-                                f((ctx.clone(), builder), storage)
-                            })
+                            .with_var_alloc(name, |storage| f((ctx.clone(), builder), storage))
                             .map(Ok);
                     }
                 };
 
-                if let Some(ann) = &assign.kind {
-                    let expected = ctx.type_of(ann).unwrap();
+                let expected = assign
+                    .kind
+                    .as_ref()
+                    .and_then(|ann| ctx.type_of(ann))
+                    .unwrap_or_else(|| {
+                        ctx.func
+                            .vars
+                            .get(&assign.name.inner.as_name().unwrap())
+                            .unwrap()
+                            .value()
+                            .0
+                    });
 
-                    value = ctx.maybe_coerce(value, expected, builder);
+                if ctx
+                    .codegen_backend
+                    .global_context
+                    .type_map
+                    .is_variant_of_tagged_union(value.kind.0, expected)
+                {
+                    return ctx.with_var_alloc(name, |storage| {
+                        let sbuf = storage.as_mut_struct((ctx.clone(), builder));
+
+                        let value_t = value.kind.0;
+                        let value_t_tag = builder
+                            .ins()
+                            .iconst(ir::types::I64, value_t.as_usize() as i64);
+
+                        sbuf.write(0, value_t_tag, (ctx.clone(), builder));
+                        sbuf.write(1, value.into_raw(builder), (ctx.clone(), builder));
+
+                        None
+                    });
                 }
+
+                value = ctx.maybe_coerce(value, expected, builder);
 
                 ctx.with_var_alloc(assign.name.name().unwrap(), move |storage| {
                     storage.write(value, builder)

@@ -7,7 +7,7 @@ use super::{atom::Atom, expr::Expr, primary::Primary, AstObject, Spanned};
 #[derive(Debug, Clone)]
 pub struct TypedFuncArg {
     pub(crate) name: SpanRef,
-    pub(crate) annotation: Rc<Spanned<Primary>>,
+    pub(crate) annotation: Rc<Spanned<Expr>>,
 }
 
 impl LookupTarget for TypedFuncArg {
@@ -48,7 +48,7 @@ impl TypedObject for TypedFuncArg {
 pub struct FunctionDef {
     pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
-    pub args: Option<Vec<((SpanRef, SpanRef), Rc<Spanned<Primary>>)>>,
+    pub args: Option<Vec<((SpanRef, SpanRef), Rc<Spanned<Expr>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
     pub decorator_list: Vec<Rc<Spanned<Primary>>>,
     pub returns: Option<Rc<Spanned<Expr>>>,
@@ -80,19 +80,27 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         let mut args = vec![];
 
         if let Some(def_args) = &def.args {
-            for (_arg_name, arg_ann) in def_args {
+            for (_arg_name, ann) in def_args {
                 let mut ctx = ctx.clone();
-                ctx.this = Some(arg_ann.clone());
+                ctx.this = Some(ann.clone());
 
-                let type_id = arg_ann.infer_type(&ctx).unwrap_or_compiler_error(&ctx);
-
-                let type_id = match ctx.global_context.type_map.get_tagged::<ClassType>(type_id) {
-                    Some(Ok(klass)) => klass.inner.kind,
-                    Some(Err(_)) => type_id,
-                    None => unreachable!()
+                let (ty, _) = {
+                    let ty = match crate::utils::try_parse_union_literal(&ctx, &ann.inner, false).unwrap_or_compiler_error(&ctx) {
+                        Some(tys) => (ctx.global_context.type_map.tagged_union(tys), true),
+                        None => {
+                            let mut ctx = ctx.clone();
+                            ctx.this = Some(Rc::clone(ann) as Rc<_>);
+                            let ty = ann.infer_type(&ctx).unwrap_or_compiler_error(&ctx);
+                            (ty, false)
+                        }
+                    };
+    
+                    ctx.cache_type(&(Rc::clone(ann) as Rc<dyn AstObject>), ty.0);
+    
+                    ty
                 };
 
-                args.push(type_id);
+                args.push(ty);
             }
         }
 
@@ -155,8 +163,9 @@ impl TypedObject for FunctionDef {
         let lctx = LocalContext {
             global_context: ctx.global_context,
             module_ref: ctx.module_ref.clone(),
-            scope: Rc::new(func.scope.clone()) as Rc<_>,
+            scope: Rc::clone(&func.scope) as Rc<_>,
             this: ctx.this.clone(),
+            current_branch: None,
         };
 
         func.typecheck(&lctx)?;

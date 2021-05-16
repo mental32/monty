@@ -3,6 +3,7 @@ use std::rc::Rc;
 use crate::{
     ast::AstObject,
     class::Class,
+    database::DefId,
     error::MontyError,
     fmt::Formattable,
     scope::Scope,
@@ -176,6 +177,7 @@ pub struct LocalContext<'a> {
     pub module_ref: ModuleRef,
     pub scope: Rc<dyn Scope>,
     pub this: Option<Rc<dyn AstObject>>,
+    pub current_branch: Option<DefId>,
 }
 
 impl<'a> LocalContext<'a> {
