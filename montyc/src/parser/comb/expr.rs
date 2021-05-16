@@ -187,7 +187,7 @@ fn shift_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Exp
             InfixOp::RightShift
         };
 
-        let (stream, value) = shift_expr(stream)?;
+        let (stream, value) = expression(stream)?;
 
         let span = base.span.start..value.span.end;
 
@@ -204,47 +204,84 @@ fn shift_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Exp
     }
 }
 
-// This whole commented out chunk is part of the grammar (see cpython/grammar/Python.gram)
-// Other parser implementations seem to just copy it verbatim i.e. pypy and RustPython
-//
-// I do not understand what the point is structuring the parser this way and I'm
-// not a fan of the current layout of the `ast.Comparison` node in CPython.
-//
-// I think it's confusing and non-obvious to users and I suspect that this
-// particular segment of the grammar/parser is responsible for it. So I'm just
-// going to leave bitwise AND/OR/XOR, GT/LT/GTE/LTE, "is not", "is", "not in", "in"
-// unsupported for the time being before I have to go and figure out a
-// proper implementation.
+#[inline]
+fn bitwise_and<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, base) = sum(stream)?;
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
-// #[inline]
-// fn bitwise_and<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
-//     parse_single_binop(
-//         stream,
-//         shift_expr,
-//         |left, right| AstNode::And { left, right },
-//         PyToken::And,
-//     )
-// }
+    if let Ok((stream, tok)) = expect_any_token([PyToken::And])(stream) {
+        let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
-// #[inline]
-// fn bitwise_xor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
-//     parse_single_binop(
-//         stream,
-//         bitwise_and,
-//         |left, right| AstNode::Xor { left, right },
-//         PyToken::Caret,
-//     )
-// }
+        let (stream, value) = shift_expr(stream)?;
 
-// #[inline]
-// fn bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
-//     parse_single_binop(
-//         stream,
-//         bitwise_xor,
-//         |left, right| AstNode::Or { left, right },
-//         PyToken::Pipe,
-//     )
-// }
+        let span = base.span.start..value.span.end;
+
+        let left = Rc::new(base);
+        let right = Rc::new(value);
+
+        let inner = Expr::BinOp { left, right, op: InfixOp::And};
+
+        let obj = Spanned { span, inner };
+
+        Ok((stream, obj))
+    } else {
+        Ok((stream, base))
+    }
+}
+
+#[inline]
+fn bitwise_xor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, base) = sum(stream)?;
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+    if let Ok((stream, tok)) = expect_any_token([PyToken::Caret])(stream) {
+        let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+        let (stream, value) = bitwise_and(stream)?;
+
+        let span = base.span.start..value.span.end;
+
+        let left = Rc::new(base);
+        let right = Rc::new(value);
+
+        let inner = Expr::BinOp { left, right, op: InfixOp::Xor};
+
+        let obj = Spanned { span, inner };
+
+        Ok((stream, obj))
+    } else {
+        Ok((stream, base))
+    }
+}
+
+#[inline]
+fn bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, base) = sum(stream)?;
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+    if let Ok((stream, tok)) = expect_any_token([PyToken::Pipe])(stream) {
+        let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+        let (stream, value) = bitwise_xor(stream)?;
+
+        let span = base.span.start..value.span.end;
+
+        let left = Rc::new(base);
+        let right = Rc::new(value);
+
+        let inner = Expr::BinOp { left, right, op: InfixOp::Or};
+
+        let obj = Spanned { span, inner };
+
+        Ok((stream, obj))
+    } else {
+        Ok((stream, base))
+    }
+}
+
 
 // #[inline]
 // fn is_bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {
@@ -355,7 +392,7 @@ fn equality<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>
     use PyToken::{Bang, Equal, Whitespace};
 
     let (stream, _) = expect_many_n::<0>(Whitespace)(stream)?;
-    let (stream, left) = shift_expr(stream)?;
+    let (stream, left) = bitwise_or(stream)?;
 
     let (stream, _) = expect_many_n::<0>(Whitespace)(stream)?;
     let (stream, token) = expect_any_of([Equal, Bang])(stream)?;
@@ -384,7 +421,7 @@ fn equality<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>
 
 #[inline]
 fn comparison<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
-    alt((equality, shift_expr))(stream)
+    alt((equality, bitwise_or))(stream)
 }
 
 #[inline]
