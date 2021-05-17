@@ -2,7 +2,11 @@ use std::rc::Rc;
 
 use nom::{branch::alt, error, multi::many0, sequence::terminated, IResult};
 
-use crate::{ast::{Spanned, atom::Atom, expr::Expr, funcdef::FunctionDef, primary::Primary}, parser::{comb::expect_many_n_var, token::PyToken, TokenSlice}, prelude::SpanRef};
+use crate::{
+    ast::{atom::Atom, expr::Expr, funcdef::FunctionDef, primary::Primary, Spanned},
+    parser::{comb::expect_many_n_var, token::PyToken, TokenSlice},
+    prelude::SpanRef,
+};
 
 use super::{
     class::decorator_list, expect, expect_, expect_ident, expect_many_n, expr::expression, primary,

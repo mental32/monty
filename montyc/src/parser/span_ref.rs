@@ -83,7 +83,10 @@ impl SpanInterner {
     #[inline]
     pub fn get_group(&self, group: SpanRef) -> Option<&[(NonZeroUsize, ModuleRef)]> {
         let (_, hash) = self.span_trace_map.get(&group)?;
-        self.clobber_map.get(hash).as_ref().map(|(_, v)| v.as_slice())
+        self.clobber_map
+            .get(hash)
+            .as_ref()
+            .map(|(_, v)| v.as_slice())
     }
 
     #[inline]
@@ -118,9 +121,7 @@ impl SpanInterner {
 
     #[inline]
     pub fn get<'a>(&self, reference: SpanRef) -> Option<Span> {
-        self.inner
-            .get(usize::from(reference))
-            .cloned()
+        self.inner.get(usize::from(reference)).cloned()
     }
 
     #[inline]

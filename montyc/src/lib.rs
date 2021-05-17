@@ -54,8 +54,12 @@ pub(crate) mod utils {
             op: InfixOp::Or,
         } = e
         {
-            let l = ctx.with(left.clone(), |ctx, left| try_parse_union_literal(&ctx, &left.inner, true))?;
-            let r = ctx.with(right.clone(), |ctx, right| try_parse_union_literal(&ctx, &right.inner, true))?;
+            let l = ctx.with(left.clone(), |ctx, left| {
+                try_parse_union_literal(&ctx, &left.inner, true)
+            })?;
+            let r = ctx.with(right.clone(), |ctx, right| {
+                try_parse_union_literal(&ctx, &right.inner, true)
+            })?;
 
             let mut v = l.unwrap_or_default();
             v.extend(r.unwrap_or_default());
@@ -66,7 +70,9 @@ pub(crate) mod utils {
                 Ok(Some(v))
             }
         } else if in_binop {
-            Ok(Some(vec![e.infer_type(ctx)?.canonicalize(&ctx.global_context.type_map)]))
+            Ok(Some(vec![e
+                .infer_type(ctx)?
+                .canonicalize(&ctx.global_context.type_map)]))
         } else {
             Ok(None)
         }

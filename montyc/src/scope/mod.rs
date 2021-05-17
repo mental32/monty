@@ -1,6 +1,15 @@
 use std::{fmt::Debug, rc::Rc};
 
-use crate::{ast::{AstObject, assign::Assign, class::ClassDef, funcdef::TypedFuncArg, import::Import, stmt::Statement}, context::{GlobalContext, LocalContext, ModuleRef}, func::Function, phantom::PhantomObject, prelude::SpanRef};
+use crate::{
+    ast::{
+        assign::Assign, class::ClassDef, funcdef::TypedFuncArg, import::Import, stmt::Statement,
+        AstObject,
+    },
+    context::{GlobalContext, LocalContext, ModuleRef},
+    func::Function,
+    phantom::PhantomObject,
+    prelude::SpanRef,
+};
 
 mod local;
 mod object;
@@ -95,13 +104,16 @@ pub trait Scope: core::fmt::Debug {
             .drain_filter(|o| {
                 let o = o.unspanned().unspanned();
 
-                assert_matches!(o.name(), Some(n) if n == target, "{:?}", o);
+                if crate::isinstance!(o.as_ref(), Import).is_none() {
+                    assert_matches!(o.name(), Some(n) if n == target, "{:?}", o);
+                }
 
                 !(crate::isinstance!(o.as_ref(), Assign).is_some()
                     || o.as_ref().downcast_ref::<Function>().is_some()
                     || crate::isinstance!(o.as_ref(), ClassDef).is_some()
                     || crate::isinstance!(o.as_ref(), TypedFuncArg).is_some()
                     || crate::isinstance!(o.as_ref(), PhantomObject).is_some()
+                    || crate::isinstance!(o.as_ref(), Import).is_some()
                     || o.as_ref().as_function().is_some())
             })
             .collect::<Vec<_>>();

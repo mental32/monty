@@ -191,7 +191,8 @@ impl<'a> LookupIter<'a> {
             let unspanned = object.unspanned();
 
             if let Some(import) =
-                crate::isinstance!(unspanned.as_ref(), Statement, Statement::Import(i) => i).or_else(|| crate::isinstance!(unspanned.as_ref(), Import))
+                crate::isinstance!(unspanned.as_ref(), Statement, Statement::Import(i) => i)
+                    .or_else(|| crate::isinstance!(unspanned.as_ref(), Import))
             {
                 let (module, item) = match import {
                     Import::Names(names) => (

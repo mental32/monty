@@ -127,7 +127,7 @@ impl LowerCodegen for Atom {
             }
 
             Atom::Float(_) => todo!(),
-            Atom::Comment(_) => unreachable!(),
+            Atom::Comment(_) => None,
             Atom::Name((n, _)) => {
                 if ctx.vars.contains_key(&n) {
                     ctx.with_var_alloc(*n, |storage| Some(Ok(storage.as_ptr_value())))
@@ -325,6 +325,9 @@ impl LowerCodegen for Primary {
                                 Ok(v) => v,
                                 Err(_) => todo!(),
                             };
+
+                            let param_t =
+                                param_t.canonicalize(&ctx.codegen_backend.global_context.type_map);
 
                             ctx.maybe_coerce(value, param_t, builder)
                         })

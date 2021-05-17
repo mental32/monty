@@ -1,7 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, path::Path, rc::Rc};
 
-use crate::{codegen::{TypePair, TypedValue, context::CodegenContext, storage::Storage}, prelude::*};
-
+use crate::{
+    codegen::{context::CodegenContext, storage::Storage, TypePair, TypedValue},
+    func::VarType,
+    prelude::*,
+};
 
 use crate::{
     ast::{atom::StringRef, retrn::Return},
@@ -26,13 +29,11 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataContext, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-
 #[derive(Debug)]
 pub struct ModuleNamespace {
     pub namespace: u32,
     pub functions: HashMap<NonZeroUsize, (ExternalName, FuncId)>,
 }
-
 
 #[derive(Debug)]
 pub struct GlobalData {
@@ -76,9 +77,15 @@ impl<'global> CodegenModule<'global> {
     pub fn scalar_type_of(&self, type_id: LocalTypeId) -> ir::Type {
         match self.types.get(&type_id) {
             Some(ty) => *ty,
+
+            None if self.global_context.type_map.is_pointer(type_id) => {
+                self.scalar_type_of(TypeMap::I64)
+            }
+
             None if self.global_context.type_map.is_class(type_id) => {
                 self.scalar_type_of(TypeMap::INTEGER)
             }
+
             None => {
                 panic!(
                     "Unable to translate type: {}",
@@ -127,13 +134,25 @@ impl<'global> CodegenModule<'global> {
         let mut sig = Signature::new(callcov);
 
         if func.kind.inner.ret != TypeMap::NONE_TYPE {
-            sig.returns
-                .push(ir::AbiParam::new(self.types[&func.kind.inner.ret]));
+            let t = if self.global_context.type_map.is_scalar(func.kind.inner.ret) {
+                self.scalar_type_of(func.kind.inner.ret)
+            } else {
+                let ptr = self.global_context.type_map.pointer_to(func.kind.inner.ret);
+                self.scalar_type_of(ptr)
+            };
+
+            sig.returns.push(ir::AbiParam::new(t));
         }
 
-        for param in func.kind.inner.args.iter() {
-            sig.params
-                .push(ir::AbiParam::new(self.scalar_type_of(*param)));
+        for param in func.kind.inner.args.iter().cloned() {
+            let t = if self.global_context.type_map.is_scalar(param) {
+                self.scalar_type_of(param)
+            } else {
+                let ptr = self.global_context.type_map.pointer_to(param);
+                self.scalar_type_of(ptr)
+            };
+
+            sig.params.push(ir::AbiParam::new(t));
         }
 
         let func_def_name = func.name(self.global_context);
@@ -261,13 +280,32 @@ impl<'global> CodegenModule<'global> {
 
         let mut vars = HashMap::new();
 
-        for var in func.vars.iter() {
-            let ((var, _), ty) = (var.key().clone(), (var.0));
+        for refm in func.vars.iter() {
+            let ((var, _), (ty, _, var_t)) = (refm.key().clone(), (refm.value().clone()));
 
-            let scalar_ty = self.global_context.type_map.is_scalar(ty).then(|| self.scalar_type_of(ty));
+            let scalar_ty = self
+                .global_context
+                .type_map
+                .is_scalar(ty)
+                .then(|| self.scalar_type_of(ty));
 
-            let storage =
-                Storage::new_stack_slot((ctx.clone(), &mut builder), TypePair(ty, scalar_ty));
+            let storage = match (scalar_ty, var_t) {
+                (_, VarType::Local) => {
+                    Storage::new_stack_slot((ctx.clone(), &mut builder), TypePair(ty, scalar_ty))
+                }
+
+                (_, VarType::Param) => {
+                    // values without a scalar representation are
+                    // probably being passed in by reference.
+
+                    let ptr = self.global_context.type_map.pointer_to(ty);
+
+                    Storage::new_stack_slot(
+                        (ctx.clone(), &mut builder),
+                        TypePair(ptr, Some(ir::types::I64)),
+                    )
+                }
+            };
 
             let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
 
@@ -294,18 +332,14 @@ impl<'global> CodegenModule<'global> {
 
                 let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
-                for (((name, _), kind), value) in func.args(&self.global_context).zip(params.iter())
-                {
+                for (((name, _), _), value) in func.args(&self.global_context).zip(params.iter()) {
                     let alloc_id = vars.get(&name).unwrap().clone();
 
                     let alloc = ctx.allocator.borrow();
 
                     let storage = alloc.get(alloc_id);
 
-                    storage.write(
-                        TypedValue::by_val(*value, TypePair(kind, Some(self.scalar_type_of(kind)))),
-                        &mut builder,
-                    );
+                    storage.write(TypedValue::by_val(*value, storage.kind()), &mut builder);
                 }
             }
 

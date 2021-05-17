@@ -9,11 +9,7 @@ pub(crate) mod local;
 pub(crate) mod module;
 pub(crate) mod resolver;
 
-pub use self::{
-    global::GlobalContext,
-    local::LocalContext,
-    module::{ModuleContext},
-};
+pub use self::{global::GlobalContext, local::LocalContext, module::ModuleContext};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, derive_more::From)]
 pub struct ModuleRef(pub(crate) PathBuf);

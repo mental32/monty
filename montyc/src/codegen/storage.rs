@@ -25,13 +25,17 @@ impl Storage {
         //        Cranelift gets a way to specify stack slot alignment.
         let slot_size = (size + 15) / 16 * 16;
 
-        let stack_slot = builder
-            .create_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
+        let stack_slot =
+            builder.create_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, slot_size));
 
         Self {
             inner: StorageKind::Addr(Pointer::stack_slot(stack_slot)),
             kind,
         }
+    }
+
+    pub fn kind(&self) -> TypePair {
+        self.kind.clone()
     }
 
     pub fn write(&self, tvalue: TypedValue, fx: &mut FunctionBuilder) {

@@ -3,7 +3,7 @@ use cranelift_frontend::FunctionBuilder;
 
 use crate::prelude::LocalTypeId;
 
-use super::{TypePair, context::CodegenLowerArg, structbuf::StructBuf};
+use super::{context::CodegenLowerArg, structbuf::StructBuf, TypePair};
 
 #[derive(Debug, Clone)]
 pub struct Pointer {
@@ -19,7 +19,11 @@ impl Pointer {
         }
     }
 
-    pub fn as_mut_struct(&self, (ctx, _): CodegenLowerArg<'_, '_, '_>, type_id: LocalTypeId) -> StructBuf {
+    pub fn as_mut_struct(
+        &self,
+        (ctx, _): CodegenLowerArg<'_, '_, '_>,
+        type_id: LocalTypeId,
+    ) -> StructBuf {
         let fields = ctx
             .codegen_backend
             .global_context
@@ -52,12 +56,7 @@ impl Pointer {
         }
     }
 
-    pub fn store(
-        &self,
-        value: Value,
-        offset: i32,
-        fx: &mut FunctionBuilder,
-    ) -> Pointer {
+    pub fn store(&self, value: Value, offset: i32, fx: &mut FunctionBuilder) -> Pointer {
         let _ = match self.base {
             PointerBase::Address(addr) => fx.ins().store(MemFlags::new(), value, addr, offset),
             PointerBase::Stack(ss) => fx.ins().stack_store(value, ss, offset),

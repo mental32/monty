@@ -17,7 +17,9 @@ use crate::{
     typing::{LocalTypeId, TypeMap, TypedObject},
 };
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, derive_more::From, derive_more::Into)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, derive_more::From, derive_more::Into,
+)]
 pub struct DefId(usize);
 
 #[derive(Debug)]

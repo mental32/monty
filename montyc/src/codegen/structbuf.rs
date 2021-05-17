@@ -1,12 +1,8 @@
 use std::convert::TryFrom;
 
-use cranelift_codegen::ir::{Value};
+use cranelift_codegen::ir::Value;
 
-use super::{
-    context::{CodegenLowerArg},
-    pointer::Pointer,
-    tvalue::TypePair,
-};
+use super::{context::CodegenLowerArg, pointer::Pointer, tvalue::TypePair};
 
 #[derive(Debug)]
 struct Field {
@@ -55,11 +51,7 @@ impl StructBuf {
     }
 
     /// Read the `n`th field of this struct and produce it as a scalar value.
-    pub fn read(
-        &self,
-        field: usize,
-        (_, builder): CodegenLowerArg<'_, '_, '_>,
-    ) -> Option<Value> {
+    pub fn read(&self, field: usize, (_, builder): CodegenLowerArg<'_, '_, '_>) -> Option<Value> {
         let field = self.fields.get(field)?;
 
         let kind = if let TypePair(_, Some(kind)) = field.kind {
@@ -87,11 +79,7 @@ impl StructBuf {
         Some(ptr)
     }
 
-    pub fn addr(
-        &self,
-        (_, builder): CodegenLowerArg<'_, '_, '_>,
-        field: usize,
-    ) -> Option<Pointer> {
+    pub fn addr(&self, (_, builder): CodegenLowerArg<'_, '_, '_>, field: usize) -> Option<Pointer> {
         let field = self.fields.get(field)?;
 
         let ptr = self.pointer.offset(field.offset, builder);

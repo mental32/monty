@@ -7,7 +7,11 @@ use std::{
 
 use dashmap::DashMap;
 
-use crate::{codegen::context::CodegenLowerArg, context::{GlobalContext, LocalContext, ModuleRef}, prelude::SpanRef};
+use crate::{
+    codegen::context::CodegenLowerArg,
+    context::{GlobalContext, LocalContext, ModuleRef},
+    prelude::SpanRef,
+};
 
 pub type NodeId = Option<NonZeroUsize>;
 
@@ -35,7 +39,7 @@ impl LocalTypeId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TaggedType<T> {
     pub type_id: LocalTypeId,
     pub inner: T,
@@ -260,7 +264,7 @@ impl TypeMap {
             Some(Ok(TaggedType {
                 inner: Generic::Struct { inner },
                 ..
-            })) if inner.get(1).map(|ty| self.is_union(*ty)).unwrap_or(false)
+            })) if matches!(inner.as_slice(), [TypeMap::I64, maybe_union] if self.is_union(*maybe_union))
         )
     }
 
@@ -286,6 +290,28 @@ impl TypeMap {
         variants
             .iter()
             .any(|variant| variant.canonicalize(self) == elem)
+    }
+
+    pub fn pointer_to(&self, t: LocalTypeId) -> LocalTypeId {
+        self.entry(TypeDescriptor::Generic(Generic::Pointer { inner: t }))
+    }
+
+    pub fn points_to(&self, p: LocalTypeId, t: LocalTypeId) -> bool {
+        matches!(self.get_tagged(p), Some(Ok(TaggedType { inner: Generic::Pointer { inner }, ..})) if inner == t)
+    }
+
+    pub fn is_pointer(&self, t: LocalTypeId) -> bool {
+        matches!(
+            self.get_tagged(t),
+            Some(Ok(TaggedType {
+                inner: Generic::Pointer { .. },
+                ..
+            }))
+        )
+    }
+
+    pub fn is_pointer_to_tagged_union(&self, p: LocalTypeId) -> bool {
+        matches!(self.get_tagged(p), Some(Ok(TaggedType { inner: Generic::Pointer { inner }, ..})) if self.is_tagged_union(inner))
     }
 
     fn traverse_fields(
@@ -437,8 +463,14 @@ impl TypeMap {
 
         for (idx, ((actual, reprs), expected)) in callsite.cloned().zip(func.inner.args).enumerate()
         {
+            let expected = expected.canonicalize(self);
+
             let representable_as_otherly_type = if let Some(reprs) = reprs {
-                log::trace!("typing:unify_call argument at idx={:?} has multiple legal types ({:?})", idx, reprs);
+                log::trace!(
+                    "typing:unify_call argument at idx={:?} has multiple legal types ({:?})",
+                    idx,
+                    reprs
+                );
 
                 reprs.iter().cloned().any(|actual| {
                     if actual == Self::UNKNOWN || expected == Self::OBJECT {
@@ -457,7 +489,7 @@ impl TypeMap {
                 false
             };
 
-            if dbg!(representable_as_otherly_type) {
+            if representable_as_otherly_type {
                 continue;
             } else {
                 if actual == Self::UNKNOWN || expected == Self::OBJECT {
@@ -522,7 +554,9 @@ impl TypeMap {
 
     #[inline]
     pub fn type_eq(&self, left: LocalTypeId, right: LocalTypeId) -> bool {
-        let eq = dbg!(left == right) || dbg!(self.coercion_rules.contains_key(&(left, right)));
+        let eq = left == right
+            || self.coercion_rules.contains_key(&(left, right))
+            || self.is_variant_of_tagged_union(right, left);
         log::trace!("typing:type_eq ({:?} == {:?}) = {:?}", left, right, eq);
         eq
     }
@@ -599,7 +633,7 @@ impl SizeOf<&TypeMap> for TypeDescriptor {
             TypeDescriptor::Function(_) => None,
             TypeDescriptor::Class(_) => BuiltinTypeId::Int.size_of(()),
             TypeDescriptor::Generic(inner) => match inner {
-                Generic::Pointer { inner: _ } => todo!(),
+                Generic::Pointer { inner: _ } => BuiltinTypeId::I64.size_of(()),
                 Generic::Struct { inner } => NonZeroU32::new(
                     inner
                         .iter()

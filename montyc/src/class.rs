@@ -74,7 +74,10 @@ impl Class {
 }
 
 impl TypedObject for Class {
-    fn infer_type<'a>(&self, _ctx: &crate::context::LocalContext<'a>) -> crate::Result<LocalTypeId> {
+    fn infer_type<'a>(
+        &self,
+        _ctx: &crate::context::LocalContext<'a>,
+    ) -> crate::Result<LocalTypeId> {
         Ok(self.kind)
     }
 

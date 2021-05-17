@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use crate::{class::Class, prelude::*};
 use super::{atom::Atom, primary::Primary, AstObject, ObjectIter, Spanned};
+use crate::{class::Class, prelude::*};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum UnaryOp {
@@ -140,13 +140,24 @@ pub enum Expr {
 
 impl PartialEq for Expr {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other)  {
+        match (self, other) {
             (Self::Primary(p), Self::Primary(r)) => p.inner == r.inner,
-            (Self::If { test: ltest, body: lbody, orelse: lorelse}, Self::If { test: rtest, body: rbody, orelse: rorelse}) => {
+            (
+                Self::If {
+                    test: ltest,
+                    body: lbody,
+                    orelse: lorelse,
+                },
+                Self::If {
+                    test: rtest,
+                    body: rbody,
+                    orelse: rorelse,
+                },
+            ) => {
                 (ltest.inner == rtest.inner)
-                && (lbody.inner == rbody.inner)
-                && (lorelse.inner == rorelse.inner)
-            },
+                    && (lbody.inner == rbody.inner)
+                    && (lorelse.inner == rorelse.inner)
+            }
 
             _ => false,
         }
@@ -258,7 +269,12 @@ impl TypedObject for Expr {
 
                 let (mut rtl, rhs_class) = match op.as_ref() {
                     "eq" => binop_method_from_raw_parts(&ctx, right, "__eq__", TypeMap::UNKNOWN)?,
-                    op => binop_method_from_raw_parts(&ctx, right, &format!("__r{}__", op), TypeMap::UNKNOWN)?,
+                    op => binop_method_from_raw_parts(
+                        &ctx,
+                        right,
+                        &format!("__r{}__", op),
+                        TypeMap::UNKNOWN,
+                    )?,
                 };
 
                 ltr.args[0] = rtl.reciever.unwrap();
@@ -307,8 +323,14 @@ impl TypedObject for Expr {
 
                 let _ = self.infer_type(ctx)?;
 
-                let _ = ctx.with(body.clone(), |ctx, this| { this.infer_type(&ctx)?; this.typecheck(&ctx) })?;
-                let _ = ctx.with(orelse.clone(), |ctx, this| { this.infer_type(&ctx)?; this.typecheck(&ctx) })?;
+                let _ = ctx.with(body.clone(), |ctx, this| {
+                    this.infer_type(&ctx)?;
+                    this.typecheck(&ctx)
+                })?;
+                let _ = ctx.with(orelse.clone(), |ctx, this| {
+                    this.infer_type(&ctx)?;
+                    this.typecheck(&ctx)
+                })?;
 
                 Ok(())
             }

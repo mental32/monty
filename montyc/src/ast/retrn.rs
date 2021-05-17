@@ -77,7 +77,12 @@ impl TypedObject for Return {
             None => TypeMap::NONE_TYPE,
         };
 
-        if !ctx.global_context.type_map.type_eq(expected, actual) && !ctx.global_context.type_map.is_variant_of_tagged_union(expected, actual) {
+        if !ctx.global_context.type_map.type_eq(expected, actual)
+            && !ctx
+                .global_context
+                .type_map
+                .is_variant_of_tagged_union(expected, actual)
+        {
             let ret_node = ctx
                 .this
                 .as_ref()

@@ -220,7 +220,11 @@ fn bitwise_and<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
         let left = Rc::new(base);
         let right = Rc::new(value);
 
-        let inner = Expr::BinOp { left, right, op: InfixOp::And};
+        let inner = Expr::BinOp {
+            left,
+            right,
+            op: InfixOp::And,
+        };
 
         let obj = Spanned { span, inner };
 
@@ -246,7 +250,11 @@ fn bitwise_xor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
         let left = Rc::new(base);
         let right = Rc::new(value);
 
-        let inner = Expr::BinOp { left, right, op: InfixOp::Xor};
+        let inner = Expr::BinOp {
+            left,
+            right,
+            op: InfixOp::Xor,
+        };
 
         let obj = Spanned { span, inner };
 
@@ -272,7 +280,11 @@ fn bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Exp
         let left = Rc::new(base);
         let right = Rc::new(value);
 
-        let inner = Expr::BinOp { left, right, op: InfixOp::Or};
+        let inner = Expr::BinOp {
+            left,
+            right,
+            op: InfixOp::Or,
+        };
 
         let obj = Spanned { span, inner };
 
@@ -281,7 +293,6 @@ fn bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Exp
         Ok((stream, base))
     }
 }
-
 
 // #[inline]
 // fn is_bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, AstObject> {

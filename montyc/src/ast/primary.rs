@@ -306,7 +306,7 @@ impl TypedObject for Primary {
 
                                 let ty = arg.infer_type(&ctx).unwrap_or_compiler_error(&ctx);
 
-                                dbg!((ty, reprs))
+                                (ty, reprs)
                             })
                             .collect::<Vec<_>>()
                     })

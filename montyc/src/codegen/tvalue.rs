@@ -46,6 +46,14 @@ impl TypedValue {
         }
     }
 
+    pub fn is_value(&self) -> bool {
+        matches!(self.inner, InnerValue::ByValue(_))
+    }
+
+    pub fn is_ref(&self) -> bool {
+        matches!(self.inner, InnerValue::ByRef(_))
+    }
+
     pub fn as_ptr(&self) -> Pointer {
         match &self.inner {
             InnerValue::ByValue(_) => unimplemented!(),
@@ -57,15 +65,12 @@ impl TypedValue {
         match self.inner {
             InnerValue::ByValue(_) => unreachable!(),
             InnerValue::ByRef(Pointer { base, .. }) => match base {
-                    crate::codegen::pointer::PointerBase::Address(addr) => addr,
-                    crate::codegen::pointer::PointerBase::Stack(ss) => fx.ins().stack_addr(
-                        self.kind
-                            .1
-                            .expect("TypedValues must have a ir::Type to lower to!"),
-                        ss,
-                        0,
-                    ),
-            }
+                crate::codegen::pointer::PointerBase::Address(addr) => addr,
+                crate::codegen::pointer::PointerBase::Stack(ss) => {
+                    fx.ins()
+                        .stack_addr(self.kind.1.unwrap_or(ir::types::I64), ss, 0)
+                }
+            },
         }
     }
 

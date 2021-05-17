@@ -19,7 +19,7 @@ use crate::{
         stmt::Statement,
     },
     class::Class,
-    codegen::{context::CodegenLowerArg, TypePair, TypedValue},
+    codegen::{context::CodegenLowerArg, pointer::Pointer, TypePair, TypedValue},
     database::{DefId, ObjectDatabase},
     func::Function,
     parser::SpanInterner,
@@ -374,13 +374,32 @@ impl GlobalContext {
                         "isinstance" => |(ctx, fx), args| {
                             if let [subject, kind] = args {
 
-                                let res = match ctx.codegen_backend.global_context.type_map.get_tagged::<Generic>(subject.kind().0) {
+                                let t = ctx
+                                    .codegen_backend
+                                    .global_context
+                                    .type_map
+                                    .get_tagged::<Generic>(subject.kind().0)
+                                    .map(|r| {
+                                        r.map(|r| {
+                                            match r.inner {
+                                                Generic::Pointer { inner } => ctx.codegen_backend.global_context.type_map.get_tagged(inner).unwrap().unwrap(),
+                                                _ => r
+                                            }
+                                        })
+                                    });
+
+                                let res = match t {
                                     Some(Ok(TaggedType { inner, type_id: _ })) =>  {
 
                                         if let Generic::Struct { inner } = inner {
                                             match inner.as_slice() {
                                                 [TypeMap::I64, maybe_union] if ctx.codegen_backend.global_context.type_map.is_union(*maybe_union) => {
-                                                    let ptr = subject.as_ptr();
+                                                    let ptr = if subject.kind().1 == Some(ir::types::I64) {
+                                                        Pointer::new(subject.clone().deref_into_raw(fx))
+                                                    } else {
+                                                        subject.as_ptr()
+                                                    };
+
                                                     let union_tag = ptr.load(ir::types::I64, 0, fx);
 
                                                     let k = kind.clone().into_raw(fx);

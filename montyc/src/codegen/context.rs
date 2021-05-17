@@ -3,7 +3,14 @@ use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, rc::Rc};
 use cranelift_codegen::ir::{self, ExternalName, GlobalValue, GlobalValueData};
 use cranelift_frontend::FunctionBuilder;
 
-use crate::{ast::atom::StringRef, fmt::Formattable, prelude::{AstObject, Function, LocalTypeId}, scope::Scope, ssamap::SSAMap};
+use crate::{
+    ast::atom::StringRef,
+    codegen::pointer::Pointer,
+    fmt::Formattable,
+    prelude::{AstObject, Function, Generic, LocalTypeId},
+    scope::Scope,
+    ssamap::SSAMap,
+};
 
 use super::{
     module::CodegenModule,
@@ -106,7 +113,19 @@ where
 
         let TypePair(from, real) = value.kind;
 
-        log::trace!("codegen:maybe_coerce {:?} -> {:?}", from, into);
+        let from_dbg = Formattable {
+            inner: from,
+            gctx: &self.codegen_backend.global_context,
+        };
+
+        let into_dbg = Formattable {
+            inner: into,
+            gctx: &self.codegen_backend.global_context,
+        };
+
+        log::trace!("codegen:maybe_coerce {} -> {}", from_dbg, into_dbg);
+
+        let tym = &self.codegen_backend.global_context.type_map;
 
         if from != into {
             let coerce = match self
@@ -117,18 +136,47 @@ where
             {
                 Some(f) => f,
 
-                None if self.codegen_backend.global_context.type_map.is_variant_of_tagged_union(into, from) => {
+                None if tym.is_pointer(from) && tym.points_to(from, into) => {
+                    let inner = value.deref_into_raw(fx);
+                    let ty = fx.func.dfg.value_type(inner);
+
+                    return TypedValue::by_val(inner, TypePair(into, Some(ty)));
+                }
+
+                None if tym.is_pointer(from) => {
+                    let from = match tym.get_tagged::<Generic>(from).unwrap().unwrap().inner {
+                        Generic::Pointer { inner } => inner,
+                        _ => unreachable!(),
+                    };
+
+                    if tym.is_variant_of_tagged_union(into, from) {
+                        let ptr = value.deref_into_raw(fx);
+                        let sbuf = Pointer::new(ptr).as_mut_struct((self.clone(), fx), from);
+
+                        let raw = sbuf.read(1, (self.clone(), fx)).unwrap();
+                        let ty = fx.func.dfg.value_type(raw);
+
+                        return TypedValue::by_val(raw, TypePair(into, Some(ty)));
+                    } else {
+                        panic!(
+                            "No suitable coercion rule found for {} -> {}",
+                            from_dbg, into_dbg
+                        )
+                    }
+                }
+
+                None if tym.is_variant_of_tagged_union(into, from) => {
                     let sbuf = value.as_ptr().as_mut_struct((self.clone(), fx), from);
 
                     let raw = sbuf.read(1, (self.clone(), fx)).unwrap();
                     let ty = fx.func.dfg.value_type(raw);
 
-                    return TypedValue::by_val(raw, TypePair(into, Some(ty)))
-                },
+                    return TypedValue::by_val(raw, TypePair(into, Some(ty)));
+                }
 
                 None => panic!(
                     "No suitable coercion rule found for {} -> {}",
-                    Formattable { inner: from, gctx: &self.codegen_backend.global_context }, Formattable { inner: into, gctx: &self.codegen_backend.global_context }
+                    from_dbg, into_dbg
                 ),
             };
 

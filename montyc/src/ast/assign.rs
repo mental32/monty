@@ -130,8 +130,13 @@ impl TypedObject for Assign {
 
         if let ScopeRoot::Func(func) = ctx.scope.root() {
             if let Atom::Name(name) = &self.name.inner {
-                if let Some((ty, span)) = func.vars.get(name).map(|kv| kv.value().clone()) {
-                    if !ctx.global_context.type_map.type_eq(ty, actual) && !ctx.global_context.type_map.is_variant_of_tagged_union(actual, ty) {
+                if let Some((ty, span, _)) = func.vars.get(name).map(|kv| kv.value().clone()) {
+                    if !ctx.global_context.type_map.type_eq(ty, actual)
+                        && !ctx
+                            .global_context
+                            .type_map
+                            .is_variant_of_tagged_union(actual, ty)
+                    {
                         ctx.exit_with_error(MontyError::IncompatibleReassignment {
                             name: name.1.clone(),
                             first_assigned: span.clone(),
@@ -147,6 +152,7 @@ impl TypedObject for Assign {
                         (
                             apparent.canonicalize(&ctx.global_context.type_map),
                             ctx.this.clone().unwrap().span().unwrap(),
+                            crate::func::VarType::Local,
                         ),
                     );
                 }

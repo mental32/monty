@@ -1,6 +1,11 @@
 use std::{convert::TryFrom, rc::Rc};
 
-use crate::{ast::{class::ClassDef, module::Module}, prelude::*, scope::LookupOrder, typing::Generic};
+use crate::{
+    ast::{class::ClassDef, module::Module},
+    prelude::*,
+    scope::LookupOrder,
+    typing::Generic,
+};
 
 use super::{assign::Assign, expr::Expr, stmt::Statement, AstObject};
 
@@ -74,9 +79,7 @@ impl PartialEq for Atom {
             (Self::Str(s), Self::Str(t)) => s == t,
             (Self::Name((a, _)), Self::Name((b, _))) => a == b,
 
-
-            (Self::Ellipsis, Self::Ellipsis)
-            | (Self::None, Self::None) => true,
+            (Self::Ellipsis, Self::Ellipsis) | (Self::None, Self::None) => true,
 
             _ => unimplemented!(),
         }
@@ -89,14 +92,14 @@ impl Atom {
         scope: &dyn Scope,
         global_context: &GlobalContext,
     ) -> Option<Rc<dyn AstObject>> {
-        let target = if let Self::Name((t, _)) = self { t } else { todo!() };
+        let target = if let Self::Name((t, _)) = self {
+            t
+        } else {
+            todo!()
+        };
 
         scope
-            .lookup_def(
-                target.clone(),
-                &global_context,
-                LookupOrder::Unspecified,
-            )
+            .lookup_def(target.clone(), &global_context, LookupOrder::Unspecified)
             .unwrap()
             .drain(..)
             .next()
@@ -152,7 +155,9 @@ impl TypedObject for Atom {
                 let mut inner = vec![];
 
                 for value in values {
-                    let ty = ctx.with(Rc::clone(value), |ctx, value| value.infer_type(&ctx))?.canonicalize(&ctx.global_context.type_map);
+                    let ty = ctx
+                        .with(Rc::clone(value), |ctx, value| value.infer_type(&ctx))?
+                        .canonicalize(&ctx.global_context.type_map);
                     inner.push(ty);
                 }
 
@@ -189,7 +194,7 @@ impl TypedObject for Atom {
                         || crate::isinstance!(top_.as_ref(), Statement, Statement::Asn(n) => n),
                     ) {
                         if let Some(ty) = ctx.global_context.database.type_of(&top, None) {
-                            return Ok(ty)
+                            return Ok(ty);
                         }
 
                         let expected = {
@@ -200,9 +205,8 @@ impl TypedObject for Atom {
 
                         return match expected {
                             Some((ty, _)) => Ok(ty),
-                            None => asn.value.inner.infer_type(ctx)
+                            None => asn.value.inner.infer_type(ctx),
                         };
-
                     } else if let Some(klass) = crate::isinstance!(top.as_ref(), ClassDef).or_else(
                         || crate::isinstance!(top_.as_ref(), Statement, Statement::Class(k) => k),
                     ) {
@@ -248,7 +252,11 @@ impl TypedObject for Atom {
 
                 match ctx.scope.root() {
                     ScopeRoot::Func(f) => f.refs.borrow_mut().push(DataRef::StringConstant(st_ref)),
-                    ScopeRoot::AstObject(obj) if crate::isinstance!(obj.as_ref(), Module).is_some() => (),  // `register_string_literal` has already taken care of adding the string to the module's context. 
+                    ScopeRoot::AstObject(obj)
+                        if crate::isinstance!(obj.as_ref(), Module).is_some() =>
+                    {
+                        ()
+                    } // `register_string_literal` has already taken care of adding the string to the module's context.
                     ScopeRoot::AstObject(_) | ScopeRoot::Class(_) => unimplemented!(),
                 }
             }

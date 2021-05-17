@@ -2,14 +2,20 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, num::NonZero
 
 use dashmap::DashMap;
 
-use crate::{ast::{
+use crate::{
+    ast::{
         atom::{Atom, StringRef},
         expr::Expr,
         funcdef::FunctionDef,
         primary::Primary,
         retrn::Return,
         stmt::Statement,
-    }, database::DefId, prelude::*, scope::{ScopeRoot, ScopedObject}, typing::TaggedType};
+    },
+    database::DefId,
+    prelude::*,
+    scope::{ScopeRoot, ScopedObject},
+    typing::TaggedType,
+};
 
 pub fn is_externaly_defined(
     def: &FunctionDef,
@@ -86,13 +92,19 @@ pub enum DataRef {
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum VarType {
+    Local,
+    Param,
+}
+
 pub struct Function {
     pub def_id: DefId,
     has_extern_tag: bool,
 
     pub scope: Rc<LocalScope<FunctionDef>>,
     pub kind: TaggedType<FunctionType>,
-    pub vars: DashMap<(SpanRef, SpanRef), (LocalTypeId, Span)>,
+    pub vars: DashMap<(SpanRef, SpanRef), (LocalTypeId, Span, VarType)>,
     pub refs: RefCell<Vec<DataRef>>,
 }
 
@@ -203,7 +215,6 @@ impl Function {
 
         if let Some(args) = &funcdef.args {
             for (name, ann) in args.iter() {
-
                 let (ty, _) = {
                     let ty = match crate::utils::try_parse_union_literal(ctx, &ann.inner, false)? {
                         Some(tys) => (ctx.global_context.type_map.tagged_union(tys), true),
@@ -214,15 +225,15 @@ impl Function {
                             (ty, false)
                         }
                     };
-    
+
                     ctx.cache_type(&(Rc::clone(ann) as Rc<dyn AstObject>), ty.0);
-    
+
                     ty
                 };
 
                 let ty = ty.canonicalize(&ctx.global_context.type_map);
 
-                vars.insert(name.clone(), (ty, ann.span.clone()));
+                vars.insert(name.clone(), (ty, ann.span.clone(), VarType::Param));
             }
         }
 
@@ -272,7 +283,6 @@ impl TypedObject for Function {
 
         assert_matches!(self.scope.root(), ScopeRoot::Func(_));
 
-
         let (def_span, def_node) = {
             let def = ctx.this.clone().expect("`ctx.this` is not set.");
             let span = def.span().expect("definition must be spanned.");
@@ -284,12 +294,15 @@ impl TypedObject for Function {
             .as_function()
             .expect("Function::def must be a FunctionDef node!");
 
-        ctx.global_context.branches.borrow_mut().insert(self.def_id, HashMap::new());
+        ctx.global_context
+            .branches
+            .borrow_mut()
+            .insert(self.def_id, HashMap::new());
 
         for scoped_object in self.scope.iter() {
             let scoped_object = ScopedObject {
                 object: scoped_object.object,
-                scope: Rc::clone(&self.scope) as Rc<_>
+                scope: Rc::clone(&self.scope) as Rc<_>,
             };
 
             scoped_object.with_context(ctx.global_context, |mut local_context, object| {

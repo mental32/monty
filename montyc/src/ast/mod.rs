@@ -7,7 +7,14 @@ use std::{
 use logos::Span;
 use typing::TypedObject;
 
-use crate::{ast::{assign::Assign, class::ClassDef}, context::LocalContext, database::DefEntry, parser::SpanRef, scope::LookupTarget, typing::{self, LocalTypeId}};
+use crate::{
+    ast::{assign::Assign, class::ClassDef},
+    context::LocalContext,
+    database::DefEntry,
+    parser::SpanRef,
+    scope::LookupTarget,
+    typing::{self, LocalTypeId},
+};
 
 use self::{funcdef::FunctionDef, stmt::Statement};
 

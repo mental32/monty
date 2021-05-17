@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use crate::{prelude::*, typing::{ClassType, TypeDescriptor}};
+use crate::{
+    prelude::*,
+    typing::{ClassType, TypeDescriptor},
+};
 
 use super::{atom::Atom, primary::Primary, stmt::Statement, AstObject, Spanned};
 

@@ -68,7 +68,7 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         let ret = match ctx.global_context.type_map.get_tagged::<ClassType>(ret) {
             Some(Ok(klass)) => klass.inner.kind,
             Some(Err(_)) => ret,
-            None => unreachable!()
+            None => unreachable!(),
         };
 
         let name = if let Atom::Name(n) = def.name.inner {
@@ -85,7 +85,9 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
                 ctx.this = Some(ann.clone());
 
                 let (ty, _) = {
-                    let ty = match crate::utils::try_parse_union_literal(&ctx, &ann.inner, false).unwrap_or_compiler_error(&ctx) {
+                    let ty = match crate::utils::try_parse_union_literal(&ctx, &ann.inner, false)
+                        .unwrap_or_compiler_error(&ctx)
+                    {
                         Some(tys) => (ctx.global_context.type_map.tagged_union(tys), true),
                         None => {
                             let mut ctx = ctx.clone();
@@ -94,9 +96,9 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
                             (ty, false)
                         }
                     };
-    
+
                     ctx.cache_type(&(Rc::clone(ann) as Rc<dyn AstObject>), ty.0);
-    
+
                     ty
                 };
 
