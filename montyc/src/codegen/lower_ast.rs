@@ -239,7 +239,6 @@ impl LowerCodegen for Primary {
                             .get(value_t)
                             .unwrap();
 
-
                         if let Expr::Primary(Spanned {
                             inner: Primary::Atomic(atom),
                             ..
@@ -861,7 +860,7 @@ impl LowerCodegen for Statement {
                     if branch_blocks_idx != 0 {
                         builder.ins().jump(head_block, &[]);
 
-                        builder.switch_to_block(head_block);    
+                        builder.switch_to_block(head_block);
                     }
 
                     let cc = match ifstmt

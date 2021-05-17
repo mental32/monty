@@ -121,7 +121,11 @@ fn main() {
                 idx,
                 func.as_ref(),
                 func.scope.module_ref(),
-                Linkage::Export,
+                if func.is_externaly_defined() {
+                    Linkage::Import
+                } else {
+                    Linkage::Export
+                },
                 cranelift_codegen::isa::CallConv::SystemV,
             )
         },

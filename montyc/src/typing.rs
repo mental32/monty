@@ -59,6 +59,7 @@ pub enum Generic {
     Pointer { inner: LocalTypeId },
     Union { inner: Vec<LocalTypeId> },
     Struct { inner: Vec<LocalTypeId> },
+    Boxed { inner: LocalTypeId },
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
@@ -326,7 +327,9 @@ impl TypeMap {
             let tydesc = tydesc.value();
 
             match tydesc {
-                TypeDescriptor::Generic(Generic::Pointer { .. }) | TypeDescriptor::Simple(_) => {
+                TypeDescriptor::Generic(Generic::Boxed { .. })
+                | TypeDescriptor::Generic(Generic::Pointer { .. })
+                | TypeDescriptor::Simple(_) => {
                     let size = SizeOf::size_of(tydesc, self).unwrap().get();
                     let align = size; // TODO: investigate if alignof(scalar_t) == sizeof(scalar_t)
 
@@ -633,7 +636,9 @@ impl SizeOf<&TypeMap> for TypeDescriptor {
             TypeDescriptor::Function(_) => None,
             TypeDescriptor::Class(_) => BuiltinTypeId::Int.size_of(()),
             TypeDescriptor::Generic(inner) => match inner {
-                Generic::Pointer { inner: _ } => BuiltinTypeId::I64.size_of(()),
+                Generic::Boxed { inner: _ } | Generic::Pointer { inner: _ } => {
+                    BuiltinTypeId::I64.size_of(())
+                }
                 Generic::Struct { inner } => NonZeroU32::new(
                     inner
                         .iter()

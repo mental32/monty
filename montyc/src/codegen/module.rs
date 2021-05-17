@@ -20,7 +20,7 @@ use crate::{
 
 use cranelift_codegen::{
     binemit,
-    ir::{self, ExternalName, Signature},
+    ir::{self, AbiParam, ExternalName, Signature},
     isa::{CallConv, TargetIsa},
     settings, verify_function, Context,
 };
@@ -56,7 +56,7 @@ pub struct CodegenModule<'a> {
 }
 
 impl<'global> CodegenModule<'global> {
-    fn produce_external_name(&mut self, _fn_name: NonZeroUsize, mref: &ModuleRef) -> ExternalName {
+    fn produce_external_name(&mut self, mref: &ModuleRef) -> ExternalName {
         let n = self.names.len();
         let names = self
             .names
@@ -68,7 +68,7 @@ impl<'global> CodegenModule<'global> {
 
         let external_name = ExternalName::User {
             namespace: names.namespace,
-            index: names.functions.len() as u32,
+            index: names.functions.len().saturating_add(1) as u32,
         };
 
         external_name
@@ -165,7 +165,7 @@ impl<'global> CodegenModule<'global> {
         {
             return Some((fid, ir::Function::with_name_signature(name, sig)));
         } else {
-            self.produce_external_name(func_def_name, mref)
+            self.produce_external_name(mref)
         };
 
         let clfn = ir::Function::with_name_signature(name.clone(), sig);
@@ -289,6 +289,11 @@ impl<'global> CodegenModule<'global> {
                 .then(|| self.scalar_type_of(ty));
 
             let storage = match (scalar_ty, var_t) {
+                (None, VarType::Local) => {
+                    // box everything for now.
+                    Storage::new_boxed((ctx.clone(), &mut builder), ty)
+                }
+
                 (_, VarType::Local) => {
                     Storage::new_stack_slot((ctx.clone(), &mut builder), TypePair(ty, scalar_ty))
                 }
@@ -414,8 +419,18 @@ impl<'global> CodegenModule<'global> {
         )
         .unwrap();
 
-        let object_module = ObjectModule::new(object_builder);
+        let mut object_module = ObjectModule::new(object_builder);
         let mut types = HashMap::new();
+
+        {
+            let mut s = Signature::new(CallConv::SystemV);
+            s.params.push(AbiParam::new(ir::types::I64));
+            s.returns.push(AbiParam::new(ir::types::I64));
+
+            object_module
+                .declare_function("malloc", Linkage::Import, &s)
+                .unwrap();
+        }
 
         {
             types.insert(TypeMap::INTEGER, ir::types::I64);

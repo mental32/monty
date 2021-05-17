@@ -105,6 +105,15 @@ impl fmt::Display for Formattable<'_, &TypeDescriptor> {
 impl fmt::Display for Formattable<'_, &Generic> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.inner {
+            Generic::Boxed { inner } => write!(
+                f,
+                "Boxed[{}]",
+                Formattable {
+                    gctx: self.gctx,
+                    inner: *inner
+                }
+            ),
+
             Generic::Pointer { inner } => write!(
                 f,
                 "Pointer({})",

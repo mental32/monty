@@ -1,11 +1,13 @@
-use std::convert::TryFrom;
+use std::{alloc::Layout, convert::TryFrom};
 
 use cranelift_codegen::ir::Value;
+
+use crate::fmt::Formattable;
 
 use super::{context::CodegenLowerArg, pointer::Pointer, tvalue::TypePair};
 
 #[derive(Debug)]
-struct Field {
+pub(super) struct Field {
     offset: i32,
     layout: std::alloc::Layout,
     kind: TypePair,
@@ -20,11 +22,13 @@ pub struct StructBuf {
 }
 
 impl StructBuf {
-    pub fn new(pointer: Pointer, fields: Vec<(std::alloc::Layout, TypePair)>) -> Self {
+    pub(super) fn calculate_layout_and_fields(
+        fields: &[(std::alloc::Layout, TypePair)],
+    ) -> (Layout, Vec<Field>) {
         let mut struct_fields = vec![];
         let mut layout = std::alloc::Layout::from_size_align(0, 1).unwrap();
 
-        for (field, kind) in fields {
+        for (field, kind) in fields.iter().cloned() {
             let (new_layout, offset) = layout.extend(field).unwrap();
 
             struct_fields.push(Field {
@@ -36,11 +40,15 @@ impl StructBuf {
             layout = new_layout;
         }
 
-        let layout = layout.pad_to_align();
+        (layout.pad_to_align(), struct_fields)
+    }
+
+    pub fn new(pointer: Pointer, fields: Vec<(std::alloc::Layout, TypePair)>) -> Self {
+        let (layout, fields) = Self::calculate_layout_and_fields(&*fields);
 
         Self {
             pointer,
-            fields: struct_fields,
+            fields,
             layout,
         }
     }
@@ -51,13 +59,19 @@ impl StructBuf {
     }
 
     /// Read the `n`th field of this struct and produce it as a scalar value.
-    pub fn read(&self, field: usize, (_, builder): CodegenLowerArg<'_, '_, '_>) -> Option<Value> {
+    pub fn read(&self, field: usize, (ctx, builder): CodegenLowerArg<'_, '_, '_>) -> Option<Value> {
         let field = self.fields.get(field)?;
 
         let kind = if let TypePair(_, Some(kind)) = field.kind {
             kind
         } else {
-            unreachable!()
+            unreachable!(
+                "Failed to get scalar type of field: {}",
+                Formattable {
+                    inner: field.kind.0,
+                    gctx: &ctx.codegen_backend.global_context
+                }
+            )
         };
 
         let value = self.pointer.load(kind, field.offset, builder);

@@ -80,7 +80,6 @@ impl TypedObject for Assign {
                     .unwrap();
 
                 let inner = match tunion.inner {
-                    Generic::Pointer { .. } => unreachable!(),
                     Generic::Union { inner } => inner,
                     Generic::Struct { inner } => match ctx
                         .global_context
@@ -90,10 +89,10 @@ impl TypedObject for Assign {
                         .unwrap()
                         .inner
                     {
-                        Generic::Pointer { .. } => unreachable!(),
                         Generic::Union { inner } => inner,
-                        Generic::Struct { .. } => unreachable!(),
+                        _ => unreachable!(),
                     },
+                    _ => unreachable!(),
                 };
 
                 let is_ok = inner
