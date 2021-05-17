@@ -73,7 +73,7 @@ where
     pub codegen_backend: &'codegen CodegenModule<'global>,
     pub vars: &'codegen HashMap<NonZeroUsize, AllocId>,
     pub func: &'codegen Function,
-    pub(super) allocator: Rc<RefCell<Allocator>>,
+    allocator: Rc<RefCell<Allocator>>,
 }
 
 impl<'a, 'b> CodegenContext<'a, 'b>
@@ -91,6 +91,15 @@ where
             func,
             allocator: Default::default(),
         }
+    }
+
+    pub fn alloc(&self, storage: Storage) -> AllocId {
+        self.allocator.borrow_mut().alloc(storage)
+    }
+
+    pub fn with_alloc<T>(&self, alloc_id: AllocId, f: impl FnOnce(&Storage) -> T) -> T {
+        let s = self.allocator.borrow().get(alloc_id);
+        f(&*s)
     }
 
     pub fn size_and_layout_of(

@@ -230,7 +230,7 @@ impl LowerCodegen for Primary {
                             TypePair(value_t, None),
                         );
 
-                        let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
+                        let alloc_id = ctx.alloc(storage);
 
                         let value_t_d = ctx
                             .codegen_backend
@@ -239,9 +239,6 @@ impl LowerCodegen for Primary {
                             .get(value_t)
                             .unwrap();
 
-                        let storage = ctx.allocator.borrow().get(alloc_id);
-
-                        let _ = f((ctx.clone(), builder), &*storage).unwrap();
 
                         if let Expr::Primary(Spanned {
                             inner: Primary::Atomic(atom),
@@ -263,16 +260,22 @@ impl LowerCodegen for Primary {
                                 Atom::Bool(b) => b.then_some(1).unwrap_or(0),
                             };
 
-                            let sbuf = storage.as_mut_struct((ctx.clone(), builder));
+                            let (value, value_t, idx) = ctx.with_alloc(alloc_id, |storage| {
+                                let _ = f((ctx.clone(), builder), &*storage).unwrap();
 
-                            let idx = if n < 0 {
-                                sbuf.field_count() - usize::try_from(-n).unwrap()
-                            } else {
-                                usize::try_from(n).unwrap()
-                            };
+                                let sbuf = storage.as_mut_struct((ctx.clone(), builder));
 
-                            let value = sbuf.read(idx, (ctx.clone(), builder)).unwrap();
-                            let value_t = builder.func.dfg.value_type(value);
+                                let idx = if n < 0 {
+                                    sbuf.field_count() - usize::try_from(-n).unwrap()
+                                } else {
+                                    usize::try_from(n).unwrap()
+                                };
+
+                                let value = sbuf.read(idx, (ctx.clone(), builder)).unwrap();
+                                let value_t = builder.func.dfg.value_type(value);
+
+                                (value, value_t, idx)
+                            });
 
                             let type_id = match value_t_d.value() {
                                 TypeDescriptor::Generic(Generic::Struct { inner }) => inner[idx],
@@ -843,6 +846,7 @@ impl LowerCodegen for Statement {
                     .last()
                     .map(|(_, _, escape)| escape.clone())
                     .unwrap_or_else(|| builder.create_block());
+
                 let orelse_block = branch_blocks
                     .last()
                     .map(|(_, _, escape)| escape.clone())
@@ -874,16 +878,14 @@ impl LowerCodegen for Statement {
                     builder.ins().brnz(cc, body_block, &[]);
                     builder.ins().jump(local_escape_block, &[]);
 
-                    {
-                        builder.switch_to_block(body_block);
+                    builder.switch_to_block(body_block);
 
-                        for part in ifstmt.inner.body.iter() {
-                            let _ = part.inner.lower((ctx.clone(), builder));
-                        }
+                    for part in ifstmt.inner.body.iter() {
+                        let _ = part.inner.lower((ctx.clone(), builder));
+                    }
 
-                        if !builder.is_filled() {
-                            builder.ins().jump(global_escape_block, &[]);
-                        }
+                    if !builder.is_filled() {
+                        builder.ins().jump(global_escape_block, &[]);
                     }
 
                     builder.switch_to_block(local_escape_block);

@@ -276,8 +276,7 @@ impl<'global> CodegenModule<'global> {
 
         let vars = HashMap::new();
 
-        let ctx = CodegenContext::new(self, &vars, func);
-
+        let mut ctx = CodegenContext::new(self, &vars, func);
         let mut vars = HashMap::new();
 
         for refm in func.vars.iter() {
@@ -307,19 +306,14 @@ impl<'global> CodegenModule<'global> {
                 }
             };
 
-            let alloc_id = ctx.allocator.borrow_mut().alloc(storage);
+            let alloc_id = ctx.alloc(storage);
 
             if let Some(n) = vars.insert(var, alloc_id) {
                 unreachable!("duplicate var ss: {:?}", (var, n))
             }
         }
 
-        let ctx = CodegenContext {
-            codegen_backend: self,
-            allocator: ctx.allocator,
-            vars: &vars,
-            func: ctx.func,
-        };
+        std::mem::swap(&mut ctx.vars, &mut &vars);
 
         let mut it = layout.iter_from(layout.start);
 
@@ -333,13 +327,9 @@ impl<'global> CodegenModule<'global> {
                 let params: Vec<_> = builder.block_params(start).iter().cloned().collect();
 
                 for (((name, _), _), value) in func.args(&self.global_context).zip(params.iter()) {
-                    let alloc_id = vars.get(&name).unwrap().clone();
-
-                    let alloc = ctx.allocator.borrow();
-
-                    let storage = alloc.get(alloc_id);
-
-                    storage.write(TypedValue::by_val(*value, storage.kind()), &mut builder);
+                    ctx.with_var_alloc(name, |storage| {
+                        storage.write(TypedValue::by_val(*value, storage.kind()), &mut builder)
+                    });
                 }
             }
 
