@@ -353,7 +353,7 @@ impl<'global> CodegenModule<'global> {
                 break;
             }
 
-            {
+            if !builder.is_pristine() {
                 let block = builder.create_block();
 
                 if !builder.is_filled() {

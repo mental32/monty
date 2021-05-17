@@ -810,27 +810,55 @@ impl LowerCodegen for Statement {
             }
 
             Statement::If(ifstmt) => {
-                let global_escape_block = builder.create_block();
+                let mut branches = ifstmt.branches.iter();
 
-                let branch_blocks: Vec<_> = ifstmt
-                    .branches
-                    .iter()
-                    .map(|_| {
-                        (
-                            builder.create_block(),
-                            builder.create_block(),
-                            builder.create_block(),
-                        ) // (head, body, escape)
-                    })
-                    .collect();
+                let mut branch_blocks = Vec::with_capacity(ifstmt.branches.len());
+
+                match branches.next() {
+                    Some(_) => {
+                        let head = if builder.is_pristine() {
+                            builder.current_block().unwrap().clone()
+                        } else {
+                            builder.create_block()
+                        };
+
+                        let body = builder.create_block();
+                        let escape = builder.create_block();
+
+                        branch_blocks.push((head, body, escape));
+                    }
+
+                    None => unreachable!(),
+                };
+
+                branches.for_each(|_| {
+                    let head = builder.create_block();
+                    let body = builder.create_block();
+                    let escape = builder.create_block();
+
+                    branch_blocks.push((head, body, escape))
+                });
+
+                let global_escape_block = branch_blocks
+                    .last()
+                    .map(|(_, _, escape)| escape.clone())
+                    .unwrap_or_else(|| builder.create_block());
+                let orelse_block = branch_blocks
+                    .last()
+                    .map(|(_, _, escape)| escape.clone())
+                    .unwrap_or_else(|| builder.create_block());
 
                 for (branch_blocks_idx, ifstmt) in ifstmt.branches.iter().enumerate() {
                     let (head_block, body_block, local_escape_block) =
                         branch_blocks[branch_blocks_idx];
 
-                    builder.ins().jump(head_block, &[]);
+                    let is_last = branch_blocks_idx == branch_blocks.len().saturating_sub(1);
 
-                    builder.switch_to_block(head_block);
+                    if branch_blocks_idx != 0 {
+                        builder.ins().jump(head_block, &[]);
+
+                        builder.switch_to_block(head_block);    
+                    }
 
                     let cc = match ifstmt
                         .inner
@@ -861,20 +889,18 @@ impl LowerCodegen for Statement {
                     builder.switch_to_block(local_escape_block);
                 }
 
-                let orelse = builder.create_block();
-
-                builder.ins().jump(orelse, &[]);
-
-                builder.switch_to_block(orelse);
-
                 if let Some(orelse) = &ifstmt.orelse {
+                    builder.ins().jump(orelse_block, &[]);
+
+                    builder.switch_to_block(orelse_block);
+
                     for stmt in orelse {
                         let _ = stmt.inner.lower((ctx.clone(), builder));
                     }
-                }
 
-                if !builder.is_filled() {
-                    builder.ins().jump(global_escape_block, &[]);
+                    if !builder.is_filled() {
+                        builder.ins().jump(global_escape_block, &[]);
+                    }
                 }
 
                 builder.switch_to_block(global_escape_block);
@@ -883,17 +909,16 @@ impl LowerCodegen for Statement {
             }
 
             Statement::While(while_) => {
-                let (head, body, escape) = {
-                    (
-                        builder.create_block(),
-                        builder.create_block(),
-                        builder.create_block(),
-                    )
+                let (body, escape) = { (builder.create_block(), builder.create_block()) };
+
+                let head = if builder.is_pristine() {
+                    builder.current_block().unwrap()
+                } else {
+                    let head = builder.create_block();
+                    builder.ins().jump(head, &[]);
+                    builder.switch_to_block(head);
+                    head
                 };
-
-                builder.ins().jump(head, &[]);
-
-                builder.switch_to_block(head);
 
                 let cc = match while_.test.inner.lower((ctx.clone(), builder)).unwrap() {
                     Ok(v) => v.into_raw(builder),
