@@ -398,7 +398,6 @@ checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
 name = "montyc"
 version = "0.0.0"
 dependencies = [
- "bitflags",
  "codespan",
  "codespan-reporting",
  "cranelift-codegen",

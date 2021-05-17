@@ -194,6 +194,7 @@ def whatever(blah: str, n: int):
 - [MyPy](https://github.com/python/mypy)
 - [PyPy](https://foss.heptapod.net/pypy/pypy)
 - [RPython](https://foss.heptapod.net/pypy/pypy/-/tree/branch/default/rpython)
+- [RustPython](https://github.com/RustPython/RustPython)
 
 [cranelift]: https://github.com/bytecodealliance/wasmtime/tree/main/cranelift
 [llvm]: https://llvm.org/
