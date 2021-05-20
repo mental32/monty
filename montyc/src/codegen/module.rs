@@ -1,4 +1,10 @@
-use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, path::Path, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use crate::{
     codegen::{context::CodegenContext, storage::Storage, TypePair, TypedValue},
@@ -51,6 +57,7 @@ pub struct CodegenModule<'a> {
     pub global_context: &'a GlobalContext,
     pub(crate) object_module: RefCell<ObjectModule>,
     pub(crate) flags: settings::Flags,
+    pub(crate) func_irs: HashMap<FuncId, String>,
 
     pub(crate) pending: Vec<(usize, Linkage, CallConv)>,
 }
@@ -72,6 +79,18 @@ impl<'global> CodegenModule<'global> {
         };
 
         external_name
+    }
+
+    pub fn get_func_named(&self, name: (NonZeroUsize, NonZeroUsize)) -> Option<String> {
+        for (_, namespace) in self.names.iter() {
+            for func in namespace.functions.iter() {
+                if *func.0 == name.0 {
+                    return self.func_irs.get(&func.1.1).cloned();
+                }
+            }
+        }
+
+        None
     }
 
     pub fn scalar_type_of(&self, type_id: LocalTypeId) -> ir::Type {
@@ -400,6 +419,8 @@ impl<'global> CodegenModule<'global> {
             log::trace!("codegen:add_function_to_module {:?} {:?}", cl_func, e);
         }
 
+        self.func_irs.insert(fid, format!("{:#?}", cl_func));
+
         let mut ctx = Context::for_function(cl_func);
         let mut ts = binemit::NullTrapSink {};
         let mut ss = binemit::NullStackMapSink {};
@@ -464,6 +485,7 @@ impl<'global> CodegenModule<'global> {
             pending: vec![],
 
             types,
+            func_irs: HashMap::new(),
             names: HashMap::new(),
             globals: HashMap::new(),
             external_functions: HashMap::new(),
@@ -471,47 +493,46 @@ impl<'global> CodegenModule<'global> {
         }
     }
 
-    pub fn finish<P>(mut self, output: P)
-    where
-        P: AsRef<Path>,
-    {
-        let pending = self.pending.clone();
+    pub fn build_pending_functions(&mut self) {
+        let mut pending = vec![];
+        std::mem::swap(&mut self.pending, &mut pending);
 
-        for (idx, linkage, callcov) in pending.iter().cloned() {
+        for (idx, linkage, callcov) in pending.drain(..) {
             let funcs = self.global_context.functions.borrow();
             let func = funcs.get(idx).unwrap();
             let mref = func.scope.module_ref();
 
             self.add_function_to_module(func, &mref, linkage, callcov)
         }
+    }
+
+    pub fn finish<P>(mut self, output: Option<P>) -> PathBuf
+    where
+        P: AsRef<Path>,
+    {
+        self.build_pending_functions();
 
         let product = self.object_module.into_inner().finish();
         let bytes = product.emit().unwrap();
 
-        let mut file = tempfile::NamedTempFile::new().unwrap();
+        match output {
+            Some(path) => {
+                let p = path.as_ref().to_path_buf();
+                std::fs::write(path, bytes).unwrap();
+                p
+            }
 
-        std::io::Write::write_all(&mut file, &bytes).unwrap();
+            None => {
+                let mut file = tempfile::NamedTempFile::new().unwrap();
 
-        let path = file.path().clone().to_owned();
+                std::io::Write::write_all(&mut file, &bytes).unwrap();
 
-        file.persist(path.clone()).unwrap();
+                let path = file.path().clone().to_owned();
 
-        let mut cc_args = vec![path.to_str().unwrap()];
+                file.persist(path.clone()).unwrap();
 
-        let output = output.as_ref().to_str().unwrap();
-
-        cc_args.push("-o");
-        cc_args.push(&output);
-
-        cc_args.push("-no-pie");
-
-        let status = std::process::Command::new("cc")
-            .args(&cc_args)
-            .status()
-            .unwrap();
-
-        if !status.success() {
-            panic!("Failed to compile module.");
+                path
+            }
         }
     }
 }

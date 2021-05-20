@@ -7,12 +7,15 @@ use std::{
     rc::Rc,
 };
 
-use cranelift_codegen::ir::{self, condcodes::IntCC};
+use crate::codegen::CodegenModule;
+use cranelift_codegen::{ir::{self, condcodes::IntCC}, isa::CallConv};
+use cranelift_module::{DataContext, Linkage};
 use dashmap::DashMap;
 
 use crate::{
     ast::{
         atom::{Atom, StringRef},
+        expr::Expr,
         import::{Import, ImportDecl},
         module::Module,
         primary::Primary,
@@ -84,6 +87,7 @@ impl std::fmt::Debug for BuiltinFunction {
 /// Used to track global compilation state per-compilation.
 #[derive(Debug)]
 pub struct GlobalContext {
+    pub opts: CompilerOptions,
     pub modules: HashMap<ModuleRef, ModuleContext>,
     pub functions: RefCell<Vec<Rc<Function>>>,
     pub span_ref: Rc<RefCell<SpanInterner>>,
@@ -111,6 +115,7 @@ impl GlobalContext {
         });
 
         Self {
+            opts: CompilerOptions::default(),
             modules: HashMap::new(),
             functions: RefCell::new(Vec::new()),
             span_ref,
@@ -146,6 +151,7 @@ impl GlobalContext {
         let mut ctx = Self::new_uninit();
 
         ctx.libstd = libstd.clone();
+        ctx.opts = opts.clone();
 
         // pre-emptively load in core modules i.e. builtins, ctypes, and typing.
 
@@ -347,7 +353,7 @@ impl GlobalContext {
                         klass_name
                     );
                 }
-                else if let Some(funcdef) = crate::isinstance!(object_unspanned.as_ref(), Statement, Statement::FnDef(f) => crate::func::is_externaly_defined(f, ctx, &mref, None).then_some(f)).flatten() {
+                else if let Some(funcdef) = crate::isinstance!(object_unspanned.as_ref(), Statement, Statement::FnDef(f) => crate::func::is_externaly_defined(f, ctx, &mref).then_some(f)).flatten() {
                     let lctx = LocalContext {
                         global_context: ctx,
                         module_ref: mref.clone(),
@@ -589,7 +595,11 @@ impl GlobalContext {
         Some((group, group))
     }
 
-    pub fn load_module(&mut self, path: impl AsRef<Path>, f: impl Fn(&mut Self, ModuleRef)) {
+    pub fn load_module<T>(
+        &mut self,
+        path: impl AsRef<Path>,
+        f: impl Fn(&mut Self, ModuleRef) -> T,
+    ) -> T {
         let path = path.as_ref();
 
         log::debug!("Loading module ({:?})", shorten(path));
@@ -604,7 +614,7 @@ impl GlobalContext {
 
         let module = self.parse_and_register_module(source, path);
 
-        f(self, module);
+        f(self, module)
     }
 
     fn resolve_import_to_path(&self, qualname: Vec<&str>) -> Option<PathBuf> {
@@ -787,5 +797,121 @@ impl GlobalContext {
         }
 
         key
+    }
+
+    /// Include a module specified at `path` to the global compilation context.
+    ///
+    /// This will invoke typechecking routines on the modules items.
+    pub fn include_module(&mut self, path: &Path) -> ModuleRef {
+        self.load_module(path, move |ctx, mref| {
+            let mctx = ctx.modules.get(&mref).unwrap();
+
+            ctx.database.insert_module(mctx);
+
+            for (obj, lctx) in ctx.walk(mref.clone()) {
+                obj.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
+            }
+
+            mref
+        })
+    }
+
+    pub fn as_codegen_module(&mut self) -> CodegenModule {
+        let mut cctx = CodegenModule::new(self, self.opts.codegen_settings());
+
+        for (mref, mctx) in self.modules.iter() {
+            for (name, global) in mctx
+                .globals
+                .iter()
+                .map(|refm| (refm.key().clone(), refm.value().clone()))
+            {
+                let symbol = format!(
+                    "{}.{}",
+                    mref.module_name(),
+                    self.resolver.resolve_ident(name).unwrap()
+                );
+
+                cctx.declare_global_in_module(
+                    (mref.clone(), name),
+                    &symbol,
+                    true,
+                    Linkage::Hidden,
+                    |cctx| {
+                        let atom = if let Expr::Primary(Spanned {
+                            inner: Primary::Atomic(atom),
+                            ..
+                        }) = &global.inner
+                        {
+                            atom
+                        } else {
+                            unimplemented!();
+                        };
+
+                        let mut dctx = DataContext::new();
+
+                        let type_id = match &atom.inner {
+                            Atom::None => TypeMap::NONE_TYPE,
+                            Atom::Ellipsis => TypeMap::ELLIPSIS,
+                            Atom::Int(i) => {
+                                dctx.set_align(8);
+                                dctx.define(Box::new(i.to_ne_bytes()));
+
+                                TypeMap::INTEGER
+                            }
+
+                            Atom::Str(st) => {
+                                let string = StringRef(*st)
+                                    .resolve_as_string(&cctx.global_context)
+                                    .unwrap();
+                                let string = std::ffi::CString::new(string).unwrap();
+                                let string = string.into_bytes_with_nul();
+                                let string = string.into_boxed_slice();
+
+                                dctx.set_align(16);
+                                dctx.define(string);
+
+                                TypeMap::STRING
+                            }
+
+                            Atom::Bool(b) => {
+                                dctx.set_align(1);
+                                dctx.define(Box::new(if *b { [1u8] } else { [0u8] }));
+
+                                TypeMap::BOOL
+                            }
+
+                            Atom::Float(f) => {
+                                dctx.set_align(8);
+                                dctx.define(Box::new(f.to_ne_bytes()));
+
+                                TypeMap::FLOAT
+                            }
+
+                            _ => unimplemented!(),
+                        };
+
+                        (type_id, dctx)
+                    },
+                );
+            }
+        }
+
+        let funcs = self.functions.borrow();
+        let funcs = funcs
+            .iter()
+            .enumerate()
+            .filter(|(_, func)| !matches!(func.linkage, Some(Linkage::Import)))
+            .map(|(idx, func)| {
+                let f = func.as_ref();
+                let m = func.scope.module_ref();
+                let l = func.linkage.unwrap();
+                let cc = func.callcov.unwrap_or(CallConv::SystemV);
+
+                (idx, f, m, l, cc)
+            });
+
+        cctx.declare_functions(funcs);
+
+        cctx
     }
 }

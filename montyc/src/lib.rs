@@ -151,23 +151,31 @@ use structopt::*;
 #[derive(Debug)]
 pub struct VerifiedCompilerOptions(CompilerOptions);
 
-#[derive(Debug, StructOpt, Clone)]
+#[derive(Debug, StructOpt, Clone, Default)]
 pub struct CompilerOptions {
     /// The path to a monty compatible stdlib.
     #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
-    pub libstd: std::path::PathBuf,
+    pub libstd: PathBuf,
 
     /// The input file to compile.
     #[structopt(parse(from_os_str))]
-    pub input: std::path::PathBuf,
+    pub input: PathBuf,
+
+    /// Show the Cranelift IR for the specified function.
+    #[structopt(long)]
+    pub show_ir: Option<String>,
+
+    // The name of the output binary, defaults to the input file's name.
+    #[structopt(parse(from_os_str))]
+    pub output: Option<PathBuf>,
 
     /// The C compiler to use.
     #[structopt(parse(from_os_str))]
-    pub cc: Option<std::path::PathBuf>,
+    pub cc: Option<PathBuf>,
 
     /// The linker to use.
     #[structopt(parse(from_os_str))]
-    pub ld: Option<std::path::PathBuf>,
+    pub ld: Option<PathBuf>,
 
     /// Low level codegen settings to pass to Cranelift.
     #[structopt(multiple = true, short = "C", long = "codegen")]

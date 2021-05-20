@@ -1,135 +1,56 @@
-use cranelift_module::{DataContext, Linkage};
-use montyc::{
-    ast::{
-        atom::{Atom, StringRef},
-        expr::Expr,
-        primary::Primary,
-    },
-    context::GlobalContext,
-    prelude::*,
-    CompilerOptions,
-};
+use montyc::{context::GlobalContext, CompilerOptions};
 
 use structopt::StructOpt;
 
-fn main() {
+fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let opts = CompilerOptions::from_args();
     let file = opts.input.clone();
+    // let isa = opts.codegen_settings();
 
-    let isa = opts.codegen_settings();
+    let v_opts = opts.clone().verify();
 
-    let opts = opts.verify();
+    let mut global_context = GlobalContext::initialize(&v_opts);
+    let _ = global_context.include_module(&file);
 
-    let mut global_context = GlobalContext::initialize(&opts);
+    let show_ir_for = 
+    if let Some(name) = opts.show_ir {
+        Some(global_context.span_ref.borrow_mut().push_grouped(0..name.len(), &name, "<eval>".into()))
+    } else {
+        None
+    };
 
-    global_context.load_module(file.clone(), move |ctx, mref| {
-        let mctx = ctx.modules.get(&mref).unwrap();
+    let mut cctx = global_context.as_codegen_module();
 
-        ctx.database.insert_module(mctx);
+    if let Some(name) = show_ir_for {
+        cctx.build_pending_functions();
 
-        for (obj, lctx) in ctx.walk(mref.clone()) {
-            obj.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
+        match cctx.get_func_named(name) {
+            Some(st) => eprintln!("{}", st),
+            None => eprintln!("No function found."),
         }
-    });
 
-    let mut cctx = montyc::prelude::CodegenModule::new(&global_context, isa);
-
-    for (mref, mctx) in global_context.modules.iter() {
-        for (name, global) in mctx
-            .globals
-            .iter()
-            .map(|refm| (refm.key().clone(), refm.value().clone()))
-        {
-            let symbol = format!(
-                "{}.{}",
-                mref.module_name(),
-                global_context.resolver.resolve_ident(name).unwrap()
-            );
-
-            cctx.declare_global_in_module(
-                (mref.clone(), name),
-                &symbol,
-                true,
-                Linkage::Hidden,
-                |cctx| {
-                    let atom = if let Expr::Primary(Spanned {
-                        inner: Primary::Atomic(atom),
-                        ..
-                    }) = &global.inner
-                    {
-                        atom
-                    } else {
-                        unimplemented!();
-                    };
-
-                    let mut dctx = DataContext::new();
-
-                    let type_id = match &atom.inner {
-                        Atom::None => TypeMap::NONE_TYPE,
-                        Atom::Ellipsis => TypeMap::ELLIPSIS,
-                        Atom::Int(i) => {
-                            dctx.set_align(8);
-                            dctx.define(Box::new(i.to_ne_bytes()));
-
-                            TypeMap::INTEGER
-                        }
-
-                        Atom::Str(st) => {
-                            let string = StringRef(*st)
-                                .resolve_as_string(&cctx.global_context)
-                                .unwrap();
-                            let string = std::ffi::CString::new(string).unwrap();
-                            let string = string.into_bytes_with_nul();
-                            let string = string.into_boxed_slice();
-
-                            dctx.set_align(16);
-                            dctx.define(string);
-
-                            TypeMap::STRING
-                        }
-
-                        Atom::Bool(b) => {
-                            dctx.set_align(1);
-                            dctx.define(Box::new(if *b { [1u8] } else { [0u8] }));
-
-                            TypeMap::BOOL
-                        }
-
-                        Atom::Float(f) => {
-                            dctx.set_align(8);
-                            dctx.define(Box::new(f.to_ne_bytes()));
-
-                            TypeMap::FLOAT
-                        }
-
-                        Atom::Tuple(_) => unimplemented!(),
-                        Atom::Comment(_) => unreachable!(),
-                        Atom::Name(_) => unimplemented!(),
-                    };
-
-                    (type_id, dctx)
-                },
-            );
-        }
+        std::process::exit(0);
     }
 
-    cctx.declare_functions(global_context.functions.borrow().iter().enumerate().map(
-        |(idx, func)| {
-            (
-                idx,
-                func.as_ref(),
-                func.scope.module_ref(),
-                if func.is_externaly_defined() {
-                    Linkage::Import
-                } else {
-                    Linkage::Export
-                },
-                cranelift_codegen::isa::CallConv::SystemV,
-            )
-        },
-    ));
+    let object = cctx.finish(None::<&str>);
+    let object = object.to_str().unwrap();
 
-    cctx.finish(file.file_stem().unwrap());
+    let cc = opts.cc.unwrap_or("cc".into());
+
+    let output = opts.output.unwrap_or_else(|| {
+        file.file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+            .into()
+    });
+
+    let output = output.to_str().unwrap();
+
+    std::process::Command::new(cc)
+        .args(&[object, "-o", output, "-no-pie"])
+        .status()
+        .map(|_| ())
 }

@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, num::NonZeroUsize, rc::Rc};
 
+use cranelift_codegen::isa::CallConv;
+use cranelift_module::Linkage;
 use dashmap::DashMap;
 
 use crate::{
@@ -17,56 +19,60 @@ use crate::{
     typing::TaggedType,
 };
 
+pub fn extern_tag(def: &FunctionDef, gctx: &GlobalContext, mref: &ModuleRef) -> Option<CallConv> {
+    let source = gctx.modules.get(mref).as_ref().unwrap().source.clone();
+
+    def.decorator_list
+        .as_slice()
+        .iter()
+        .find_map(|dec| match &dec.inner {
+            Primary::Atomic(atom) => atom
+                .reveal(&source)
+                .and_then(|st| (st == "extern").then_some(CallConv::SystemV)),
+
+            Primary::Call { func, args } => {
+                let _ = source.get(func.span.clone()).map(|st| st == "extern")?;
+
+                let cc = match args.as_ref().map(Vec::as_slice) {
+                    Some([arg, ..]) => match &arg.inner {
+                        Expr::Primary(Spanned {
+                            inner: Primary::Atomic(atom),
+                            ..
+                        }) => match atom.inner {
+                            Atom::Str(n) => match source.get(gctx.span_ref.borrow().get(n)?)? {
+                                "systemv" => CallConv::SystemV,
+                                "windows-fastcall" => CallConv::WindowsFastcall,
+                                "fast" => CallConv::Fast,
+                                "cold" => CallConv::Cold,
+                                "apple-aarch64" => CallConv::AppleAarch64,
+                                _ => unimplemented!(),
+                            },
+
+                            _ => unimplemented!(),
+                        },
+
+                        _ => unimplemented!(),
+                    },
+
+                    _ => CallConv::SystemV,
+                };
+
+                Some(cc)
+            }
+
+            _ => None,
+        })
+}
+
 pub fn is_externaly_defined(
     def: &FunctionDef,
     global_context: &GlobalContext,
     mref: &ModuleRef,
-    callcov: Option<&str>,
 ) -> bool {
-    let source = global_context
-        .modules
-        .get(mref)
-        .as_ref()
-        .unwrap()
-        .source
-        .clone();
-
     // checks if the function has a decorator "extern"
     // "extern" may be called with zero or exactly one arguments
     // and the argument if present must be a string literal that matches `callcov`
-    let has_extern_tag = def
-        .decorator_list
-        .as_slice()
-        .iter()
-        .any(|dec| match &dec.inner {
-            Primary::Atomic(atom) => atom
-                .reveal(&source)
-                .map(|st| st == "extern")
-                .unwrap_or(false),
-
-            Primary::Call { func, args } => {
-                source
-                    .get(func.span.clone())
-                    .map(|st| st == "extern")
-                    .unwrap_or(false)
-                    && args
-                    .as_ref()
-                        .map(|args| {
-                            args.len() == 1
-                                && args
-                                    .get(0)
-                                    .map(|arg| {
-                                        matches!(
-                                            &arg.as_ref().inner,
-                                            Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. }) if matches!(atom.as_ref(), Spanned { inner: Atom::Str(n), ..} if matches!(source.get(global_context.span_ref.borrow().get(*n).unwrap()), Some(st) if callcov.map(|cc| cc == st).unwrap_or(true))
-                                        ))
-                                    })
-                                    .unwrap_or(false)
-                        })
-                        .unwrap_or(true)
-            }
-            _ => false,
-        });
+    let has_extern_tag = extern_tag(def, global_context, mref).is_some();
 
     let body_is_ellipsis = match def.body.as_slice() {
         [] => unreachable!(),
@@ -100,7 +106,9 @@ pub enum VarType {
 
 pub struct Function {
     pub def_id: DefId,
-    has_extern_tag: bool,
+
+    pub linkage: Option<Linkage>,
+    pub callcov: Option<CallConv>,
 
     pub scope: Rc<LocalScope<FunctionDef>>,
     pub kind: TaggedType<FunctionType>,
@@ -238,16 +246,25 @@ impl Function {
         }
 
         let mut func = Self {
-            has_extern_tag: false,
             def_id,
             scope: Rc::new(scope),
             kind,
             vars,
             refs: Default::default(),
+            linkage: None,
+            callcov: None,
         };
 
-        func.has_extern_tag =
-            is_externaly_defined(funcdef, &ctx.global_context, &ctx.scope.module_ref(), None);
+        func.callcov = extern_tag(funcdef, &ctx.global_context, &ctx.scope.module_ref());
+        func.linkage = Some(
+            if is_externaly_defined(funcdef, &ctx.global_context, &ctx.scope.module_ref()) {
+                Linkage::Import
+            } else if func.callcov.is_some() {
+                Linkage::Export
+            } else {
+                Linkage::Hidden
+            },
+        );
 
         let func = Rc::new(func);
 
@@ -262,7 +279,7 @@ impl Function {
     }
 
     pub fn is_externaly_defined(&self) -> bool {
-        self.has_extern_tag
+        matches!(self.linkage, Some(Linkage::Import))
     }
 }
 
