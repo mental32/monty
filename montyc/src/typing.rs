@@ -87,6 +87,8 @@ pub enum BuiltinTypeId {
     I32 = 106,
     I64 = 107,
 
+    DynFunc = 200,
+
     Never = 255,
 }
 
@@ -113,6 +115,7 @@ impl std::fmt::Display for BuiltinTypeId {
             BuiltinTypeId::I64 => write!(f, "{{i64}}"),
             BuiltinTypeId::Type => write!(f, "{{type}}"),
             BuiltinTypeId::Object => write!(f, "{{object}}"),
+            BuiltinTypeId::DynFunc => write!(f, "{{function}}"),
         }
     }
 }
@@ -199,6 +202,8 @@ impl TypeMap {
     pub const I16: LocalTypeId = LocalTypeId(105);
     pub const I32: LocalTypeId = LocalTypeId(106);
     pub const I64: LocalTypeId = LocalTypeId(107);
+
+    pub const DYN_FUNC: LocalTypeId = LocalTypeId(200);
 
     #[inline]
     pub fn correctly_initialized() -> Self {
@@ -608,6 +613,7 @@ impl SizeOf<()> for BuiltinTypeId {
             | BuiltinTypeId::Module
             | BuiltinTypeId::Unknown
             | BuiltinTypeId::Type
+            | BuiltinTypeId::DynFunc
             | BuiltinTypeId::Never => todo!(),
 
             BuiltinTypeId::Object => return None,

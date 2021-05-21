@@ -1,4 +1,4 @@
-import builtins
+import sys
 
 
 BUILTINS = {float, int, str, object, bool, type, dict, set, list, tuple, isinstance, id}
@@ -67,3 +67,7 @@ for dunder in DUNDERS:
 for ctype in CTYPES:
     print(f"c_{ctype}  # type: ignore")
     print(f"c_{ctype}_p # type: ignore")
+
+# used by the interpreter
+
+print("__value  # type: ignore")

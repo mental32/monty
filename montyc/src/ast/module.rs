@@ -56,3 +56,22 @@ impl LookupTarget for Module {
         todo!()
     }
 }
+
+impl Lower<Layout<Rc<Spanned<Statement>>>> for Module {
+    fn lower(&self) -> Layout<Rc<Spanned<Statement>>> {
+        let mut layout = Layout::new();
+        let mut prev = layout.start.clone();
+
+        for object in self.body.iter() {
+            let new = layout.insert_into_new_block(Rc::clone(&object));
+
+            layout.succeed(prev, new);
+
+            prev = new;
+        }
+
+        layout.succeed(prev, layout.end);
+
+        layout
+    }
+}

@@ -119,6 +119,7 @@ pub mod parser;
 pub mod phantom;
 pub mod scope;
 pub mod typing;
+pub mod interpreter;
 
 pub type Result<T> = std::result::Result<T, error::MontyError>;
 

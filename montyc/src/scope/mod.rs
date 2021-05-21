@@ -1,4 +1,4 @@
-use std::{fmt::Debug, rc::Rc};
+use std::{any::Any, fmt::Debug, num::NonZeroUsize, rc::Rc};
 
 use crate::{
     ast::{
@@ -84,6 +84,9 @@ pub trait Scope: core::fmt::Debug {
     fn walk<'a, 'b>(&'b self, global_context: &'a GlobalContext) -> ScopeIter<'a, 'b, 'b>;
 
     fn lookup_with(&self, key: &dyn Fn(&dyn AstObject) -> bool) -> Option<Rc<dyn AstObject>>;
+
+    #[allow(unused_variables)]
+    fn define(&self, name: (NonZeroUsize, NonZeroUsize), value: &dyn Any) { unimplemented!() }
 
     fn lookup_any(
         &self,

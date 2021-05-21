@@ -804,7 +804,13 @@ impl GlobalContext {
     /// This will invoke typechecking routines on the modules items.
     pub fn include_module(&mut self, path: &Path) -> ModuleRef {
         self.load_module(path, move |ctx, mref| {
-            let mctx = ctx.modules.get(&mref).unwrap();
+            let module = crate::interpreter::exec_module(ctx, mref.clone());
+
+            let mctx = ctx.modules.get_mut(&mref).unwrap();
+            let mut scope = OpaqueScope::from(module.clone() as Rc<_>);
+            scope.module_ref = Some(mref.clone());
+            let _ = std::mem::replace(&mut mctx.scope, Rc::new(scope) as Rc<_>);
+            let _ = std::mem::replace(&mut mctx.module, module);
 
             ctx.database.insert_module(mctx);
 
