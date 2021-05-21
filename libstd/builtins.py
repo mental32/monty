@@ -1,4 +1,4 @@
-from __monty import extern  # type: ignore
+from __monty import extern
 
 @extern
 class object:
