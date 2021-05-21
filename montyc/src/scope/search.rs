@@ -165,6 +165,8 @@ impl<'a> LookupIter<'a> {
         };
 
         for ((name, _), object) in extra {
+            let object = object.unwrap();
+
             log::trace!(
                 "lookup:search_undordered checking function arg: {:?} = {:?}",
                 name,

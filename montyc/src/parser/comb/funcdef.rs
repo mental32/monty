@@ -24,7 +24,7 @@ fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyTok
 #[inline]
 fn argument_annotated<'a>(
     stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, (Spanned<PyToken>, Spanned<Expr>)> {
+) -> IResult<TokenSlice<'a>, (Spanned<PyToken>, Option<Spanned<Expr>>)> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, name) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -34,13 +34,17 @@ fn argument_annotated<'a>(
             let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
             let (stream, kind) = expression(stream)?;
 
-            (stream, kind)
+            (stream, Some(kind))
         }
 
         Err(nom::Err::Error(error::Error {
             input: [(_, first), ..],
             ..
-        })) => panic!("Missing type annotation @ {:?}", name.span.start..first.end),
+        })) => {
+            let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+
+            (stream, None)
+        },
 
         Err(_) => unimplemented!(),
     };
@@ -55,7 +59,7 @@ fn arguments<'a>(
     TokenSlice<'a>,
     (
         Option<Spanned<PyToken>>,
-        Vec<(Spanned<PyToken>, Spanned<Expr>)>,
+        Vec<(Spanned<PyToken>, Option<Spanned<Expr>>)>,
     ),
 > {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -84,7 +88,7 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
     let (stream, ident) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, _) = expect(stream, PyToken::LParen)?;
-    let (stream, (reciever, arguments)) = arguments(stream)?;
+    let (stream, (reciever, mut arguments)) = arguments(stream)?;
     let (stream, _) = expect(stream, PyToken::RParen)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
@@ -148,9 +152,9 @@ pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spann
         None
     } else {
         let args = arguments
-            .iter()
+            .drain(..)
             .map(|(l, r)| match (l.inner, r) {
-                (PyToken::Ident(l), r) => (l, Rc::new(r.clone())),
+                (PyToken::Ident(l), r) => (l, r.map(Rc::new)),
                 _ => unreachable!(),
             })
             .collect();

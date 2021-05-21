@@ -139,6 +139,7 @@ impl Function {
             let args = match args {
                 Some(args) => {
                     let typed_args = args.iter().cloned().map(|(n, ann)| {
+                        let ann = ann.as_ref().unwrap();
                         let type_id = gctx
                             .database
                             .type_of(&(Rc::clone(&ann) as Rc<_>), None)
@@ -223,6 +224,7 @@ impl Function {
 
         if let Some(args) = &funcdef.args {
             for (name, ann) in args.iter() {
+                let ann = ann.as_ref().unwrap();
                 let (ty, _) = {
                     let ty = match crate::utils::try_parse_union_literal(ctx, &ann.inner, false)? {
                         Some(tys) => (ctx.global_context.type_map.tagged_union(tys), true),

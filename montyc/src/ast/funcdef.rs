@@ -48,11 +48,20 @@ impl TypedObject for TypedFuncArg {
 pub struct FunctionDef {
     pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
-    pub args: Option<Vec<((SpanRef, SpanRef), Rc<Spanned<Expr>>)>>,
+    pub args: Option<Vec<((SpanRef, SpanRef), Option<Rc<Spanned<Expr>>>)>>,
     pub body: Vec<Rc<dyn AstObject>>,
     pub decorator_list: Vec<Rc<Spanned<Primary>>>,
     pub returns: Option<Rc<Spanned<Expr>>>,
     // type_comment: Option<Rc<Expr>>,
+}
+
+impl FunctionDef {
+    pub fn is_dynamically_typed(&self) -> bool {
+        self.args
+            .as_ref()
+            .map(|args| args.iter().any(|arg| arg.1.is_none()))
+            .unwrap_or(false)
+    }
 }
 
 impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
@@ -80,7 +89,8 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
         let mut args = vec![];
 
         if let Some(def_args) = &def.args {
-            for (_arg_name, ann) in def_args {
+            for (_, ann) in def_args {
+                let ann = ann.as_ref().unwrap();
                 let mut ctx = ctx.clone();
                 ctx.this = Some(ann.clone());
 
@@ -91,13 +101,13 @@ impl<'a, 'b> From<(&'b FunctionDef, &'a LocalContext<'a>)> for FunctionType {
                         Some(tys) => (ctx.global_context.type_map.tagged_union(tys), true),
                         None => {
                             let mut ctx = ctx.clone();
-                            ctx.this = Some(Rc::clone(ann) as Rc<_>);
+                            ctx.this = Some(Rc::clone(&ann) as Rc<_>);
                             let ty = ann.infer_type(&ctx).unwrap_or_compiler_error(&ctx);
                             (ty, false)
                         }
                     };
 
-                    ctx.cache_type(&(Rc::clone(ann) as Rc<dyn AstObject>), ty.0);
+                    ctx.cache_type(&(Rc::clone(&ann) as Rc<dyn AstObject>), ty.0);
 
                     ty
                 };
@@ -152,12 +162,27 @@ impl AstObject for FunctionDef {
 
 impl TypedObject for FunctionDef {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        if self.is_dynamically_typed() {
+            return Err(MontyError::Unsupported {
+                span: self.name.span.clone(),
+                message: "Can not infer the type of a function that has unannotated arguments"
+                    .into(),
+            });
+        }
+
         let func_type: FunctionType = (self, ctx).into();
 
         Ok(ctx.global_context.type_map.insert(func_type))
     }
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
+        if self.is_dynamically_typed() {
+            return Err(MontyError::Unsupported {
+                span: self.name.span.clone(),
+                message: "Can not typecheck a function that has unannotated arguments".into(),
+            });
+        }
+
         let this = ctx.this.as_ref().unwrap();
 
         let func = Function::new(this, ctx).unwrap_or_compiler_error(ctx);
