@@ -122,17 +122,17 @@ where
 
         let TypePair(from, real) = value.kind;
 
-        let from_dbg = Formattable {
+        let from_ = Formattable {
             inner: from,
             gctx: &self.codegen_backend.global_context,
         };
 
-        let into_dbg = Formattable {
+        let into_ = Formattable {
             inner: into,
             gctx: &self.codegen_backend.global_context,
         };
 
-        log::trace!("codegen:maybe_coerce {} -> {}", from_dbg, into_dbg);
+        log::trace!("codegen:maybe_coerce {} -> {}", from_, into_);
 
         let tym = &self.codegen_backend.global_context.type_map;
 
@@ -169,7 +169,7 @@ where
                     } else {
                         panic!(
                             "No suitable coercion rule found for {} -> {}",
-                            from_dbg, into_dbg
+                            from_, into_
                         )
                     }
                 }
@@ -185,7 +185,7 @@ where
 
                 None => panic!(
                     "No suitable coercion rule found for {} -> {}",
-                    from_dbg, into_dbg
+                    from_, into_
                 ),
             };
 

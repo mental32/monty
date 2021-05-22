@@ -123,7 +123,8 @@ impl fmt::Display for Formattable<'_, &Generic> {
                 }
             ),
 
-            Generic::Struct { inner } => {
+            Generic::Tuple { inner }
+            | Generic::Struct { inner } => {
                 write!(
                     f,
                     "Tuple[{}]",

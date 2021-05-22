@@ -6,7 +6,6 @@ use crate::prelude::*;
 
 use super::object::Object;
 
-
 #[derive(Debug)]
 pub struct DynamicScope {
     pub(super) root: ScopeRoot,
@@ -20,7 +19,8 @@ impl Scope for DynamicScope {
     }
 
     fn define(&self, name: (NonZeroUsize, NonZeroUsize), value: &dyn Any) {
-        self.namespace.insert(name, value.downcast_ref::<Rc<Object>>().unwrap().clone());
+        self.namespace
+            .insert(name, value.downcast_ref::<Rc<Object>>().unwrap().clone());
     }
 
     fn root(&self) -> ScopeRoot {
@@ -53,5 +53,14 @@ impl Scope for DynamicScope {
         _order: crate::scope::LookupOrder,
     ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
         todo!()
+    }
+
+    fn lookup_def(
+        &self,
+        _: SpanRef,
+        _: &GlobalContext,
+        _: crate::scope::LookupOrder,
+    ) -> crate::Result<Vec<Rc<dyn AstObject>>> {
+        todo!();
     }
 }

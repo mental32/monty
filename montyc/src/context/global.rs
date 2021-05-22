@@ -525,12 +525,17 @@ impl GlobalContext {
 
     pub fn get_string_literal(&self, value: Rc<dyn AstObject>, mref: ModuleRef) -> String {
         let span = value.span().unwrap();
-        let mctx = self.modules.get(&mref).unwrap();
 
-        mctx.source
-            .get((span.start + 1)..(span.end - 1))
-            .unwrap()
-            .to_string()
+        match self.modules.get(&mref) {
+            Some(mctx) => {
+                mctx.source
+                .get((span.start + 1)..(span.end - 1))
+                .unwrap()
+                .to_string()
+            }
+
+            None => mref.to_string()
+        }
     }
 
     pub fn access_from_module(
@@ -807,8 +812,10 @@ impl GlobalContext {
             let module = crate::interpreter::exec_module(ctx, mref.clone());
 
             let mctx = ctx.modules.get_mut(&mref).unwrap();
+
             let mut scope = OpaqueScope::from(module.clone() as Rc<_>);
             scope.module_ref = Some(mref.clone());
+
             let _ = std::mem::replace(&mut mctx.scope, Rc::new(scope) as Rc<_>);
             let _ = std::mem::replace(&mut mctx.module, module);
 

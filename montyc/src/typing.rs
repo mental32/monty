@@ -58,6 +58,7 @@ pub struct FunctionType {
 pub enum Generic {
     Pointer { inner: LocalTypeId },
     Union { inner: Vec<LocalTypeId> },
+    Tuple { inner: Vec<LocalTypeId> },
     Struct { inner: Vec<LocalTypeId> },
     Boxed { inner: LocalTypeId },
 }
@@ -88,6 +89,7 @@ pub enum BuiltinTypeId {
     I64 = 107,
 
     DynFunc = 200,
+    Exception = 201,
 
     Never = 255,
 }
@@ -116,6 +118,7 @@ impl std::fmt::Display for BuiltinTypeId {
             BuiltinTypeId::Type => write!(f, "{{type}}"),
             BuiltinTypeId::Object => write!(f, "{{object}}"),
             BuiltinTypeId::DynFunc => write!(f, "{{function}}"),
+            BuiltinTypeId::Exception => write!(f, "{{exception}}"),
         }
     }
 }
@@ -204,6 +207,7 @@ impl TypeMap {
     pub const I64: LocalTypeId = LocalTypeId(107);
 
     pub const DYN_FUNC: LocalTypeId = LocalTypeId(200);
+    pub const EXCEPTION: LocalTypeId = LocalTypeId(201);
 
     #[inline]
     pub fn correctly_initialized() -> Self {
@@ -306,6 +310,10 @@ impl TypeMap {
         matches!(self.get_tagged(p), Some(Ok(TaggedType { inner: Generic::Pointer { inner }, ..})) if inner == t)
     }
 
+    pub fn tuple(&self, elements: impl Iterator<Item = LocalTypeId>) -> LocalTypeId {
+        self.insert(TypeDescriptor::Generic(Generic::Tuple { inner: elements.collect::<Vec<_>>() }))
+    }
+
     pub fn is_pointer(&self, t: LocalTypeId) -> bool {
         matches!(
             self.get_tagged(t),
@@ -332,6 +340,8 @@ impl TypeMap {
             let tydesc = tydesc.value();
 
             match tydesc {
+                TypeDescriptor::Generic(Generic::Tuple { .. }) => unreachable!(),
+
                 TypeDescriptor::Generic(Generic::Boxed { .. })
                 | TypeDescriptor::Generic(Generic::Pointer { .. })
                 | TypeDescriptor::Simple(_) => {
@@ -614,6 +624,7 @@ impl SizeOf<()> for BuiltinTypeId {
             | BuiltinTypeId::Unknown
             | BuiltinTypeId::Type
             | BuiltinTypeId::DynFunc
+            | BuiltinTypeId::Exception
             | BuiltinTypeId::Never => todo!(),
 
             BuiltinTypeId::Object => return None,
@@ -663,6 +674,8 @@ impl SizeOf<&TypeMap> for TypeDescriptor {
 
                     NonZeroU32::new(tag_size + largest)
                 }
+
+                Generic::Tuple { .. } => unreachable!(),
             },
         }
     }
