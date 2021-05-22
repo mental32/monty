@@ -4,7 +4,7 @@ import sys
 BUILTINS = {float, int, str, object, bool, type, dict, set, list, tuple, isinstance, id}
 
 
-DUNDERS = {
+RDUNDERS = {
     "add",
     "sub",
     "pow",
@@ -19,8 +19,16 @@ DUNDERS = {
     "getattr",
     "getattribute",
     "getitem",
+    "call"
 }
 
+DUNDERS = {
+    "eq",
+    "call",
+    "len",
+    "iter",
+    "next",
+}
 
 CTYPES = {
     "char",
@@ -58,11 +66,12 @@ print(
 for builtin in BUILTINS:
     print(f"{builtin.__name__!s}")
 
+for dunder in RDUNDERS:
+    print(f"__{dunder}__  # type: ignore")
+    print(f"__r{dunder}__  # type: ignore")
+
 for dunder in DUNDERS:
     print(f"__{dunder}__  # type: ignore")
-
-    if dunder != "eq":
-        print(f"__r{dunder}__  # type: ignore")
 
 for ctype in CTYPES:
     print(f"c_{ctype}  # type: ignore")
