@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::{func::Function, prelude::*, typing::ClassType};
 
-use super::{atom::Atom, expr::Expr, primary::Primary, AstObject, Spanned};
+use super::{AstObject, Spanned, atom::Atom, expr::Expr, primary::Primary, stmt::Statement};
 
 #[derive(Debug, Clone)]
 pub struct TypedFuncArg {
@@ -49,7 +49,7 @@ pub struct FunctionDef {
     pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
     pub args: Option<Vec<((SpanRef, SpanRef), Option<Rc<Spanned<Expr>>>)>>,
-    pub body: Vec<Rc<dyn AstObject>>,
+    pub body: Vec<Rc<Spanned<Statement>>>,
     pub decorator_list: Vec<Rc<Spanned<Primary>>>,
     pub returns: Option<Rc<Spanned<Expr>>>,
     // type_comment: Option<Rc<Expr>>,
@@ -156,7 +156,9 @@ impl AstObject for FunctionDef {
     }
 
     fn walk(&self) -> Option<super::ObjectIter> {
-        Some(Box::new(self.body.clone().into_iter()))
+        let body: Vec<Rc<dyn AstObject>> = self.body.iter().map(|stmt| stmt.clone() as Rc<_>).collect();
+
+        Some(Box::new(body.into_iter()))
     }
 }
 
@@ -219,7 +221,7 @@ impl Lower<Layout<Rc<dyn AstObject>>> for FunctionDef {
         let mut prev = layout.start.clone();
 
         for object in self.body.iter() {
-            let new = layout.insert_into_new_block(Rc::clone(&object));
+            let new = layout.insert_into_new_block(Rc::clone(&object) as Rc<_>);
 
             layout.succeed(prev, new);
 
