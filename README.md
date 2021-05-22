@@ -8,10 +8,11 @@
 - [Brief](#brief)
 - [Building the compiler](#building-the-compiler)
 - [Using the compiler](#using-the-compiler)
-- [Concepts under development](#concepts-under-development)
+- [Just some thoughts on how we can keep the dynamic feeling.](#just-some-thoughts-on-how-we-can-keep-the-dynamic-feeling)
   - ["automatic unions"](#automatic-unions)
   - ["Type narrowing"](#type-narrowing)
   - ["Deviated instance types"](#deviated-instance-types)
+  - [Compile time (or "comptime") execution](#compile-time-or-comptime-execution)
 - [Related projects](#related-projects)
   - ["prior art"](#prior-art)
 
@@ -55,7 +56,7 @@ a mostly statically linked binary named `./file` (or `./file.exe` if using windo
 you may also specify the path to the local C compiler via `--cc="path/to/cc"`
 and a linker via `--ld="path/to/ld"`
 
-## Concepts under development
+## Just some thoughts on how we can keep the dynamic feeling.
 
 Apart from the regular semantics of interpreter Python, Monty will disallow
 parts of the language selectively (depending on how hard the feature is to
@@ -113,7 +114,7 @@ type for you so the type of `x` will be:
 
 ### "Type narrowing"
 
-Type narrowing [is not a new concept] and its been around for a while in typecheckers.
+Type narrowing [is not a new concept][type-narrowing] and its been around for a while in typecheckers.
 
 The idea is, roughly, that you can take a union type and dissasemble it into one of its
 variants through a type guard like:
@@ -183,6 +184,33 @@ def whatever(blah: str, n: int):
     thing.attr3 = blah * n
 ```
 
+### Compile time (or "comptime") execution
+
+The biggest difference between regular Python and Monty is how the module-level
+is evaluated.
+
+Python is lazy and everything gets run when its accessed, a
+modules scope is still a big block of executable code after all and can be treated
+as a function that operates on an implicit module object.
+
+Monty treats a module's global scope as a big pool of constant declarations.
+but this doesn't translate well for obvious reasons with already existing code
+and semantics. To bridge this gap montyc has within itself a small AST-based
+interpreter that is used to execute the code within a modules global scope.
+
+Assuming most global-scope level logic is there to act as a sort of 
+"initializing glue routine" then the user can do whatever they like as long as:
+
+  * The execution finishes within a known amount of "ticks" (so that we don't accidentally run off into an infinite loop that never finishes.)
+
+  * The state of the module's global scope is semantically correct (the typechecker will verify the module after comptime execution has finished for a module.)
+
+
+Of course in a completely dynamic environment we don't have to restrict the user
+like we would when compiling the code regularly, so in that case most things that
+would be rejected normally are perfectly fine such as: `exec`, `eval`, 
+`globals`, `locals`, dynamic class creation, and functions with untyped arguments.
+
 ## Related projects
 
 ### ["prior art"](https://github.com/rust-lang/rfcs/blob/master/text/2333-prior-art.md)
@@ -195,6 +223,10 @@ def whatever(blah: str, n: int):
 - [PyPy](https://foss.heptapod.net/pypy/pypy)
 - [RPython](https://foss.heptapod.net/pypy/pypy/-/tree/branch/default/rpython)
 - [RustPython](https://github.com/RustPython/RustPython)
+- [Pyston](https://github.com/pyston/pyston)
+- [Pyjion](https://github.com/tonybaloney/Pyjion)
+- [ShedSkin](https://github.com/shedskin/shedskin)
+- [IronPython](https://github.com/IronLanguages/ironpython3)
 
 [cranelift]: https://github.com/bytecodealliance/wasmtime/tree/main/cranelift
 [llvm]: https://llvm.org/
@@ -202,3 +234,4 @@ def whatever(blah: str, n: int):
 [PEP604]: https://www.python.org/dev/peps/pep-0604/
 
 [rpython-instances]: https://rpython.readthedocs.io/en/latest/translation.html#user-defined-classes-and-instances
+[type-narrowing]: https://www.python.org/dev/peps/pep-0647/#id3
