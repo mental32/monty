@@ -31,6 +31,12 @@ mod callable {
             for<'a> fn(PyObject, &'a mut RuntimeContext, Option<PyObject>) -> PyResult<PyObject>,
         ),
     }
+
+    impl std::fmt::Debug for Callable {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("Callable").finish()
+        }
+    }
 }
 
 trait Eval: AstObject {
@@ -57,6 +63,7 @@ where
 #[derive(Debug)]
 enum PyErr {
     Exception(PyObject),
+    Break,
     Return(PyObject),
 }
 
@@ -70,6 +77,44 @@ type Name = (NonZeroUsize, NonZeroUsize);
 
 type PyObject = Rc<Object>;
 type PyResult<T> = Result<T, PyErr>;
+type PyAny = Rc<dyn any::AnyDebug>;
+
+mod any {
+    use std::any::{Any, TypeId};
+
+    pub(super) trait AnyDebug: std::any::Any + std::fmt::Debug {}
+
+    impl<T> AnyDebug for T where T: std::any::Any + std::fmt::Debug {}
+
+    impl dyn AnyDebug {
+        /// Returns `true` if the boxed type is the same as `T`.
+        #[inline]
+        pub fn is<T: Any>(&self) -> bool {
+            // Get `TypeId` of the type this function is instantiated with.
+            let t = TypeId::of::<T>();
+
+            // Get `TypeId` of the type in the trait object (`self`).
+            let concrete = self.type_id();
+
+            // Compare both `TypeId`s on equality.
+            t == concrete
+        }
+
+        /// Returns some reference to the boxed value if it is of type `T`, or
+        /// `None` if it isn't.
+        #[inline]
+        pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+            if self.is::<T>() {
+                // SAFETY: just checked whether we are pointing to the correct type, and we can rely on
+                // that check for memory safety because we have implemented Any for all types; no other
+                // impls can exist as they would conflict with our impl.
+                unsafe { Some(&*(self as *const dyn AnyDebug as *const T)) }
+            } else {
+                None
+            }
+        }
+    }
+}
 
 #[macro_export]
 macro_rules! exception {

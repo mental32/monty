@@ -266,7 +266,7 @@ impl<'global> CodegenModule<'global> {
                     crate::isinstance!(
                         node.as_ref(),
                         Statement,
-                        Statement::Expression(Expr::Primary(p)) => !p.inner.is_comment() // retain discards elements when the predicate produces "false"
+                        Statement::Expr(Expr::Primary(p)) => !p.inner.is_comment() // retain discards elements when the predicate produces "false"
                     )
                     .unwrap_or(true)
                 });

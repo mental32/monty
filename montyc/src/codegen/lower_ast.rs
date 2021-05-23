@@ -731,7 +731,7 @@ impl LowerCodegen for Statement {
         match self {
             Self::FnDef(_) | Self::Import(_) | Self::Class(_) => unreachable!(),
 
-            Statement::Expression(expr) => LowerCodegen::lower(expr, (ctx, builder)),
+            Statement::Expr(expr) => LowerCodegen::lower(expr, (ctx, builder)),
 
             Statement::Ret(ret) => {
                 if let Some(expr) = &ret.value {

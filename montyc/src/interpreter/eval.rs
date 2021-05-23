@@ -6,22 +6,33 @@ use crate::{
         Spanned,
     },
     exception,
+    interpreter::PyErr,
     scope::{Scope, ScopeRoot},
 };
 
 use super::{object::Object, runtime::RuntimeContext, Eval, PyObject, PyResult, ToAst};
 
 impl Eval for Atom {
-    fn eval(&self, rt: &mut RuntimeContext, _module: &mut Module) -> PyResult<Option<PyObject>> {
+    fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
         match self {
             Atom::None => Ok(Some(rt.none())),
             Atom::Ellipsis => todo!(),
             Atom::Int(n) => Ok(Some(rt.integer(*n))),
             Atom::Str(s) => Ok(Some(rt.string(*s, rt.scope().module_ref()))),
             Atom::Bool(b) => Ok(Some(rt.boolean(*b))),
-            Atom::Float(_) => todo!(),
-            Atom::Tuple(_) => todo!(),
-            Atom::Comment(_) => todo!(),
+            Atom::Float(f) => Ok(Some(rt.float(*f))),
+            Atom::Tuple(elem) => {
+                let mut objs = vec![];
+
+                for expr in elem.iter() {
+                    let value = expr.inner.eval(rt, module)?.unwrap();
+                    objs.push(value);
+                }
+
+                Ok(Some(rt.tuple(&*objs)))
+            },
+
+            Atom::Comment(_) => Ok(None),
             Atom::Name(name) => match rt.lookup(name.clone()) {
                 obj @ Some(_) => Ok(obj),
                 None => exception!("Not found"),
@@ -34,7 +45,13 @@ impl Eval for Primary {
     fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
         match self {
             Primary::Atomic(at) => at.inner.eval(rt, module),
-            Primary::Subscript { value: _, index: _ } => todo!(),
+
+            Primary::Subscript { value, index } => {
+                let obj = value.inner.eval(rt, module)?.unwrap();
+                let index = index.inner.eval(rt, module)?.unwrap();
+
+                obj.call_method(rt.names.__getitem__, rt, Some(index), None).map(Some)
+            },
 
             Primary::Call { func, args } => {
                 let f = func.inner.eval(rt, module)?.unwrap();
@@ -57,7 +74,16 @@ impl Eval for Primary {
                 f.call(rt, args, None).map(Some)
             }
 
-            Primary::Attribute { left: _, attr: _ } => todo!(),
+            Primary::Attribute { left, attr } => {
+                let obj = left.inner.eval(rt, module)?.unwrap();
+                let attr = attr.inner.as_name().unwrap();
+
+                match obj.get_attribute(&attr) {
+                    Some(cell) => Ok(cell.into_inner().downcast_ref::<PyObject>().cloned()),
+                    None => exception!("attribute error"),
+                }
+            }
+
             Primary::Await(_) => todo!(),
         }
     }
@@ -93,7 +119,7 @@ impl Eval for Expr {
 impl Eval for Rc<Spanned<Statement>> {
     fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
         match &self.inner {
-            Statement::Expression(e) => e.eval(rt, module),
+            Statement::Expr(e) => e.eval(rt, module),
 
             Statement::FnDef(fndef) => {
                 rt.scope().define(
@@ -171,7 +197,25 @@ impl Eval for Rc<Spanned<Statement>> {
                 Ok(None)
             }
 
-            Statement::While(_) => todo!(),
+            Statement::While(while_) => {
+                while {
+                    let test = while_.test.inner.eval(rt, module)?.unwrap();
+                    rt.is_truthy(test)
+                } {
+                    for stmt in while_.body.iter() {
+                        if let Err(exc) = stmt.eval(rt, module) {
+                            if let PyErr::Break = exc {
+                                break;
+                            } else {
+                                return Err(exc);
+                            }
+                        }
+                    }
+                }
+
+                Ok(None)
+            }
+
             Statement::Pass => Ok(None),
         }
     }

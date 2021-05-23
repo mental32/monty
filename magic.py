@@ -28,6 +28,12 @@ DUNDERS = {
     "len",
     "iter",
     "next",
+    "getitem",
+    "setitem",
+    "delitem",
+    "missing",
+    "reversed",
+    "contains",
 }
 
 CTYPES = {

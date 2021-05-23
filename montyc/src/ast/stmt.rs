@@ -12,7 +12,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Expression(Expr),
+    Expr(Expr),
     FnDef(FunctionDef),
     Ret(Return),
     Asn(Assign),
@@ -26,7 +26,7 @@ pub enum Statement {
 impl Statement {
     pub fn inner_as_object(&self) -> Rc<dyn AstObject> {
         match self.clone() {
-            Statement::Expression(e) => Rc::new(e),
+            Statement::Expr(e) => Rc::new(e),
             Statement::FnDef(f) => Rc::new(f),
             Statement::Ret(r) => Rc::new(r),
             Statement::Asn(a) => Rc::new(a),
@@ -42,7 +42,7 @@ impl Statement {
 impl AstObject for Statement {
     fn span(&self) -> Option<logos::Span> {
         match self {
-            Statement::Expression(e) => e.span(),
+            Statement::Expr(e) => e.span(),
             Statement::FnDef(f) => f.span(),
             Statement::Ret(r) => r.span(),
             Statement::Asn(a) => a.span(),
@@ -56,7 +56,7 @@ impl AstObject for Statement {
 
     fn unspanned(&self) -> std::rc::Rc<dyn AstObject> {
         match self {
-            Statement::Expression(e) => e.unspanned(),
+            Statement::Expr(e) => e.unspanned(),
             Statement::FnDef(f) => f.unspanned(),
             Statement::Ret(r) => r.unspanned(),
             Statement::Asn(a) => a.unspanned(),
@@ -70,7 +70,7 @@ impl AstObject for Statement {
 
     fn walk(&self) -> Option<super::ObjectIter> {
         match self {
-            Statement::Expression(e) => e.walk(),
+            Statement::Expr(e) => e.walk(),
             Statement::FnDef(f) => f.walk(),
             Statement::Ret(r) => r.walk(),
             Statement::Asn(a) => a.walk(),
@@ -86,7 +86,7 @@ impl AstObject for Statement {
 impl TypedObject for Statement {
     fn infer_type<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
         match self {
-            Statement::Expression(e) => e.infer_type(ctx),
+            Statement::Expr(e) => e.infer_type(ctx),
             Statement::FnDef(f) => f.infer_type(ctx),
             Statement::Ret(r) => r.infer_type(ctx),
             Statement::Asn(a) => a.infer_type(ctx),
@@ -100,7 +100,7 @@ impl TypedObject for Statement {
 
     fn typecheck<'a>(&self, ctx: &LocalContext<'a>) -> crate::Result<()> {
         match self {
-            Statement::Expression(e) => e.typecheck(ctx),
+            Statement::Expr(e) => e.typecheck(ctx),
             Statement::FnDef(f) => f.typecheck(ctx),
             Statement::Ret(r) => r.typecheck(ctx),
             Statement::Asn(a) => a.typecheck(ctx),
@@ -120,7 +120,7 @@ impl Parseable for Statement {
 impl LookupTarget for Statement {
     fn is_named(&self, target: SpanRef) -> bool {
         match self {
-            Statement::Expression(e) => e.is_named(target),
+            Statement::Expr(e) => e.is_named(target),
             Statement::FnDef(e) => e.is_named(target),
             Statement::Ret(e) => e.is_named(target),
             Statement::Asn(e) => e.is_named(target),
@@ -134,7 +134,7 @@ impl LookupTarget for Statement {
 
     fn name(&self) -> Option<SpanRef> {
         match self {
-            Statement::Expression(e) => e.name(),
+            Statement::Expr(e) => e.name(),
             Statement::FnDef(e) => e.name(),
             Statement::Ret(e) => e.name(),
             Statement::Asn(e) => e.name(),

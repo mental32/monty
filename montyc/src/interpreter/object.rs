@@ -2,9 +2,15 @@ use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{ast::{atom::Atom, expr::Expr, primary::Primary, Spanned}, exception, interpreter::callable::Callable, prelude::Span, typing::{LocalTypeId, TypeMap}};
+use crate::{
+    ast::{atom::Atom, expr::Expr, primary::Primary, Spanned},
+    exception,
+    interpreter::callable::Callable,
+    prelude::Span,
+    typing::{LocalTypeId, TypeMap},
+};
 
-use super::{runtime::RuntimeContext, Name, PyObject, PyResult, ToAst};
+use super::{any::AnyDebug, Name, PyAny, PyObject, PyResult, ToAst, runtime::RuntimeContext};
 
 #[derive(Clone, Debug)]
 pub enum MutCell<T> {
@@ -29,28 +35,28 @@ pub(super) struct Object {
     pub(super) type_id: LocalTypeId,
 
     /// Basically like `__dict__`
-    pub(super) members: DashMap<(NonZeroUsize, NonZeroUsize), MutCell<Rc<dyn Any>>>,
+    pub(super) members: DashMap<(NonZeroUsize, NonZeroUsize), MutCell<PyAny>>,
 
     /// Reference to the class instance of this object.
     pub(super) prototype: Option<Rc<Object>>,
 }
 
 impl Object {
-    fn setattr<A>(&self, name: &Name, value: A) -> PyResult<Option<Rc<dyn Any>>>
+    fn setattr<A>(&self, name: &Name, value: A) -> PyResult<Option<PyAny>>
     where
-        A: Any,
+        A: AnyDebug,
     {
         let prev = match self.get_member(name) {
             Some(cell) => match &cell {
                 MutCell::Immutable(_) => exception!("immutable attribute!"),
-                MutCell::Mutable(prev) => Some(prev.replace(Rc::new(value) as Rc<dyn Any>)),
+                MutCell::Mutable(prev) => Some(prev.replace(Rc::new(value) as PyAny)),
             },
 
             None => self
                 .members
                 .insert(
                     name.clone(),
-                    MutCell::Mutable(RefCell::new(Rc::new(value) as Rc<dyn Any>)),
+                    MutCell::Mutable(RefCell::new(Rc::new(value) as PyAny)),
                 )
                 .map(MutCell::into_inner),
         };
@@ -58,7 +64,7 @@ impl Object {
         Ok(prev)
     }
 
-    fn get_attribute(&self, name: &(NonZeroUsize, NonZeroUsize)) -> Option<MutCell<Rc<dyn Any>>> {
+    pub fn get_attribute(&self, name: &(NonZeroUsize, NonZeroUsize)) -> Option<MutCell<PyAny>> {
         match self.members.get(name) {
             Some(attr) => Some(attr.value().clone()),
             None => {
@@ -115,18 +121,14 @@ impl Object {
             None => base.type_id == TypeMap::TYPE && base.prototype.is_none(),
         }
     }
-
-    pub fn class(&self) -> (Option<Rc<Object>>, LocalTypeId) {
-        (self.prototype.clone(), self.type_id.clone())
-    }
-
-    pub fn get_member(&self, name: &Name) -> Option<MutCell<Rc<dyn Any>>> {
+    pub fn get_member(&self, name: &Name) -> Option<MutCell<PyAny>> {
         self.members.get(&name).map(|refm| refm.value().clone())
     }
     pub fn get_member_as_object(&self, name: &Name) -> Option<PyObject> {
-        let member = self.get_member(name)?;
-
-        member.into_inner().downcast_ref::<Rc<Object>>().cloned()
+        self.get_member(name)?
+            .into_inner()
+            .downcast_ref::<Rc<Object>>()
+            .cloned()
     }
 }
 
@@ -163,7 +165,7 @@ impl ToAst for Rc<Object> {
                 let value = self.get_member(&rt.names.__value).unwrap().into_inner();
                 let value = value.downcast_ref::<String>().unwrap();
 
-                let st = rt.global_context.span_ref.borrow_mut().push_grouped(
+                let (st, _) = rt.global_context.span_ref.borrow_mut().push_grouped(
                     0..value.len(),
                     &*value,
                     std::path::PathBuf::from(value).into(),
@@ -173,7 +175,7 @@ impl ToAst for Rc<Object> {
                     span: span.clone(),
                     inner: Primary::Atomic(Rc::new(Spanned {
                         span,
-                        inner: Atom::Str(st.0),
+                        inner: Atom::Str(st),
                     })),
                 })
             }

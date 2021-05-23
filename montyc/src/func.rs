@@ -79,7 +79,7 @@ pub fn is_externaly_defined(
 
         [obj]
         | [_, obj] => {
-            crate::isinstance!(obj.as_ref(), Statement, Statement::Expression(Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. })) => matches!(atom.as_ref(), Spanned { inner: Atom::Ellipsis, ..})).unwrap_or(false)
+            crate::isinstance!(obj.as_ref(), Statement, Statement::Expr(Expr::Primary(Spanned { inner: Primary::Atomic(atom), .. })) => matches!(atom.as_ref(), Spanned { inner: Atom::Ellipsis, ..})).unwrap_or(false)
         },
 
         _ => false,

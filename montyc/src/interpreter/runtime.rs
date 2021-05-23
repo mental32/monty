@@ -1,4 +1,4 @@
-use std::{any::Any, num::NonZeroUsize, rc::Rc};
+use std::{num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
@@ -14,20 +14,20 @@ use crate::{
 use super::{
     object::{MutCell, Object},
     scope::DynamicScope,
-    Name, PyErr, PyObject,
+    Name, PyAny, PyErr, PyObject,
 };
 
 #[derive(Debug)]
 pub struct Singletons {
-    pub(super) int_class: Rc<Object>,
-    pub(super) str_class: Rc<Object>,
-    pub(super) bool_class: Rc<Object>,
-    pub(super) func_class: Rc<Object>,
-    pub(super) type_class: Rc<Object>,
-    pub(super) base_exc_class: Rc<Object>,
-    pub(super) ret_exc_class: Rc<Object>,
-    pub(super) stop_iter_exc_class: Rc<Object>,
-    pub(super) none: Rc<Object>,
+    pub(super) int_class: PyObject,
+    pub(super) str_class: PyObject,
+    pub(super) bool_class: PyObject,
+    pub(super) func_class: PyObject,
+    pub(super) type_class: PyObject,
+    pub(super) base_exc_class: PyObject,
+    pub(super) ret_exc_class: PyObject,
+    pub(super) stop_iter_exc_class: PyObject,
+    pub(super) none: PyObject,
 }
 
 impl Singletons {
@@ -103,6 +103,7 @@ pub(super) struct SpecialNames {
     pub __iter__: Name,
     pub __next__: Name,
     pub __value: Name,
+    pub __getitem__: Name,
 }
 
 pub(super) struct RuntimeContext<'a> {
@@ -122,6 +123,7 @@ impl<'a> RuntimeContext<'a> {
                 __call__: global_context.magical_name_of("__call__").unwrap(),
                 __iter__: global_context.magical_name_of("__iter__").unwrap(),
                 __next__: global_context.magical_name_of("__next__").unwrap(),
+                __getitem__: global_context.magical_name_of("__getitem__").unwrap(),
             },
 
             stack_frames: vec![],
@@ -146,7 +148,7 @@ impl<'a> RuntimeContext<'a> {
         self.stack_frames.last().unwrap().clone()
     }
 
-    pub fn is_truthy(&self, v: Rc<Object>) -> bool {
+    pub fn is_truthy(&self, v: PyObject) -> bool {
         match v.type_id {
             TypeMap::INTEGER => v
                 .get_member(&self.names.__value)
@@ -160,15 +162,15 @@ impl<'a> RuntimeContext<'a> {
                 .get_member(&self.names.__value)
                 .unwrap()
                 .into_inner()
-                .downcast_ref::<Rc<bool>>()
-                .map(|r| *r.as_ref() == true)
+                .downcast_ref::<bool>()
+                .map(|r| *r == true)
                 .unwrap_or(false),
 
             _ => unimplemented!(),
         }
     }
 
-    pub fn integer(&self, value: isize) -> Rc<Object> {
+    pub fn integer(&self, value: isize) -> PyObject {
         Rc::new(Object {
             type_id: TypeMap::INTEGER,
             members: {
@@ -176,7 +178,7 @@ impl<'a> RuntimeContext<'a> {
 
                 members.insert(
                     self.names.__value.clone(),
-                    MutCell::Immutable(Rc::new(value) as Rc<dyn Any>),
+                    MutCell::Immutable(Rc::new(value) as PyAny),
                 );
 
                 members
@@ -186,7 +188,25 @@ impl<'a> RuntimeContext<'a> {
         })
     }
 
-    pub fn boolean(&self, b: bool) -> Rc<Object> {
+    pub fn float(&self, value: f64) -> PyObject {
+        Rc::new(Object {
+            type_id: TypeMap::FLOAT,
+            members: {
+                let members = DashMap::new();
+
+                members.insert(
+                    self.names.__value.clone(),
+                    MutCell::Immutable(Rc::new(value) as PyAny),
+                );
+
+                members
+            },
+
+            prototype: Some(self.singletons.int_class.clone()),
+        })
+    }
+
+    pub fn boolean(&self, b: bool) -> PyObject {
         Rc::new(Object {
             type_id: TypeMap::BOOL,
             members: {
@@ -194,7 +214,7 @@ impl<'a> RuntimeContext<'a> {
 
                 members.insert(
                     self.names.__value.clone(),
-                    MutCell::Immutable(Rc::new(b) as Rc<dyn Any>),
+                    MutCell::Immutable(Rc::new(b) as PyAny),
                 );
 
                 members
@@ -204,7 +224,7 @@ impl<'a> RuntimeContext<'a> {
         })
     }
 
-    pub fn string(&self, st: NonZeroUsize, _mref: ModuleRef) -> Rc<Object> {
+    pub fn string(&self, st: NonZeroUsize, _mref: ModuleRef) -> PyObject {
         Rc::new(Object {
             type_id: TypeMap::STRING,
             members: {
@@ -212,7 +232,7 @@ impl<'a> RuntimeContext<'a> {
 
                 members.insert(
                     self.names.__value.clone(),
-                    MutCell::Immutable(Rc::new(st) as Rc<dyn Any>),
+                    MutCell::Immutable(Rc::new(st) as PyAny),
                 );
 
                 members
@@ -233,7 +253,7 @@ impl<'a> RuntimeContext<'a> {
 
                 members.insert(
                     self.names.__value.clone(),
-                    MutCell::Immutable(Rc::new(elements.to_vec()) as Rc<dyn Any>),
+                    MutCell::Immutable(Rc::new(elements.to_vec()) as PyAny),
                 );
 
                 members
@@ -243,11 +263,11 @@ impl<'a> RuntimeContext<'a> {
         })
     }
 
-    pub fn none(&self) -> Rc<Object> {
+    pub fn none(&self) -> PyObject {
         self.singletons.none.clone()
     }
 
-    pub fn function(&self, def: Rc<Spanned<Statement>>, mref: ModuleRef) -> Rc<Object> {
+    pub fn function(&self, def: Rc<Spanned<Statement>>, mref: ModuleRef) -> PyObject {
         assert_matches!(&def.inner, Statement::FnDef(_));
 
         Rc::new(Object {
@@ -325,12 +345,12 @@ impl<'a> RuntimeContext<'a> {
 
                 members.insert(
                     self.names.__value.clone(),
-                    MutCell::Immutable(Rc::new((def, mref)) as Rc<dyn Any>),
+                    MutCell::Immutable(Rc::new((def, mref)) as PyAny),
                 );
 
                 members.insert(
                     self.names.__call__.clone(),
-                    MutCell::Immutable(Rc::new(call) as Rc<dyn Any>),
+                    MutCell::Immutable(Rc::new(call) as PyAny),
                 );
 
                 members

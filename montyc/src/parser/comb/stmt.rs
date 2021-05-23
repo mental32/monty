@@ -90,7 +90,7 @@ fn dyn_span_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<S
     let a = tok.map(Atom::from);
     let a = a.transparent_with(|at| Primary::Atomic(Rc::new(at)));
     let a = a.transparent_with(Expr::Primary);
-    let a = a.map(Statement::Expression);
+    let a = a.map(Statement::Expr);
 
     Ok((stream, a))
 }
@@ -104,7 +104,7 @@ fn dyn_pass<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<State
 #[inline]
 fn dyn_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
     let (stream, span) = expression(stream)?;
-    Ok((stream, span.map(Statement::Expression)))
+    Ok((stream, span.map(Statement::Expr)))
 }
 
 #[inline]
