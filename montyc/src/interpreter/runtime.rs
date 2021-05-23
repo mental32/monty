@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, rc::Rc};
+use std::{convert::TryInto, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
@@ -102,6 +102,9 @@ pub(super) struct SpecialNames {
     pub __call__: Name,
     pub __iter__: Name,
     pub __next__: Name,
+    pub __neg__: Name,
+    pub __pos__: Name,
+    pub __invert__: Name,
     pub __value: Name,
     pub __getitem__: Name,
 }
@@ -124,6 +127,9 @@ impl<'a> RuntimeContext<'a> {
                 __iter__: global_context.magical_name_of("__iter__").unwrap(),
                 __next__: global_context.magical_name_of("__next__").unwrap(),
                 __getitem__: global_context.magical_name_of("__getitem__").unwrap(),
+                __neg__: global_context.magical_name_of("__neg__").unwrap(),
+                __pos__: global_context.magical_name_of("__pos__").unwrap(),
+                __invert__: global_context.magical_name_of("__invert__").unwrap(),
             },
 
             stack_frames: vec![],
@@ -176,10 +182,66 @@ impl<'a> RuntimeContext<'a> {
             members: {
                 let members = DashMap::new();
 
+                macro_rules! binop {
+                    ($name:ident, $e:expr) => {{
+                        let name = self
+                            .global_context
+                            .magical_name_of(stringify!($name))
+                            .expect("Missing a magic name.");
+
+                        let callback = Callable::BuiltinFn(|this, rt, args| {
+                            let argument = args.expect("dunder should have one argument!");
+
+                            log::trace!(
+                                "interpreter:eval int.{}(self={:?}, arg={:?})",
+                                stringify!($name),
+                                format!("<{} @ {:?}>", crate::fmt::Formattable { inner: this.type_id, gctx: &rt.global_context }, Rc::as_ptr(&this)),
+                                format!("<{} @ {:?}>", crate::fmt::Formattable { inner: argument.type_id, gctx: &rt.global_context }, Rc::as_ptr(&argument)),
+                            );
+
+                            let __value = this
+                                .get_member(&rt.names.__value)
+                                .expect("integer object should have a `__value` property.")
+                                .into_inner();
+
+                            let __value = __value
+                                .downcast_ref::<isize>()
+                                .expect("integer object `__value` should be an isize.");
+
+                            let f: fn(isize, isize) -> isize = $e;
+
+                            if argument.type_id == this.type_id {
+                                let argument_value = argument
+                                    .get_member(&rt.names.__value)
+                                    .expect("integer object should have a `__value` property.")
+                                    .into_inner();
+
+                                let argument_value = argument_value
+                                    .downcast_ref::<isize>()
+                                    .expect("integer object `__value` should be an isize.");
+
+                                let ret = f(*__value, *argument_value);
+
+                                Ok(rt.integer(ret))
+                            } else {
+                                todo!("type error");
+                            }
+
+                        });
+
+                        members.insert(name, MutCell::Immutable(Rc::new(callback)));
+                    }};
+                }
+
                 members.insert(
                     self.names.__value.clone(),
                     MutCell::Immutable(Rc::new(value) as PyAny),
                 );
+
+                binop!(__add__, |lhs, rhs| lhs.saturating_add(rhs) );
+                binop!(__pow__, |lhs, rhs| lhs.saturating_pow(rhs.try_into().unwrap()));
+                binop!(__sub__, |lhs, rhs| lhs.saturating_sub(rhs));
+                binop!(__mul__, |lhs, rhs| lhs.saturating_mul(rhs));
 
                 members
             },

@@ -1,4 +1,4 @@
-#![warn(warnings)]
+#![allow(warnings)]
 
 use std::{num::NonZeroUsize, rc::Rc};
 
@@ -62,14 +62,14 @@ where
 
 #[derive(Debug)]
 enum PyErr {
-    Exception(PyObject),
-    Break,
+    Exception { exc: PyObject, traceback: Vec<(ModuleRef, Span)> },
     Return(PyObject),
+    Break,
 }
 
 impl PyErr {
     pub fn is_stop_iter(&self, rt: &RuntimeContext) -> bool {
-        matches!(self, Self::Exception(exc) if exc.is_instance(rt.singletons.stop_iter_exc_class.clone()))
+        matches!(self, Self::Exception { exc, .. } if exc.is_instance(rt.singletons.stop_iter_exc_class.clone()))
     }
 }
 
@@ -118,14 +118,16 @@ mod any {
 
 #[macro_export]
 macro_rules! exception {
-    ($st:literal) => {{
+    ($message:expr) => {{
         let exc = Rc::new(Object {
             type_id: crate::prelude::TypeMap::EXCEPTION,
             members: dashmap::DashMap::default(),
             prototype: None,
         });
 
-        let err = crate::interpreter::PyErr::Exception(exc);
+        todo!();
+
+        let err = crate::interpreter::PyErr::Exception { exc, traceback: vec![] };
 
         return Err(err);
     }};
@@ -152,8 +154,8 @@ pub fn exec_module(global_context: &GlobalContext, mref: ModuleRef) -> Rc<Module
         .body
         .iter()
     {
-        if let Err(_) = stmt.eval(&mut rt, &mut module) {
-            todo!();
+        if let Err(exc) = stmt.eval(&mut rt, &mut module) {
+            panic!("{:?}", exc);
         }
     }
 

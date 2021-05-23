@@ -30,6 +30,7 @@ impl<T> MutCell<T> {
     }
 }
 
+#[derive(Debug)]
 pub(super) struct Object {
     /// The type of this object.
     pub(super) type_id: LocalTypeId,
@@ -182,11 +183,5 @@ impl ToAst for Rc<Object> {
 
             _ => unimplemented!(),
         }
-    }
-}
-
-impl std::fmt::Debug for Object {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Object").finish()
     }
 }

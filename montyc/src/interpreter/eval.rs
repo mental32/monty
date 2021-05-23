@@ -2,7 +2,12 @@ use std::rc::Rc;
 
 use crate::{
     ast::{
-        assign::Assign, atom::Atom, expr::Expr, module::Module, primary::Primary, stmt::Statement,
+        assign::Assign,
+        atom::Atom,
+        expr::{Expr, InfixOp, UnaryOp},
+        module::Module,
+        primary::Primary,
+        stmt::Statement,
         Spanned,
     },
     exception,
@@ -30,7 +35,7 @@ impl Eval for Atom {
                 }
 
                 Ok(Some(rt.tuple(&*objs)))
-            },
+            }
 
             Atom::Comment(_) => Ok(None),
             Atom::Name(name) => match rt.lookup(name.clone()) {
@@ -50,8 +55,9 @@ impl Eval for Primary {
                 let obj = value.inner.eval(rt, module)?.unwrap();
                 let index = index.inner.eval(rt, module)?.unwrap();
 
-                obj.call_method(rt.names.__getitem__, rt, Some(index), None).map(Some)
-            },
+                obj.call_method(rt.names.__getitem__, rt, Some(index), None)
+                    .map(Some)
+            }
 
             Primary::Call { func, args } => {
                 let f = func.inner.eval(rt, module)?.unwrap();
@@ -92,24 +98,59 @@ impl Eval for Primary {
 impl Eval for Expr {
     fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
         match self {
-            Expr::If {
-                test: _,
-                body: _,
-                orelse: _,
-            } => todo!(),
+            Expr::If { test, body, orelse } => {
+                let test = test.inner.eval(rt, module)?.unwrap();
 
-            Expr::BinOp {
-                left: _,
-                op: _,
-                right: _,
-            } => todo!(),
+                if rt.is_truthy(test) {
+                    body.inner.eval(rt, module)
+                } else {
+                    orelse.inner.eval(rt, module)
+                }
+            }
 
-            Expr::Unary { op: _, value: _ } => todo!(),
+            Expr::BinOp { left, op, right } => {
+                let left = left.inner.eval(rt, module)?.unwrap();
+                let right = right.inner.eval(rt, module)?.unwrap();
+
+                log::trace!("interpreter:eval Performing BinaryOp: {:?}", op);
+
+                let dunder = match op {
+                    InfixOp::Eq => rt.global_context.magical_name_of("__eq__").unwrap(),
+                    op => rt
+                        .global_context
+                        .magical_name_of(&format!("__{}__", op.as_ref()))
+                        .unwrap(),
+                };
+
+                left.call_method(dunder, rt, Some(right), None).map(Some)
+            }
+
+            Expr::Unary { op, value } => {
+                let name = match op {
+                    UnaryOp::Invert => rt.names.__invert__,
+                    UnaryOp::Not => todo!(),
+                    UnaryOp::Add => rt.names.__pos__,
+                    UnaryOp::Sub => rt.names.__neg__,
+                };
+
+                let value = value.inner.eval(rt, module)?.unwrap();
+
+                value.call_method(name, rt, None, None).map(Some)
+            }
 
             Expr::Named {
-                target: _,
-                value: _,
-            } => todo!(),
+                target,
+                value,
+            } => {
+                let value = value
+                    .inner
+                    .eval(rt, module)?
+                    .unwrap();
+
+                rt.scope().define(target.inner.as_name().unwrap(), &value);
+
+                Ok(Some(value))
+            },
 
             Expr::Primary(p) => p.inner.eval(rt, module),
         }
