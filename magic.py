@@ -34,6 +34,9 @@ DUNDERS = {
     "missing",
     "reversed",
     "contains",
+    "neg",
+    "pos",
+    "invert",
 }
 
 CTYPES = {

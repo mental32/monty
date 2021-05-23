@@ -100,7 +100,7 @@ def baz(control: bool):
     x = foo() if control else bar()
 ```
 
-What's the type of `x` in the function `bar` now?
+What's the type of `x` in the function `baz` now?
 
 Some might expect this to be a type error after all `foo` and `bar` return
 incompatible types and they try get associated with `x` but this isn't the case
