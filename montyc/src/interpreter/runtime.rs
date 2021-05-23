@@ -17,6 +17,59 @@ use super::{
     Name, PyAny, PyErr, PyObject,
 };
 
+macro_rules! binop {
+    ($rt:expr, def $class_name:ident.$name:ident -> $t:path = $e:expr ) => {{
+        let rt: &RuntimeContext = $rt;
+        let name = rt
+            .global_context
+            .magical_name_of(stringify!($name))
+            .expect("Missing a magic name.");
+
+        let callback = Callable::BuiltinFn(|this, rt, args| {
+            let argument = args.expect("dunder should have one argument!");
+
+            log::trace!(
+                "interpreter:eval {}.{}(self={:?}, arg={:?})",
+                stringify!($class_name),
+                stringify!($name),
+                format!("<{} @ {:?}>", crate::fmt::Formattable { inner: this.type_id, gctx: &rt.global_context }, Rc::as_ptr(&this)),
+                format!("<{} @ {:?}>", crate::fmt::Formattable { inner: argument.type_id, gctx: &rt.global_context }, Rc::as_ptr(&argument)),
+            );
+
+            let __value = this
+                .get_member(&rt.names.__value)
+                .expect("object should have a `__value` property.")
+                .into_inner();
+
+            let __value = __value
+                .downcast_ref::<$t>()
+                .expect("object `__value` should be an isize.");
+
+            let f: fn($t, $t) -> $t = $e;
+
+            if argument.type_id == this.type_id {
+                let argument_value = argument
+                    .get_member(&rt.names.__value)
+                    .expect("object should have a `__value` property.")
+                    .into_inner();
+
+                let argument_value = argument_value
+                    .downcast_ref::<$t>()
+                    .expect("object `__value` should be an isize.");
+
+                let ret = f(*__value, *argument_value);
+
+                Ok(rt.integer(ret))
+            } else {
+                todo!("type error");
+            }
+
+        });
+
+        (name, MutCell::Immutable(Rc::new(callback) as PyAny))
+    }};
+}
+
 #[derive(Debug)]
 pub struct Singletons {
     pub(super) int_class: PyObject,
@@ -182,66 +235,26 @@ impl<'a> RuntimeContext<'a> {
             members: {
                 let members = DashMap::new();
 
-                macro_rules! binop {
-                    ($name:ident, $e:expr) => {{
-                        let name = self
-                            .global_context
-                            .magical_name_of(stringify!($name))
-                            .expect("Missing a magic name.");
-
-                        let callback = Callable::BuiltinFn(|this, rt, args| {
-                            let argument = args.expect("dunder should have one argument!");
-
-                            log::trace!(
-                                "interpreter:eval int.{}(self={:?}, arg={:?})",
-                                stringify!($name),
-                                format!("<{} @ {:?}>", crate::fmt::Formattable { inner: this.type_id, gctx: &rt.global_context }, Rc::as_ptr(&this)),
-                                format!("<{} @ {:?}>", crate::fmt::Formattable { inner: argument.type_id, gctx: &rt.global_context }, Rc::as_ptr(&argument)),
-                            );
-
-                            let __value = this
-                                .get_member(&rt.names.__value)
-                                .expect("integer object should have a `__value` property.")
-                                .into_inner();
-
-                            let __value = __value
-                                .downcast_ref::<isize>()
-                                .expect("integer object `__value` should be an isize.");
-
-                            let f: fn(isize, isize) -> isize = $e;
-
-                            if argument.type_id == this.type_id {
-                                let argument_value = argument
-                                    .get_member(&rt.names.__value)
-                                    .expect("integer object should have a `__value` property.")
-                                    .into_inner();
-
-                                let argument_value = argument_value
-                                    .downcast_ref::<isize>()
-                                    .expect("integer object `__value` should be an isize.");
-
-                                let ret = f(*__value, *argument_value);
-
-                                Ok(rt.integer(ret))
-                            } else {
-                                todo!("type error");
-                            }
-
-                        });
-
-                        members.insert(name, MutCell::Immutable(Rc::new(callback)));
-                    }};
-                }
-
                 members.insert(
                     self.names.__value.clone(),
                     MutCell::Immutable(Rc::new(value) as PyAny),
                 );
 
-                binop!(__add__, |lhs, rhs| lhs.saturating_add(rhs) );
-                binop!(__pow__, |lhs, rhs| lhs.saturating_pow(rhs.try_into().unwrap()));
-                binop!(__sub__, |lhs, rhs| lhs.saturating_sub(rhs));
-                binop!(__mul__, |lhs, rhs| lhs.saturating_mul(rhs));
+                let (attr, method) =
+                    binop!(self, def int.__add__ -> isize = |lhs, rhs| lhs.saturating_add(rhs));
+                members.insert(attr, method);
+
+                let (attr, method) =
+                    binop!(self, def int.__sub__ -> isize = |lhs, rhs| lhs.saturating_sub(rhs));
+                members.insert(attr, method);
+
+                let (attr, method) =
+                    binop!(self, def int.__mul__ -> isize = |lhs, rhs| lhs.saturating_mul(rhs));
+
+                members.insert(attr, method);
+
+                let (attr, method) = binop!(self, def int.__pow__ -> isize = |lhs, rhs| lhs.saturating_pow(rhs.try_into().unwrap()));
+                members.insert(attr, method);
 
                 members
             },
