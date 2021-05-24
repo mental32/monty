@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
-use crate::{
-    ast::{
+use dashmap::DashMap;
+
+use crate::{ast::{
         assign::Assign,
         atom::Atom,
         expr::{Expr, InfixOp, UnaryOp},
@@ -9,16 +10,12 @@ use crate::{
         primary::Primary,
         stmt::Statement,
         Spanned,
-    },
-    exception,
-    interpreter::PyErr,
-    scope::{Scope, ScopeRoot},
-};
+    }, exception, interpreter::{PyErr, scope::DynamicScope}, scope::{Scope, ScopeRoot}};
 
-use super::{object::Object, runtime::RuntimeContext, Eval, PyObject, PyResult, ToAst};
+use super::{AstBody, Eval, PyObject, PyResult, ToAst, object::Object, runtime::RuntimeContext};
 
 impl Eval for Atom {
-    fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
+    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
         match self {
             Atom::None => Ok(Some(rt.none())),
             Atom::Ellipsis => todo!(),
@@ -30,7 +27,7 @@ impl Eval for Atom {
                 let mut objs = vec![];
 
                 for expr in elem.iter() {
-                    let value = expr.inner.eval(rt, module)?.unwrap();
+                    let value = expr.inner.eval(rt, body)?.unwrap();
                     objs.push(value);
                 }
 
@@ -47,27 +44,27 @@ impl Eval for Atom {
 }
 
 impl Eval for Primary {
-    fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
+    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
         match self {
-            Primary::Atomic(at) => at.inner.eval(rt, module),
+            Primary::Atomic(at) => at.inner.eval(rt, body),
 
             Primary::Subscript { value, index } => {
-                let obj = value.inner.eval(rt, module)?.unwrap();
-                let index = index.inner.eval(rt, module)?.unwrap();
+                let obj = value.inner.eval(rt, body)?.unwrap();
+                let index = index.inner.eval(rt, body)?.unwrap();
 
                 obj.call_method(rt.names.__getitem__, rt, Some(index), None)
                     .map(Some)
             }
 
             Primary::Call { func, args } => {
-                let f = func.inner.eval(rt, module)?.unwrap();
+                let f = func.inner.eval(rt, body)?.unwrap();
 
                 let args = match args {
                     Some(args) => {
                         let mut r = vec![];
 
                         for arg_v in args.iter() {
-                            let arg_v = arg_v.inner.eval(rt, module)?.unwrap();
+                            let arg_v = arg_v.inner.eval(rt, body)?.unwrap();
                             r.push(arg_v);
                         }
 
@@ -81,7 +78,7 @@ impl Eval for Primary {
             }
 
             Primary::Attribute { left, attr } => {
-                let obj = left.inner.eval(rt, module)?.unwrap();
+                let obj = left.inner.eval(rt, body)?.unwrap();
                 let attr = attr.inner.as_name().unwrap();
 
                 match obj.get_attribute(&attr) {
@@ -96,21 +93,21 @@ impl Eval for Primary {
 }
 
 impl Eval for Expr {
-    fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
+    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
         match self {
-            Expr::If { test, body, orelse } => {
-                let test = test.inner.eval(rt, module)?.unwrap();
+            Expr::If { test, body: if_body, orelse } => {
+                let test = test.inner.eval(rt, body)?.unwrap();
 
                 if rt.is_truthy(test) {
-                    body.inner.eval(rt, module)
+                    if_body.inner.eval(rt, body)
                 } else {
-                    orelse.inner.eval(rt, module)
+                    orelse.inner.eval(rt, body)
                 }
             }
 
             Expr::BinOp { left, op, right } => {
-                let left = left.inner.eval(rt, module)?.unwrap();
-                let right = right.inner.eval(rt, module)?.unwrap();
+                let left = left.inner.eval(rt, body)?.unwrap();
+                let right = right.inner.eval(rt, body)?.unwrap();
 
                 log::trace!("interpreter:eval Performing BinaryOp: {:?}", op);
 
@@ -133,34 +130,28 @@ impl Eval for Expr {
                     UnaryOp::Sub => rt.names.__neg__,
                 };
 
-                let value = value.inner.eval(rt, module)?.unwrap();
+                let value = value.inner.eval(rt, body)?.unwrap();
 
                 value.call_method(name, rt, None, None).map(Some)
             }
 
-            Expr::Named {
-                target,
-                value,
-            } => {
-                let value = value
-                    .inner
-                    .eval(rt, module)?
-                    .unwrap();
+            Expr::Named { target, value } => {
+                let value = value.inner.eval(rt, body)?.unwrap();
 
                 rt.scope().define(target.inner.as_name().unwrap(), &value);
 
                 Ok(Some(value))
-            },
+            }
 
-            Expr::Primary(p) => p.inner.eval(rt, module),
+            Expr::Primary(p) => p.inner.eval(rt, body),
         }
     }
 }
 
 impl Eval for Rc<Spanned<Statement>> {
-    fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>> {
+    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
         match &self.inner {
-            Statement::Expr(e) => e.eval(rt, module),
+            Statement::Expr(e) => e.eval(rt, body),
 
             Statement::FnDef(fndef) => {
                 rt.scope().define(
@@ -169,7 +160,7 @@ impl Eval for Rc<Spanned<Statement>> {
                 );
 
                 if !fndef.is_dynamically_typed() {
-                    module.body.push(self.clone());
+                    body.add(self.clone() as Rc<_>);
                 }
 
                 Ok(None)
@@ -177,7 +168,7 @@ impl Eval for Rc<Spanned<Statement>> {
 
             Statement::Ret(ret) => {
                 let value = match &ret.value {
-                    Some(e) => e.inner.eval(rt, module)?.unwrap(),
+                    Some(e) => e.inner.eval(rt, body)?.unwrap(),
                     None => rt.none(),
                 };
 
@@ -188,7 +179,7 @@ impl Eval for Rc<Spanned<Statement>> {
                 let val = asn
                     .value
                     .inner
-                    .eval(rt, module)?
+                    .eval(rt, body)?
                     .expect("Assignment value must produce an object.");
 
                 rt.scope().define(asn.name.inner.as_name().unwrap(), &val);
@@ -207,22 +198,54 @@ impl Eval for Rc<Spanned<Statement>> {
                         }),
                     };
 
-                    module.body.push(Rc::new(assign));
+                    body.add(Rc::new(assign) as Rc<_>);
                 }
 
                 Ok(None)
             }
 
             Statement::Import(_) => todo!(),
-            Statement::Class(_) => todo!(),
+
+            Statement::Class(klass) => {
+                let obj = rt.class(klass, rt.scope().module_ref());
+
+                let mut new_klass = klass.clone();
+                new_klass.body.clear();
+
+                let scope = Rc::new(DynamicScope {
+                    root: ScopeRoot::AstObject(self.clone() as _),
+                    mref: rt.scope().module_ref(),
+                    namespace: DashMap::new(),
+                });
+
+                rt.stack_frames.push(scope);
+
+                for part in klass.body.iter() {
+                    if let Err(exc) = part.eval(rt, &mut new_klass) {
+                        rt.stack_frames.pop();
+                        return Err(exc);
+                    }
+                }
+
+                rt.stack_frames.pop();
+
+                rt.scope().define(
+                    klass.name.inner.as_name().unwrap(),
+                    &obj,
+                );
+
+                body.add(self.clone() as Rc<_>);
+
+                Ok(None)
+            }
 
             Statement::If(ifstmt) => {
                 for branch in ifstmt.branches.iter() {
-                    let v = branch.inner.test.inner.eval(rt, module)?.unwrap();
+                    let v = branch.inner.test.inner.eval(rt, body)?.unwrap();
 
                     if rt.is_truthy(v) {
                         for stmt in branch.inner.body.iter() {
-                            stmt.eval(rt, module)?;
+                            stmt.eval(rt, body)?;
                         }
 
                         return Ok(None);
@@ -231,7 +254,7 @@ impl Eval for Rc<Spanned<Statement>> {
 
                 if let Some(orelse) = &ifstmt.orelse {
                     for stmt in orelse.iter() {
-                        stmt.eval(rt, module)?;
+                        stmt.eval(rt, body)?;
                     }
                 }
 
@@ -240,11 +263,11 @@ impl Eval for Rc<Spanned<Statement>> {
 
             Statement::While(while_) => {
                 while {
-                    let test = while_.test.inner.eval(rt, module)?.unwrap();
+                    let test = while_.test.inner.eval(rt, body)?.unwrap();
                     rt.is_truthy(test)
                 } {
                     for stmt in while_.body.iter() {
-                        if let Err(exc) = stmt.eval(rt, module) {
+                        if let Err(exc) = stmt.eval(rt, body) {
                             if let PyErr::Break = exc {
                                 break;
                             } else {

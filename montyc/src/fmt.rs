@@ -1,9 +1,6 @@
 use std::{fmt, ops::Deref};
 
-use crate::{
-    prelude::*,
-    typing::{BuiltinTypeId, ClassType, Generic, TypeDescriptor},
-};
+use crate::{prelude::*, typing::{BuiltinTypeId, ClassType, Generic, Instance, TypeDescriptor}};
 
 pub struct Formattable<'a, T> {
     pub(crate) gctx: &'a GlobalContext,
@@ -98,6 +95,10 @@ impl fmt::Display for Formattable<'_, &TypeDescriptor> {
                     gctx: self.gctx
                 }
             ),
+            TypeDescriptor::Instance(Instance { class }) => write!(f, "instance of {}", Formattable {
+                inner: *class,
+                gctx: self.gctx
+            })
         }
     }
 }

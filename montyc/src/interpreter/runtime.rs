@@ -3,12 +3,12 @@ use std::{convert::TryInto, num::NonZeroUsize, rc::Rc};
 use dashmap::DashMap;
 
 use crate::{
-    ast::{module::Module, stmt::Statement, Spanned},
+    ast::{class::ClassDef, module::Module, stmt::Statement, Spanned},
     context::{GlobalContext, ModuleRef},
     exception,
     interpreter::{callable::Callable, Eval},
     scope::ScopeRoot,
-    typing::TypeMap,
+    typing::{ClassType, TypeDescriptor, TypeMap},
 };
 
 use super::{
@@ -72,6 +72,7 @@ macro_rules! binop {
 
 #[derive(Debug)]
 pub struct Singletons {
+    pub(super) obj_class: PyObject,
     pub(super) int_class: PyObject,
     pub(super) str_class: PyObject,
     pub(super) bool_class: PyObject,
@@ -85,10 +86,16 @@ pub struct Singletons {
 
 impl Singletons {
     pub fn new() -> Self {
-        let type_class = Rc::new(Object {
+        let obj_class = Rc::new(Object {
             type_id: TypeMap::TYPE,
             members: DashMap::new(),
             prototype: None,
+        });
+
+        let type_class = Rc::new(Object {
+            type_id: TypeMap::TYPE,
+            members: DashMap::new(),
+            prototype: Some(obj_class.clone()),
         });
 
         let int_class = Rc::new(Object {
@@ -134,6 +141,7 @@ impl Singletons {
         });
 
         Self {
+            obj_class,
             ret_exc_class,
             base_exc_class,
             stop_iter_exc_class,
@@ -340,6 +348,23 @@ impl<'a> RuntimeContext<'a> {
 
     pub fn none(&self) -> PyObject {
         self.singletons.none.clone()
+    }
+
+    pub fn class(&self, klass: &ClassDef, mref: ModuleRef) -> PyObject {
+        Rc::new(Object {
+            type_id: self
+                .global_context
+                .type_map
+                .class(klass.name.inner.as_name().unwrap().0, mref).0,
+
+            members: {
+                let members = DashMap::new();
+
+                members
+            },
+
+            prototype: Some(self.singletons.type_class.clone()),
+        })
     }
 
     pub fn function(&self, def: Rc<Spanned<Statement>>, mref: ModuleRef) -> PyObject {

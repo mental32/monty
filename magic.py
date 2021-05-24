@@ -37,6 +37,8 @@ DUNDERS = {
     "neg",
     "pos",
     "invert",
+    "new",
+    "init"
 }
 
 CTYPES = {

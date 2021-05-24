@@ -191,7 +191,9 @@ impl<'a> LocalContext<'a> {
                 .global_context
                 .get_class_from_module(klass.mref.clone(), klass.name),
 
-            TypeDescriptor::Generic(_) | TypeDescriptor::Function(_) => todo!(),
+            TypeDescriptor::Instance(_)
+            | TypeDescriptor::Generic(_)
+            | TypeDescriptor::Function(_) => todo!(),
         }
     }
 

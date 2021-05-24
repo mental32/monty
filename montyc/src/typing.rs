@@ -130,12 +130,18 @@ pub struct ClassType {
     pub mref: ModuleRef,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Instance {
+    pub class: LocalTypeId,
+}
+
 #[derive(Debug, Clone, PartialEq, derive_more::From)]
 pub enum TypeDescriptor {
     Simple(BuiltinTypeId),
     Function(FunctionType),
     Class(ClassType),
     Generic(Generic),
+    Instance(Instance),
 }
 
 impl TypeDescriptor {
@@ -145,6 +151,7 @@ impl TypeDescriptor {
             Self::Function(_) => TypeId::of::<FunctionType>(),
             Self::Class(_) => TypeId::of::<ClassType>(),
             Self::Generic(_) => TypeId::of::<Generic>(),
+            Self::Instance(_) => TypeId::of::<Instance>(),
         }
     }
 
@@ -154,6 +161,7 @@ impl TypeDescriptor {
             Self::Function(f) => f as *const _ as *const (),
             Self::Class(c) => c as *const _ as *const (),
             Self::Generic(g) => g as *const _ as *const (),
+            Self::Instance(i) => i as *const _ as *const (),
         }
     }
 }
@@ -302,6 +310,32 @@ impl TypeMap {
             .any(|variant| variant.canonicalize(self) == elem)
     }
 
+    pub fn class(&self, name: NonZeroUsize, mref: ModuleRef) -> (LocalTypeId, LocalTypeId) {
+        let mut class_type = ClassType {
+            name,
+            kind: TypeMap::OBJECT,
+            mref,
+        };
+
+        let class_type_id = self.insert(TypeDescriptor::Class(class_type.clone()));
+
+        let mut class_desc = self.inner.get_mut(&class_type_id).unwrap();
+        let class_desc = class_desc.value_mut();
+
+        let class_instance = self.insert(TypeDescriptor::Instance(Instance {
+            class: class_type_id,
+        }));
+
+        class_type.kind = class_instance;
+
+        std::mem::swap(
+            class_desc,
+            &mut TypeDescriptor::Class(class_type),
+        );
+
+        (class_type_id, class_instance)
+    }
+
     pub fn pointer_to(&self, t: LocalTypeId) -> LocalTypeId {
         self.entry(TypeDescriptor::Generic(Generic::Pointer { inner: t }))
     }
@@ -311,7 +345,9 @@ impl TypeMap {
     }
 
     pub fn tuple(&self, elements: impl Iterator<Item = LocalTypeId>) -> LocalTypeId {
-        self.insert(TypeDescriptor::Generic(Generic::Tuple { inner: elements.collect::<Vec<_>>() }))
+        self.insert(TypeDescriptor::Generic(Generic::Tuple {
+            inner: elements.collect::<Vec<_>>(),
+        }))
     }
 
     pub fn is_pointer(&self, t: LocalTypeId) -> bool {
@@ -370,6 +406,7 @@ impl TypeMap {
                 }
 
                 TypeDescriptor::Function(_) | TypeDescriptor::Class(_) => todo!("{:?}", tydesc),
+                TypeDescriptor::Instance(_) => todo!(),
             }
         }
 
@@ -677,6 +714,8 @@ impl SizeOf<&TypeMap> for TypeDescriptor {
 
                 Generic::Tuple { .. } => unreachable!(),
             },
+
+            TypeDescriptor::Instance(_) => None,
         }
     }
 }

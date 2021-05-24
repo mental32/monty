@@ -4,11 +4,7 @@ use std::{num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{
-    ast::{expr::Expr, module::Module, stmt::Statement},
-    interpreter::{runtime::RuntimeContext, scope::DynamicScope},
-    prelude::*,
-};
+use crate::{ast::{class::ClassDef, expr::Expr, funcdef::FunctionDef, module::Module, stmt::Statement}, interpreter::{runtime::RuntimeContext, scope::DynamicScope}, prelude::*};
 
 use self::object::Object;
 
@@ -39,8 +35,37 @@ mod callable {
     }
 }
 
+trait AstBody {
+    fn add(&mut self, node: Rc<dyn AstObject>);
+}
+
+impl AstBody for Module {
+    fn add(&mut self, node: Rc<dyn AstObject>) {
+        let node = node.as_ref().downcast_ref::<Rc<Spanned<Statement>>>().unwrap().clone();
+
+        self.body.push(node);
+    }
+}
+
+impl AstBody for ClassDef {
+    fn add(&mut self, node: Rc<dyn AstObject>) {
+        let node = node.as_ref().downcast_ref::<Rc<Spanned<Statement>>>().unwrap().clone();
+
+        self.body.push(node);
+    }
+}
+
+impl AstBody for FunctionDef {
+    fn add(&mut self, node: Rc<dyn AstObject>) {
+        let node = node.as_ref().downcast_ref::<Rc<Spanned<Statement>>>().unwrap().clone();
+
+        self.body.push(node);
+    }
+}
+
+
 trait Eval: AstObject {
-    fn eval(&self, rt: &mut RuntimeContext, module: &mut Module) -> PyResult<Option<PyObject>>;
+    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>>;
 }
 
 trait ToAst
@@ -125,7 +150,7 @@ macro_rules! exception {
             prototype: None,
         });
 
-        todo!();
+        panic!($message);
 
         let err = crate::interpreter::PyErr::Exception { exc, traceback: vec![] };
 
