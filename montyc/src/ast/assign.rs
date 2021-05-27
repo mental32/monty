@@ -2,11 +2,51 @@ use std::rc::Rc;
 
 use crate::prelude::*;
 
-use super::{atom::Atom, expr::Expr, AstObject, ObjectIter, Spanned};
+use super::{AstObject, ObjectIter, Spanned, atom::Atom, expr::Expr, primary::Primary};
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Annotation {
+    pub name: Spanned<Atom>,    
+    pub kind: Rc<Spanned<Expr>>,
+}
+
+impl TypedObject for Annotation {
+    fn infer_type<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<LocalTypeId> {
+        todo!()
+    }
+
+    fn typecheck<'a>(&self, _ctx: &LocalContext<'a>) -> crate::Result<()> {
+        todo!()
+    }
+}
+
+impl AstObject for Annotation {
+    fn span(&self) -> Option<logos::Span> {
+        todo!()
+    }
+
+    fn unspanned(&self) -> Rc<dyn AstObject> {
+        todo!()
+    }
+
+    fn walk(&self) -> Option<ObjectIter> {
+        todo!()
+    }
+}
+
+impl LookupTarget for Annotation {
+    fn is_named(&self, _target: SpanRef) -> bool {
+        todo!()
+    }
+
+    fn name(&self) -> Option<SpanRef> {
+        todo!()
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assign {
-    pub name: Spanned<Atom>,
+    pub name: Spanned<Primary>,
     pub value: Rc<Spanned<Expr>>,
     pub kind: Option<Rc<Spanned<Expr>>>,
 }
@@ -128,7 +168,7 @@ impl TypedObject for Assign {
         };
 
         if let ScopeRoot::Func(func) = ctx.scope.root() {
-            if let Atom::Name(name) = &self.name.inner {
+            if let Some(name) = &self.name.inner.as_name() {
                 if let Some((ty, span, _)) = func.vars.get(name).map(|kv| kv.value().clone()) {
                     if !ctx.global_context.type_map.type_eq(ty, actual)
                         && !ctx

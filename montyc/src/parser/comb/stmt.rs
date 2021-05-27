@@ -1,14 +1,12 @@
 use std::rc::Rc;
 
-use nom::{branch::alt, IResult};
+use nom::{branch::alt, sequence::terminated, IResult};
 
-use crate::{
-    ast::{atom::Atom, expr::Expr, primary::Primary, stmt::Statement, Spanned},
-    parser::{token::PyToken, TokenSlice},
-};
+use crate::{ast::{Spanned, assign::Annotation, atom::Atom, expr::Expr, primary::Primary, stmt::Statement}, parser::{token::PyToken, TokenSlice}};
 
 use super::{
-    assignment, expect, expect_many_n, expect_with, expression, funcdef::function_def, return_stmt,
+    assignment, expect, expect_, expect_many_n, expect_with, expression, funcdef::function_def,
+    name, return_stmt,
 };
 
 #[inline]
@@ -26,6 +24,25 @@ fn dyn_assign<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Sta
     };
 
     Ok((stream, assign))
+}
+
+#[inline]
+fn dyn_annotation<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
+    let (stream, ident) = terminated(name, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
+
+    let (stream, _) = terminated(
+        expect_(PyToken::Colon),
+        expect_many_n::<0>(PyToken::Whitespace),
+    )(stream)?;
+
+    let (stream, kind) = terminated(expression, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
+
+    let ann = Spanned {
+        span: ident.span.start..kind.span.end,
+        inner: Statement::Ann(Annotation { name: ident, kind: Rc::new(kind) }),
+    };
+
+    Ok((stream, ann))
 }
 
 #[inline]
@@ -109,7 +126,14 @@ fn dyn_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<State
 
 #[inline]
 fn small_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
-    alt((dyn_assign, dyn_return, dyn_pass, dyn_expr, dyn_span_ref))(stream)
+    alt((
+        dyn_assign,
+        dyn_annotation,
+        dyn_return,
+        dyn_pass,
+        dyn_expr,
+        dyn_span_ref,
+    ))(stream)
 }
 
 #[inline]

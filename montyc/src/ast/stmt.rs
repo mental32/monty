@@ -1,9 +1,6 @@
 use std::rc::Rc;
 
-use super::{
-    assign::Assign, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain,
-    import::Import, retrn::Return, while_::While, AstObject,
-};
+use super::{AstObject, assign::{Annotation, Assign}, class::ClassDef, expr::Expr, funcdef::FunctionDef, ifelif::IfChain, import::Import, retrn::Return, while_::While};
 
 use crate::{
     parser::{comb::stmt::statement_unspanned, SpanRef},
@@ -16,6 +13,7 @@ pub enum Statement {
     FnDef(FunctionDef),
     Ret(Return),
     Asn(Assign),
+    Ann(Annotation),
     Import(Import),
     Class(ClassDef),
     If(IfChain),
@@ -34,6 +32,7 @@ impl Statement {
             Statement::Class(c) => Rc::new(c),
             Statement::If(f) => Rc::new(f),
             Statement::While(w) => Rc::new(w),
+            Statement::Ann(an) => Rc::new(an),
             Statement::Pass => todo!(),
         }
     }
@@ -50,6 +49,7 @@ impl AstObject for Statement {
             Statement::Class(c) => c.span(),
             Statement::If(f) => f.span(),
             Statement::While(w) => w.span(),
+            Statement::Ann(an) => an.span(),
             Statement::Pass => None,
         }
     }
@@ -64,6 +64,7 @@ impl AstObject for Statement {
             Statement::Class(c) => c.unspanned(),
             Statement::If(f) => f.unspanned(),
             Statement::While(w) => w.unspanned(),
+            Statement::Ann(an) => an.unspanned(),
             Statement::Pass => Rc::new(Self::Pass),
         }
     }
@@ -78,6 +79,7 @@ impl AstObject for Statement {
             Statement::Class(c) => c.walk(),
             Statement::If(f) => f.walk(),
             Statement::While(w) => w.walk(),
+            Statement::Ann(an) => an.walk(),
             Statement::Pass => None,
         }
     }
@@ -93,6 +95,7 @@ impl TypedObject for Statement {
             Statement::Import(i) => i.infer_type(ctx),
             Statement::Class(c) => c.infer_type(ctx),
             Statement::While(w) => w.infer_type(ctx),
+            Statement::Ann(an) => an.infer_type(ctx),
             Statement::If(_) => Ok(TypeMap::NONE_TYPE),
             Statement::Pass => Ok(TypeMap::NONE_TYPE),
         }
@@ -108,6 +111,7 @@ impl TypedObject for Statement {
             Statement::Class(c) => c.typecheck(ctx),
             Statement::If(f) => f.typecheck(ctx),
             Statement::While(w) => w.typecheck(ctx),
+            Statement::Ann(an) => an.typecheck(ctx),
             Statement::Pass => Ok(()),
         }
     }
@@ -128,6 +132,7 @@ impl LookupTarget for Statement {
             Statement::Class(e) => e.is_named(target),
             Statement::If(f) => f.is_named(target),
             Statement::While(w) => w.is_named(target),
+            Statement::Ann(an) => an.is_named(target),
             Statement::Pass => false,
         }
     }
@@ -142,6 +147,7 @@ impl LookupTarget for Statement {
             Statement::Class(e) => e.name(),
             Statement::If(f) => f.name(),
             Statement::While(w) => w.name(),
+            Statement::Ann(an) => an.name(),
             Statement::Pass => None,
         }
     }

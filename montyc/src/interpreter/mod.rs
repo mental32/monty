@@ -45,6 +45,10 @@ trait AstBody<Node> {
 
 type Stmt = Rc<Spanned<Statement>>;
 
+impl<T> AstBody<T> for () {
+    fn add(&mut self, node: T) {}
+}
+
 impl AstBody<Stmt> for Module {
     fn add(&mut self, node: Stmt) {
         self.body.push(node);

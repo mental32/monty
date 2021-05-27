@@ -170,7 +170,9 @@ pub(super) struct SpecialNames {
     pub __repr__: Name,
     pub __invert__: Name,
     pub __value: Name,
+    pub __annotations__: Name,
     pub __getitem__: Name,
+    pub __setitem__: Name,
 }
 
 pub(super) struct RuntimeContext<'a> {
@@ -182,22 +184,34 @@ pub(super) struct RuntimeContext<'a> {
 
 impl<'a> RuntimeContext<'a> {
     pub fn new(global_context: &'a GlobalContext) -> Self {
+        macro_rules! special_names {
+            ($($name:ident),*) => {
+                SpecialNames {
+                    $(
+                        $name: global_context.magical_name_of(stringify!($name)).expect(stringify!($name)),
+                    )*
+                }
+            };
+        }
+
         let rt = Self {
             global_context,
             singletons: Singletons::new(),
-            names: SpecialNames {
-                __value: global_context.magical_name_of("__value").unwrap(),
-                __call__: global_context.magical_name_of("__call__").unwrap(),
-                __iter__: global_context.magical_name_of("__iter__").unwrap(),
-                __next__: global_context.magical_name_of("__next__").unwrap(),
-                __name__: global_context.magical_name_of("__name__").unwrap(),
-                __module__: global_context.magical_name_of("__module__").unwrap(),
-                __getitem__: global_context.magical_name_of("__getitem__").unwrap(),
-                __neg__: global_context.magical_name_of("__neg__").unwrap(),
-                __repr__: global_context.magical_name_of("__repr__").unwrap(),
-                __pos__: global_context.magical_name_of("__pos__").unwrap(),
-                __invert__: global_context.magical_name_of("__invert__").unwrap(),
-            },
+            names: special_names!(
+                __value,
+                __call__,
+                __iter__,
+                __next__,
+                __name__,
+                __module__,
+                __getitem__,
+                __neg__,
+                __repr__,
+                __pos__,
+                __annotations__,
+                __invert__,
+                __setitem__
+            ),
 
             stack_frames: vec![],
         };
@@ -279,6 +293,23 @@ impl<'a> RuntimeContext<'a> {
 
             _ => unimplemented!(),
         }
+    }
+
+    pub fn dict(&self) -> PyObject {
+        Rc::new(Object {
+            type_id: TypeMap::DICT,
+            members: {
+                let members = DashMap::new();
+
+                members.insert(
+                    self.names.__value.clone(),
+                    MutCell::Immutable(Rc::new(DashMap::<u64, PyObject>::new()) as PyAny),
+                );
+
+                members
+            },
+            prototype: Some(self.singletons.obj_class.clone()),
+        })
     }
 
     pub fn integer(&self, value: isize) -> PyObject {

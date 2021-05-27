@@ -113,7 +113,9 @@ impl Eval for Primary {
                 let attr = attr.inner.as_name().unwrap();
 
                 match obj.get_attribute(&attr) {
-                    Some(cell) => Ok(Some(Rc::new(cell.into_inner().downcast_ref::<Object>().unwrap().clone()))),
+                    Some(cell) => Ok(Some(Rc::new(
+                        cell.into_inner().downcast_ref::<Object>().unwrap().clone(),
+                    ))),
                     None => exception!("attribute error"),
                 }
             }
@@ -302,7 +304,11 @@ impl Eval for Rc<Spanned<Statement>> {
                                 let value = item.as_ref();
                                 let value = value.clone();
 
-                                log::trace!("interpreter: setattr {:?} / {:?}", rt.global_context.resolver.resolve_ident(name.0).unwrap(), module);
+                                log::trace!(
+                                    "interpreter: setattr {:?} / {:?}",
+                                    rt.global_context.resolver.resolve_ident(name.0).unwrap(),
+                                    module
+                                );
 
                                 module_object.setattr(&name, value);
                             }
@@ -418,6 +424,25 @@ impl Eval for Rc<Spanned<Statement>> {
                             } else {
                                 return Err(exc);
                             }
+                        }
+                    }
+                }
+
+                Ok(None)
+            }
+
+            Statement::Ann(ann) => {
+                if rt.scope().may_contain_annotations() {
+                    let kind = ann.kind.inner.eval(rt, &mut ())?.unwrap();
+
+                    let annotations = rt.scope().namespace.iter().find_map(|refm| {
+                        (refm.key().0 == rt.names.__annotations__.0).then_some(refm.value().clone())
+                    });
+
+                    match annotations {
+                        None => rt.scope().define(rt.names.__annotations__, &rt.dict()),
+                        Some(mapping) => {
+                            mapping.set_item(rt, &ann.name.inner.as_name().unwrap(), kind)?;
                         }
                     }
                 }

@@ -41,6 +41,15 @@ pub enum Primary {
     Await(Rc<Spanned<Primary>>),
 }
 
+impl Primary {
+    pub fn as_name(&self) -> Option<(SpanRef, SpanRef)> {
+        match self {
+            Self::Atomic(at) => at.inner.as_name(),
+            _ => None,
+        }
+    }
+}
+
 impl PartialEq for Primary {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {

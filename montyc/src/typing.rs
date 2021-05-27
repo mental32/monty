@@ -216,6 +216,7 @@ impl TypeMap {
 
     pub const DYN_FUNC: LocalTypeId = LocalTypeId(200);
     pub const EXCEPTION: LocalTypeId = LocalTypeId(201);
+    pub const DICT: LocalTypeId = LocalTypeId(202);
 
     #[inline]
     pub fn correctly_initialized() -> Self {

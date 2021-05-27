@@ -42,6 +42,7 @@ DUNDERS = {
     "name",
     "repr",
     "module",
+    "annotations",
 }
 
 CTYPES = {

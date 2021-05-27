@@ -66,6 +66,14 @@ impl Object {
         Ok(prev)
     }
 
+    pub fn get_item(&self, name: &(NonZeroUsize, NonZeroUsize)) -> PyResult<PyObject> {
+        todo!();
+    }
+
+    pub fn set_item(self: Rc<Self>, py: &mut RuntimeContext, name: &(NonZeroUsize, NonZeroUsize), value: PyObject) -> PyResult<PyObject> {
+        self.call_method(py.names.__setitem__, py, Some(value), None)
+    }
+
     pub fn repr(self: Rc<Self>, py: &mut RuntimeContext) -> PyResult<PyObject> {
         self.call_method(py.names.__repr__, py, None, None)
     }

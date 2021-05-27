@@ -729,6 +729,7 @@ impl LowerCodegen for Statement {
         use ir::InstBuilder;
 
         match self {
+            Self::Ann(_) => None,
             Self::FnDef(_) | Self::Import(_) | Self::Class(_) => unreachable!(),
 
             Statement::Expr(expr) => LowerCodegen::lower(expr, (ctx, builder)),

@@ -5,6 +5,7 @@ use nom::{sequence::terminated, IResult};
 use crate::ast::{assign::Assign, Spanned};
 use crate::parser::{token::PyToken, TokenSlice};
 
+use super::primary;
 use super::{
     atom::name,
     core::{expect_, expect_many_n},
@@ -20,7 +21,7 @@ pub fn assignment_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a
 
 #[inline]
 pub fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Assign>> {
-    let (stream, ident) = terminated(name, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
+    let (stream, ident) = terminated(primary, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
     let mut parsed = terminated(
         expect_(PyToken::Colon),

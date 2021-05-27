@@ -2,7 +2,10 @@ use std::{any::Any, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::prelude::*;
+use crate::{
+    ast::{class::ClassDef, module::Module},
+    prelude::*,
+};
 
 use super::object::Object;
 
@@ -11,6 +14,21 @@ pub struct DynamicScope {
     pub(super) root: ScopeRoot,
     pub(super) mref: ModuleRef,
     pub(super) namespace: DashMap<(NonZeroUsize, NonZeroUsize), Rc<Object>>,
+}
+
+impl DynamicScope {
+    pub fn may_contain_annotations(&self) -> bool {
+        match &self.root {
+            ScopeRoot::AstObject(obj) => {
+                let obj = obj.unspanned();
+
+                crate::isinstance!(obj.as_ref(), ClassDef).is_some()
+                    || crate::isinstance!(obj.as_ref(), Module).is_some()
+            }
+
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Scope for DynamicScope {
