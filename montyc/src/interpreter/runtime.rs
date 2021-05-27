@@ -165,6 +165,9 @@ pub(super) struct SpecialNames {
     pub __next__: Name,
     pub __neg__: Name,
     pub __pos__: Name,
+    pub __name__: Name,
+    pub __module__: Name,
+    pub __repr__: Name,
     pub __invert__: Name,
     pub __value: Name,
     pub __getitem__: Name,
@@ -179,7 +182,7 @@ pub(super) struct RuntimeContext<'a> {
 
 impl<'a> RuntimeContext<'a> {
     pub fn new(global_context: &'a GlobalContext) -> Self {
-        Self {
+        let rt = Self {
             global_context,
             singletons: Singletons::new(),
             names: SpecialNames {
@@ -187,14 +190,49 @@ impl<'a> RuntimeContext<'a> {
                 __call__: global_context.magical_name_of("__call__").unwrap(),
                 __iter__: global_context.magical_name_of("__iter__").unwrap(),
                 __next__: global_context.magical_name_of("__next__").unwrap(),
+                __name__: global_context.magical_name_of("__name__").unwrap(),
+                __module__: global_context.magical_name_of("__module__").unwrap(),
                 __getitem__: global_context.magical_name_of("__getitem__").unwrap(),
                 __neg__: global_context.magical_name_of("__neg__").unwrap(),
+                __repr__: global_context.magical_name_of("__repr__").unwrap(),
                 __pos__: global_context.magical_name_of("__pos__").unwrap(),
                 __invert__: global_context.magical_name_of("__invert__").unwrap(),
             },
 
             stack_frames: vec![],
-        }
+        };
+
+        rt.singletons.obj_class.setattr(
+            &rt.names.__repr__,
+            MutCell::Immutable(Rc::new(Callable::BuiltinFn(|obj, rt, args| {
+                let module = obj
+                    .get_attribute_as_object(&rt.names.__module__)
+                    .unwrap()
+                    .repr(rt)?
+                    .get_member(&rt.names.__value)
+                    .unwrap()
+                    .into_inner();
+                let module = module.downcast_ref::<String>().unwrap();
+
+                let name = obj
+                    .prototype
+                    .as_ref()
+                    .unwrap()
+                    .get_attribute_as_object(&rt.names.__name__)
+                    .unwrap()
+                    .repr(rt)?
+                    .get_member(&rt.names.__value)
+                    .unwrap()
+                    .into_inner();
+                let name = name.downcast_ref::<String>().unwrap();
+
+                let st = format!("<{}.{} at {:?}>", module, name, Rc::as_ptr(&obj));
+
+                Ok(rt.string(st))
+            })) as Rc<_>),
+        );
+
+        rt
     }
 
     pub fn return_exc(&self, value: PyObject) -> PyErr {
@@ -202,11 +240,17 @@ impl<'a> RuntimeContext<'a> {
     }
 
     pub fn lookup(&self, name: Name) -> Option<PyObject> {
+        log::trace!(
+            "interpreter:lookup {:?} ({:?})",
+            name,
+            self.global_context.resolver.resolve_ident(name.0).unwrap()
+        );
+
         self.stack_frames.iter().rev().find_map(|scope| {
             scope
                 .namespace
                 .iter()
-                .find(|refm| *refm.key() == name)
+                .find(|refm| refm.key().0 == name.0)
                 .map(|refm| refm.value().clone())
         })
     }
@@ -307,7 +351,7 @@ impl<'a> RuntimeContext<'a> {
         })
     }
 
-    pub fn string(&self, st: NonZeroUsize, _mref: ModuleRef) -> PyObject {
+    pub fn string(&self, string: String) -> PyObject {
         Rc::new(Object {
             type_id: TypeMap::STRING,
             members: {
@@ -315,7 +359,7 @@ impl<'a> RuntimeContext<'a> {
 
                 members.insert(
                     self.names.__value.clone(),
-                    MutCell::Immutable(Rc::new(st) as PyAny),
+                    MutCell::Immutable(Rc::new(string) as PyAny),
                 );
 
                 members
@@ -323,6 +367,21 @@ impl<'a> RuntimeContext<'a> {
 
             prototype: Some(self.singletons.str_class.clone()),
         })
+    }
+
+    pub fn string_literal(&self, st: NonZeroUsize, mref: ModuleRef) -> PyObject {
+        let span = self.global_context.span_ref.borrow().get(st).unwrap();
+        let string = match self.global_context.modules.get(&mref) {
+            Some(mctx) => mctx
+                .source
+                .get((span.start + 1)..(span.end - 1))
+                .unwrap()
+                .to_string(),
+
+            None => mref.to_string(),
+        };
+
+        self.string(string)
     }
 
     pub fn tuple(&self, elements: &[PyObject]) -> PyObject {
@@ -355,7 +414,8 @@ impl<'a> RuntimeContext<'a> {
             type_id: self
                 .global_context
                 .type_map
-                .class(klass.name.inner.as_name().unwrap().0, mref).0,
+                .class(klass.name.inner.as_name().unwrap().0, mref)
+                .0,
 
             members: {
                 let members = DashMap::new();

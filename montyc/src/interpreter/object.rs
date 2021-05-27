@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
@@ -10,7 +11,7 @@ use crate::{
     typing::{LocalTypeId, TypeMap},
 };
 
-use super::{any::AnyDebug, Name, PyAny, PyObject, PyResult, ToAst, runtime::RuntimeContext};
+use super::{any::AnyDebug, runtime::RuntimeContext, Name, PyAny, PyObject, PyResult, ToAst};
 
 #[derive(Clone, Debug)]
 pub enum MutCell<T> {
@@ -30,7 +31,7 @@ impl<T> MutCell<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct Object {
     /// The type of this object.
     pub(super) type_id: LocalTypeId,
@@ -43,7 +44,7 @@ pub(super) struct Object {
 }
 
 impl Object {
-    fn setattr<A>(&self, name: &Name, value: A) -> PyResult<Option<PyAny>>
+    pub fn setattr<A>(&self, name: &Name, value: A) -> PyResult<Option<PyAny>>
     where
         A: AnyDebug,
     {
@@ -65,15 +66,33 @@ impl Object {
         Ok(prev)
     }
 
+    pub fn repr(self: Rc<Self>, py: &mut RuntimeContext) -> PyResult<PyObject> {
+        self.call_method(py.names.__repr__, py, None, None)
+    }
+
     pub fn get_attribute(&self, name: &(NonZeroUsize, NonZeroUsize)) -> Option<MutCell<PyAny>> {
-        match self.members.get(name) {
-            Some(attr) => Some(attr.value().clone()),
+        match self.get_member(name) {
+            Some(attr) => Some(attr.clone()),
             None => {
                 let proto = self.prototype.as_ref()?;
                 proto.get_attribute(name)
             }
         }
     }
+
+
+    pub fn get_attribute_as_object(&self, name: &(NonZeroUsize, NonZeroUsize)) -> Option<PyObject> {
+        let member = self.get_attribute(name)?.into_inner();
+
+        if let Some(o) = member.as_ref().downcast_ref::<Object>() {
+            Some(Rc::new(o.clone()))
+        } else if let Some(o) = member.as_ref().downcast_ref::<PyObject>() {
+            Some(o.clone())
+        } else {
+            None
+        }
+    }
+
 
     pub fn call(
         self: Rc<Self>,
@@ -123,8 +142,16 @@ impl Object {
         }
     }
     pub fn get_member(&self, name: &Name) -> Option<MutCell<PyAny>> {
-        self.members.get(&name).map(|refm| refm.value().clone())
+        self.members
+            .get(&name)
+            .map(|refm| refm.value().clone())
+            .or_else(|| {
+                self.members
+                    .iter()
+                    .find_map(|refm| (refm.key().0 == name.0).then_some(refm.value().clone()))
+            })
     }
+
     pub fn get_member_as_object(&self, name: &Name) -> Option<PyObject> {
         self.get_member(name)?
             .into_inner()

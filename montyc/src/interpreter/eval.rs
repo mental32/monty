@@ -1,26 +1,54 @@
-use std::rc::Rc;
+use std::{num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{ast::{
+use crate::{
+    ast::{
         assign::Assign,
         atom::Atom,
         expr::{Expr, InfixOp, UnaryOp},
         module::Module,
         primary::Primary,
         stmt::Statement,
-        Spanned,
-    }, exception, interpreter::{PyErr, scope::DynamicScope}, scope::{Scope, ScopeRoot}};
+        AstObject, Spanned,
+    },
+    exception,
+    interpreter::{scope::DynamicScope, PyErr},
+    prelude::CompilerError,
+    scope::{OpaqueScope, Scope, ScopeRoot, ScopedObject},
+};
 
-use super::{AstBody, Eval, PyObject, PyResult, ToAst, object::Object, runtime::RuntimeContext};
+use super::{
+    object::Object, runtime::RuntimeContext, AstBody, Eval, PyObject, PyResult, Stmt, ToAst,
+};
+
+#[macro_use]
+macro_rules! object {
+    {$($k:expr => $v:expr),*} => ({
+        let object = Object {
+            members: ::dashmap::DashMap::new(),
+            prototype: ::std::option::Option::None,
+            type_id: $crate::typing::TypeMap::OBJECT,
+        };
+
+        $(
+            object.setattr($k, $v);
+        )*
+
+        object
+    });
+}
 
 impl Eval for Atom {
-    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
+    fn eval<A>(&self, rt: &mut RuntimeContext, body: &mut A) -> PyResult<Option<PyObject>>
+    where
+        A: AstBody<Stmt>,
+    {
         match self {
             Atom::None => Ok(Some(rt.none())),
             Atom::Ellipsis => todo!(),
             Atom::Int(n) => Ok(Some(rt.integer(*n))),
-            Atom::Str(s) => Ok(Some(rt.string(*s, rt.scope().module_ref()))),
+            Atom::Str(s) => Ok(Some(rt.string_literal(*s, rt.scope().module_ref()))),
             Atom::Bool(b) => Ok(Some(rt.boolean(*b))),
             Atom::Float(f) => Ok(Some(rt.float(*f))),
             Atom::Tuple(elem) => {
@@ -44,7 +72,10 @@ impl Eval for Atom {
 }
 
 impl Eval for Primary {
-    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
+    fn eval<A>(&self, rt: &mut RuntimeContext, body: &mut A) -> PyResult<Option<PyObject>>
+    where
+        A: AstBody<Stmt>,
+    {
         match self {
             Primary::Atomic(at) => at.inner.eval(rt, body),
 
@@ -82,7 +113,7 @@ impl Eval for Primary {
                 let attr = attr.inner.as_name().unwrap();
 
                 match obj.get_attribute(&attr) {
-                    Some(cell) => Ok(cell.into_inner().downcast_ref::<PyObject>().cloned()),
+                    Some(cell) => Ok(Some(Rc::new(cell.into_inner().downcast_ref::<Object>().unwrap().clone()))),
                     None => exception!("attribute error"),
                 }
             }
@@ -93,9 +124,16 @@ impl Eval for Primary {
 }
 
 impl Eval for Expr {
-    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
+    fn eval<A>(&self, rt: &mut RuntimeContext, body: &mut A) -> PyResult<Option<PyObject>>
+    where
+        A: AstBody<Stmt>,
+    {
         match self {
-            Expr::If { test, body: if_body, orelse } => {
+            Expr::If {
+                test,
+                body: if_body,
+                orelse,
+            } => {
                 let test = test.inner.eval(rt, body)?.unwrap();
 
                 if rt.is_truthy(test) {
@@ -149,7 +187,10 @@ impl Eval for Expr {
 }
 
 impl Eval for Rc<Spanned<Statement>> {
-    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>> {
+    fn eval<A>(&self, rt: &mut RuntimeContext, body: &mut A) -> PyResult<Option<PyObject>>
+    where
+        A: AstBody<Stmt>,
+    {
         match &self.inner {
             Statement::Expr(e) => e.eval(rt, body),
 
@@ -160,7 +201,7 @@ impl Eval for Rc<Spanned<Statement>> {
                 );
 
                 if !fndef.is_dynamically_typed() {
-                    body.add(self.clone() as Rc<_>);
+                    body.add(self.clone());
                 }
 
                 Ok(None)
@@ -198,13 +239,109 @@ impl Eval for Rc<Spanned<Statement>> {
                         }),
                     };
 
-                    body.add(Rc::new(assign) as Rc<_>);
+                    body.add(Rc::new(assign));
                 }
 
                 Ok(None)
             }
 
-            Statement::Import(_) => todo!(),
+            Statement::Import(import) => {
+                let source = rt
+                    .global_context
+                    .resolver
+                    .sources
+                    .get(&rt.scope().module_ref())
+                    .unwrap()
+                    .value()
+                    .clone();
+
+                let this_scope = rt.scope().clone();
+
+                let this_mctx = rt
+                    .global_context
+                    .modules
+                    .get(&rt.scope().module_ref())
+                    .unwrap();
+                let this_mctx = this_mctx.value();
+
+                for decl in Rc::new(import.clone()).decls() {
+                    let modules = match rt.global_context.import_module(decl, &this_mctx) {
+                        Ok(modules) => modules,
+                        Err(err) => todo!("ImportError {:?}", err),
+                    };
+
+                    for (mref, module_name) in modules {
+                        let mut module = Module { body: vec![] };
+                        let module_object = object! {
+                            &rt.global_context.magical_name_of("__name__").unwrap() => mref.module_name()
+                        };
+
+                        let (scope, module) = {
+                            let mut mctx = rt.global_context.modules.get(&mref).unwrap();
+                            let mctx = mctx.value();
+
+                            let scope = Rc::new(DynamicScope {
+                                root: ScopeRoot::AstObject(mctx.module.clone()),
+                                mref: mref.clone(),
+                                namespace: DashMap::new(),
+                            });
+
+                            rt.stack_frames.push(scope);
+
+                            for stmt in mctx.module.body.iter() {
+                                stmt.eval(rt, &mut module)?;
+                            }
+
+                            let module_scope = rt.stack_frames.pop().unwrap();
+
+                            for (name, item) in module_scope
+                                .namespace
+                                .iter()
+                                .map(|refm| (refm.key().clone(), refm.value().clone()))
+                            {
+                                let value = item.as_ref();
+                                let value = value.clone();
+
+                                log::trace!("interpreter: setattr {:?} / {:?}", rt.global_context.resolver.resolve_ident(name.0).unwrap(), module);
+
+                                module_object.setattr(&name, value);
+                            }
+
+                            this_scope.define(module_name, &Rc::new(module_object));
+
+                            let module = Rc::new(module);
+
+                            let mut scope = OpaqueScope::from(module.clone() as Rc<_>);
+                            scope.module_ref = Some(mref.clone());
+
+                            (scope, module)
+                        };
+
+                        {
+                            let mut mctx = rt.global_context.modules.get_mut(&mref).unwrap();
+                            let mctx = mctx.value_mut();
+
+                            let _ = std::mem::replace(&mut mctx.scope, Rc::new(scope) as Rc<_>);
+                            let _ = std::mem::replace(&mut mctx.module, module);
+
+                            rt.global_context.database.insert_module(&mctx);
+                        }
+
+                        let mut mctx = rt.global_context.modules.get(&mref).unwrap();
+                        let mctx = mctx.value();
+
+                        for ScopedObject { object, .. } in mctx.scope.iter() {
+                            let mut lctx = mctx.unbound_local_context(rt.global_context);
+
+                            lctx.this = Some(Rc::clone(&object));
+
+                            object.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
+                        }
+                    }
+                }
+
+                Ok(None)
+            }
 
             Statement::Class(klass) => {
                 let obj = rt.class(klass, rt.scope().module_ref());
@@ -227,12 +364,20 @@ impl Eval for Rc<Spanned<Statement>> {
                     }
                 }
 
-                rt.stack_frames.pop();
+                let klass_scope = rt.stack_frames.pop().unwrap();
 
-                rt.scope().define(
-                    klass.name.inner.as_name().unwrap(),
-                    &obj,
-                );
+                for (name, item) in klass_scope
+                    .namespace
+                    .iter()
+                    .map(|refm| (refm.key().clone(), refm.value().clone()))
+                {
+                    let value = item.as_ref();
+                    let value = value.clone();
+
+                    obj.setattr(&name, value);
+                }
+
+                rt.scope().define(klass.name.inner.as_name().unwrap(), &obj);
 
                 body.add(self.clone() as Rc<_>);
 

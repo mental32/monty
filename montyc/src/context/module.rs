@@ -14,7 +14,7 @@ use dashmap::DashMap;
 pub struct ModuleContext {
     pub(super) path: PathBuf,
     pub module: Rc<Module>,
-    pub(super) scope: Rc<dyn Scope>,
+    pub scope: Rc<dyn Scope>,
     pub source: Rc<str>,
     pub globals: DashMap<NonZeroUsize, Rc<Spanned<Expr>>>,
 }

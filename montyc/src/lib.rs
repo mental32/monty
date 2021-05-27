@@ -15,6 +15,7 @@ pub mod fmt;
 pub mod func;
 pub mod layout;
 pub(crate) mod ssamap;
+pub mod import;
 
 pub(crate) mod utils {
     use std::rc::Rc;
@@ -115,11 +116,11 @@ pub mod lowering {
 
 pub mod database;
 pub mod error;
+pub mod interpreter;
 pub mod parser;
 pub mod phantom;
 pub mod scope;
 pub mod typing;
-pub mod interpreter;
 
 pub type Result<T> = std::result::Result<T, error::MontyError>;
 

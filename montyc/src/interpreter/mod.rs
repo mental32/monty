@@ -4,7 +4,11 @@ use std::{num::NonZeroUsize, rc::Rc};
 
 use dashmap::DashMap;
 
-use crate::{ast::{class::ClassDef, expr::Expr, funcdef::FunctionDef, module::Module, stmt::Statement}, interpreter::{runtime::RuntimeContext, scope::DynamicScope}, prelude::*};
+use crate::{
+    ast::{class::ClassDef, expr::Expr, funcdef::FunctionDef, module::Module, stmt::Statement},
+    interpreter::{runtime::RuntimeContext, scope::DynamicScope},
+    prelude::*,
+};
 
 use self::object::Object;
 
@@ -35,37 +39,34 @@ mod callable {
     }
 }
 
-trait AstBody {
-    fn add(&mut self, node: Rc<dyn AstObject>);
+trait AstBody<Node> {
+    fn add(&mut self, node: Node);
 }
 
-impl AstBody for Module {
-    fn add(&mut self, node: Rc<dyn AstObject>) {
-        let node = node.as_ref().downcast_ref::<Rc<Spanned<Statement>>>().unwrap().clone();
+type Stmt = Rc<Spanned<Statement>>;
 
+impl AstBody<Stmt> for Module {
+    fn add(&mut self, node: Stmt) {
         self.body.push(node);
     }
 }
 
-impl AstBody for ClassDef {
-    fn add(&mut self, node: Rc<dyn AstObject>) {
-        let node = node.as_ref().downcast_ref::<Rc<Spanned<Statement>>>().unwrap().clone();
-
+impl AstBody<Stmt> for ClassDef {
+    fn add(&mut self, node: Stmt) {
         self.body.push(node);
     }
 }
 
-impl AstBody for FunctionDef {
-    fn add(&mut self, node: Rc<dyn AstObject>) {
-        let node = node.as_ref().downcast_ref::<Rc<Spanned<Statement>>>().unwrap().clone();
-
+impl AstBody<Stmt> for FunctionDef {
+    fn add(&mut self, node: Stmt) {
         self.body.push(node);
     }
 }
-
 
 trait Eval: AstObject {
-    fn eval(&self, rt: &mut RuntimeContext, body: &mut dyn AstBody) -> PyResult<Option<PyObject>>;
+    fn eval<A>(&self, rt: &mut RuntimeContext, body: &mut A) -> PyResult<Option<PyObject>>
+    where
+        A: AstBody<Stmt>;
 }
 
 trait ToAst
@@ -87,7 +88,10 @@ where
 
 #[derive(Debug)]
 enum PyErr {
-    Exception { exc: PyObject, traceback: Vec<(ModuleRef, Span)> },
+    Exception {
+        exc: PyObject,
+        traceback: Vec<(ModuleRef, Span)>,
+    },
     Return(PyObject),
     Break,
 }
@@ -152,7 +156,10 @@ macro_rules! exception {
 
         panic!($message);
 
-        let err = crate::interpreter::PyErr::Exception { exc, traceback: vec![] };
+        let err = crate::interpreter::PyErr::Exception {
+            exc,
+            traceback: vec![],
+        };
 
         return Err(err);
     }};

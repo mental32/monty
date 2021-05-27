@@ -219,7 +219,7 @@ impl ObjectDatabase {
         crate::typing::SizeOf::size_of(gctx.type_map.get(kind)?.value(), gctx)
     }
 
-    pub fn insert_module(&mut self, mctx: &ModuleContext) -> DefId {
+    pub fn insert_module(&self, mctx: &ModuleContext) -> DefId {
         let module = Rc::downgrade(&mctx.module);
 
         let entry = DefEntry {

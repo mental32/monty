@@ -22,7 +22,13 @@ impl ModuleRef {
     }
 
     pub fn module_name(&self) -> String {
-        self.0.file_stem().unwrap().to_string_lossy().to_string()
+        let file_name = self.0.file_stem().unwrap().to_string_lossy().to_string();
+
+        match (file_name.as_str(), self.0.parent()) {
+            ("__init__", None) => file_name,
+            ("__init__", Some(parent)) => parent.file_name().unwrap().to_string_lossy().to_string(),
+            _ => file_name,
+        }
     }
 }
 

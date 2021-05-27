@@ -1,14 +1,13 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    convert::TryInto,
-    num::NonZeroUsize,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, convert::TryInto, num::NonZeroUsize, path::{Path, PathBuf}, rc::Rc};
 
 use crate::codegen::CodegenModule;
-use cranelift_codegen::{ir::{self, condcodes::IntCC}, isa::CallConv};
+use crate::import::ImportPath;
+
+use cranelift_codegen::{
+    ir::{self, condcodes::IntCC},
+    isa::CallConv,
+};
+
 use cranelift_module::{DataContext, Linkage};
 use dashmap::DashMap;
 
@@ -88,7 +87,7 @@ impl std::fmt::Debug for BuiltinFunction {
 #[derive(Debug)]
 pub struct GlobalContext {
     pub opts: CompilerOptions,
-    pub modules: HashMap<ModuleRef, ModuleContext>,
+    pub modules: DashMap<ModuleRef, ModuleContext>,
     pub functions: RefCell<Vec<Rc<Function>>>,
     pub span_ref: Rc<RefCell<SpanInterner>>,
     pub type_map: TypeMap,
@@ -116,7 +115,7 @@ impl GlobalContext {
 
         Self {
             opts: CompilerOptions::default(),
-            modules: HashMap::new(),
+            modules: DashMap::new(),
             functions: RefCell::new(Vec::new()),
             span_ref,
             type_map,
@@ -237,7 +236,7 @@ impl GlobalContext {
             let module_context = ctx
                 .modules
                 .get(&mref)
-                .cloned()
+                .map(|refm| refm.value().clone())
                 .expect("failed to get pre-loaded module.");
 
             for item in module_context.scope.iter() {
@@ -454,10 +453,8 @@ impl GlobalContext {
                 {
                     let this = Rc::new(import.clone());
 
-                    let source = module_context.source.as_ref();
-
                     for decl in this.decls() {
-                        ctx.import_module(decl, source);
+                        ctx.import_module(decl, &module_context).unwrap();
                     }
                 }
 
@@ -527,14 +524,13 @@ impl GlobalContext {
         let span = value.span().unwrap();
 
         match self.modules.get(&mref) {
-            Some(mctx) => {
-                mctx.source
+            Some(mctx) => mctx
+                .source
                 .get((span.start + 1)..(span.end - 1))
                 .unwrap()
-                .to_string()
-            }
+                .to_string(),
 
-            None => mref.to_string()
+            None => mref.to_string(),
         }
     }
 
@@ -581,7 +577,9 @@ impl GlobalContext {
             ["__monty", ..] => unreachable!(),
 
             _ => {
-                let path = self.resolve_import_to_path(qualname)?;
+                let path =
+                    self.resolve_import_to_path(qualname, std::iter::once(mref.0.clone()))?;
+
                 let mref = ModuleRef(path);
 
                 let _mctx = self.modules.get(&mref)?;
@@ -607,56 +605,39 @@ impl GlobalContext {
     ) -> T {
         let path = path.as_ref();
 
-        log::debug!("Loading module ({:?})", shorten(path));
+        let module = if let Some(refm) = self.modules.get(&ModuleRef(path.into())) {
+            refm.key().clone()
+        } else {
+            log::debug!("Loading module ({:?})", shorten(path));
 
-        let source = match std::fs::read_to_string(&path) {
-            Ok(st) => st.into_boxed_str(),
-            Err(why) => {
-                log::error!("Failed to read module contents! why={:?}", why);
-                unreachable!();
-            }
+            let source = match std::fs::read_to_string(&path) {
+                Ok(st) => st.into_boxed_str(),
+                Err(why) => {
+                    log::error!("Failed to read module contents! why={:?}", why);
+                    unreachable!();
+                }
+            };
+
+            self.parse_and_register_module(source, path)
         };
-
-        let module = self.parse_and_register_module(source, path);
 
         f(self, module)
     }
 
-    fn resolve_import_to_path(&self, qualname: Vec<&str>) -> Option<PathBuf> {
-        fn search(curdir: &Path, expected: &str) -> Option<PathBuf> {
-            curdir
-                .read_dir()
-                .ok()?
-                .filter_map(|maybe_entry| {
-                    let entry = maybe_entry.ok()?;
-                    let file_type = entry.file_type().ok()?;
-                    let path = entry.path();
-
-                    let stem = path.file_stem()?.to_string_lossy();
-                    let wellformed_stem = !stem.contains(".");
-
-                    let ok = if file_type.is_file() {
-                        let has_py_ext = path.extension()?.to_string_lossy() == "py";
-
-                        has_py_ext && wellformed_stem && (stem == expected)
-                    } else if file_type.is_dir() {
-                        stem == expected
-                    } else {
-                        unreachable!();
-                    };
-
-                    ok.then_some(path)
-                })
-                .next()
-        }
-
+    fn resolve_import_to_path(
+        &self,
+        qualname: Vec<&str>,
+        paths: impl Iterator<Item = PathBuf>,
+    ) -> Option<PathBuf> {
         let paths_to_inspect: &[PathBuf] = &[PathBuf::from("."), self.libstd.clone()] as &[_];
 
-        'outer: for path in paths_to_inspect.iter() {
+        'outer: for path in paths_to_inspect.iter().cloned().chain(paths) {
             let mut root = path.to_owned();
 
-            for (_idx, part) in qualname.iter().enumerate() {
-                let final_path = match search(&root, part) {
+            let mut path = ImportPath::new(root.clone());
+
+            for part in qualname.iter() {
+                let final_path = match path.advance(part) {
                     Some(p) => p,
                     None => continue 'outer,
                 };
@@ -670,7 +651,11 @@ impl GlobalContext {
         None
     }
 
-    fn import_module(&mut self, decl: ImportDecl, source: &str) -> Option<Vec<ModuleRef>> {
+    pub fn import_module(
+        &self,
+        decl: ImportDecl,
+        mctx: &ModuleContext,
+    ) -> Result<Vec<(ModuleRef, (SpanRef, SpanRef))>, Vec<String>> {
         let qualnames = match decl.parent.as_ref() {
             Import::Names(_) => vec![decl.name.inner.components()],
             Import::From { module, names, .. } => {
@@ -688,12 +673,15 @@ impl GlobalContext {
 
         let mut modules = Vec::with_capacity(qualnames.len());
 
+        let module_dir = mctx.path.parent().unwrap().to_path_buf();
+
         for qualname in &qualnames {
+            let name = qualname.last().unwrap().as_name().unwrap();
             let qualname: Vec<&str> = qualname
                 .into_iter()
                 .map(|atom| match atom {
                     Atom::Name((n, _)) => {
-                        source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap()
+                        mctx.source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap()
                     }
                     _ => unreachable!(),
                 })
@@ -701,22 +689,27 @@ impl GlobalContext {
 
             // the magical `__monty` module name is special.
             if matches!(qualname.as_slice(), ["__monty", ..]) {
-                modules.push(ModuleRef("__monty".into()));
+                modules.push((ModuleRef("__monty".into()), name));
                 continue;
             }
 
             let path = {
-                let module_ref = ModuleRef(self.resolve_import_to_path(qualname)?);
+                let path = match self.resolve_import_to_path(qualname.clone(), std::iter::once(module_dir.clone())) {
+                    Some(p) => p,
+                    None => return Err(qualname.iter().map(ToString::to_string).collect()),
+                };
+
+                let module_ref = ModuleRef(path);
 
                 if self.modules.contains_key(&module_ref) {
-                    modules.push(module_ref);
+                    modules.push((module_ref, name));
                     continue;
                 } else {
                     module_ref.0
                 }
             };
 
-            log::trace!("Importing module ({:?})", shorten(&path));
+            log::trace!("import: Import module ({:?})", shorten(&path));
 
             let source = match std::fs::read_to_string(&path) {
                 Ok(st) => st.into_boxed_str(),
@@ -726,10 +719,12 @@ impl GlobalContext {
                 }
             };
 
-            modules.push(self.parse_and_register_module(source, path));
+            let module_ref = self.parse_and_register_module(source, path);
+
+            modules.push((module_ref, name));
         }
 
-        Some(modules)
+        Ok(modules)
     }
 
     fn parse<T>(&self, s: Rc<str>, mref: ModuleRef) -> T
@@ -740,7 +735,7 @@ impl GlobalContext {
         inner
     }
 
-    fn parse_and_register_module<P>(&mut self, input: Box<str>, path: P) -> ModuleRef
+    fn parse_and_register_module<P>(&self, input: Box<str>, path: P) -> ModuleRef
     where
         P: Into<PathBuf>,
     {
@@ -752,29 +747,7 @@ impl GlobalContext {
         self.register_module(module, path, source)
     }
 
-    pub fn walk(
-        &self,
-        module_ref: ModuleRef,
-    ) -> impl Iterator<Item = (Rc<dyn AstObject>, LocalContext)> {
-        let module_context = self.modules.get(&module_ref).unwrap();
-        let mut it = module_context.scope.iter();
-
-        std::iter::from_fn(move || {
-            let ScopedObject { scope, object } = it.next()?;
-
-            let ctx = LocalContext {
-                global_context: self,
-                module_ref: module_ref.clone(),
-                scope,
-                current_branch: None,
-                this: Some(Rc::clone(&object)),
-            };
-
-            Some((object, ctx))
-        })
-    }
-
-    fn register_module(&mut self, module: Module, path: PathBuf, source: Rc<str>) -> ModuleRef {
+    fn register_module(&self, module: Module, path: PathBuf, source: Rc<str>) -> ModuleRef {
         let module = Rc::new(module);
         let key = ModuleRef::from(path.clone());
 
@@ -811,7 +784,7 @@ impl GlobalContext {
         self.load_module(path, move |ctx, mref| {
             let module = crate::interpreter::exec_module(ctx, mref.clone());
 
-            let mctx = ctx.modules.get_mut(&mref).unwrap();
+            let mut mctx = ctx.modules.get_mut(&mref).unwrap().value().clone();
 
             let mut scope = OpaqueScope::from(module.clone() as Rc<_>);
             scope.module_ref = Some(mref.clone());
@@ -819,10 +792,14 @@ impl GlobalContext {
             let _ = std::mem::replace(&mut mctx.scope, Rc::new(scope) as Rc<_>);
             let _ = std::mem::replace(&mut mctx.module, module);
 
-            ctx.database.insert_module(mctx);
+            ctx.database.insert_module(&mctx);
 
-            for (obj, lctx) in ctx.walk(mref.clone()) {
-                obj.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
+            for ScopedObject { object, .. } in mctx.scope.iter() {
+                let mut lctx = mctx.unbound_local_context(ctx);
+
+                lctx.this = Some(Rc::clone(&object));
+
+                object.typecheck(&lctx).unwrap_or_compiler_error(&lctx);
             }
 
             mref
@@ -832,7 +809,11 @@ impl GlobalContext {
     pub fn as_codegen_module(&mut self) -> CodegenModule {
         let mut cctx = CodegenModule::new(self, self.opts.codegen_settings());
 
-        for (mref, mctx) in self.modules.iter() {
+        for (mref, mctx) in self
+            .modules
+            .iter()
+            .map(|refm| (refm.key().clone(), refm.value().clone()))
+        {
             for (name, global) in mctx
                 .globals
                 .iter()

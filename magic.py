@@ -38,7 +38,10 @@ DUNDERS = {
     "pos",
     "invert",
     "new",
-    "init"
+    "init",
+    "name",
+    "repr",
+    "module",
 }
 
 CTYPES = {
