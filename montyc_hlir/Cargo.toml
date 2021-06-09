@@ -1,0 +1,9 @@
+[package]
+name = "montyc_hlir"
+version = "0.0.0"
+edition = "2018"
+
+[dependencies]
+montyc_core = { path = "../montyc_core" }
+montyc_parser = { path = "../montyc_parser" }
+petgraph = "0.5.1"

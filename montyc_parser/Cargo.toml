@@ -1,0 +1,14 @@
+[package]
+name = "montyc_parser"
+version = "0.99.0"
+edition = "2018"
+
+[dependencies]
+montyc_core = { path = "../montyc_core" }
+
+logos = "0.12"
+regex = "1"
+nom = "6"
+lazy_static = "1"
+log = "0.4"
+ahash = { version = "0.7", features = ["std"] }

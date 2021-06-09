@@ -1,6 +1,5 @@
 [workspace]
-
-members = ["montyc"]
+members = ["montyc", "montyc_parser", "montyc_core", "montyc_hlir"]
 
 [profile.dev]
 codegen-units = 8
@@ -9,6 +8,6 @@ lto = "off"
 [profile.release]
 codegen-units = 1
 lto = "fat"
-opt-level = "z"
+opt-level = "s"
 debug-assertions = false
 debug = 0
