@@ -44,9 +44,39 @@ pub mod module {
 pub struct AstNodeId(pub u32);
 
 pub mod types {
+    use std::convert::{TryFrom, TryInto};
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(transparent)]
-    pub struct TypeId(u32);
+    pub struct TypeId(pub u32);
+
+    impl TypeId {
+        pub fn is_builtin(&self) -> bool {
+            self.0 <= 255
+        }
+    }
+
+    impl Default for TypeId {
+        fn default() -> Self {
+            Self(u32::MAX)
+        }
+    }
+
+    impl TryFrom<TypeId> for usize {
+        type Error = std::num::TryFromIntError;
+
+        fn try_from(TypeId(n): TypeId) -> Result<Self, Self::Error> {
+            n.try_into()
+        }
+    }
+
+    impl TryFrom<usize> for TypeId {
+        type Error = std::num::TryFromIntError;
+
+        fn try_from(n: usize) -> Result<Self, Self::Error> {
+            Ok(Self(n.try_into()?))
+        }
+    }
 }
 
 pub use {error::*, module::*, span::*, types::*};

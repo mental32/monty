@@ -18,6 +18,16 @@ where
     _k: PhantomData<K>,
 }
 
+impl<K, V> Default for SSAMap<K, V>
+where
+    K: TryFrom<SSAKey> + TryInto<SSAKey>,
+    <K as TryFrom<SSAKey>>::Error: Debug,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K, V> SSAMap<K, V>
 where
     K: TryFrom<SSAKey> + TryInto<SSAKey>,
@@ -47,6 +57,23 @@ where
 
         for _ in 0..n {
             self.inner.push(None);
+        }
+    }
+
+    #[inline]
+    pub fn skip_to_nth(&mut self, pos: usize) -> Result<(), usize> {
+        let current = self.next_free.get();
+
+        if pos < current {
+            Err(current)
+        } else {
+            self.next_free.replace(pos);
+
+            for _ in 0..(pos - current) {
+                self.inner.push(None);
+            }
+
+            Ok(())
         }
     }
 
@@ -92,13 +119,14 @@ where
     #[inline]
     pub fn get_or_insert(&mut self, key: K, f: impl Fn() -> V) -> &mut V
     where
-        K: Into<SSAKey>,
+        K: TryInto<SSAKey>,
+        <K as TryInto<SSAKey>>::Error: Debug,
     {
-        let key = key.into();
+        let key = key.try_into().unwrap();
 
         let key = if self.get_raw(key).is_none() {
             let key = self.insert(f());
-            key.into()
+            key.try_into().unwrap()
         } else {
             key
         };
@@ -131,17 +159,33 @@ where
     #[inline]
     pub fn get(&self, key: K) -> Option<&V>
     where
-        K: Into<SSAKey>,
+        K: TryInto<SSAKey>,
+        <K as TryInto<SSAKey>>::Error: Debug,
     {
-        self.inner.get(key.into())?.as_ref()
+        self.inner.get(key.try_into().unwrap())?.as_ref()
+    }
+
+    /// # Safety
+    ///
+    /// The key index is not bounds checked, calling this with an out of bounds index
+    /// is undefined behavior.
+    ///
+    #[inline]
+    pub unsafe fn get_unchecked(&self, key: K) -> Option<&V>
+    where
+        K: TryInto<SSAKey>,
+        <K as TryInto<SSAKey>>::Error: Debug,
+    {
+        self.inner.get_unchecked(key.try_into().ok()?).as_ref()
     }
 
     #[inline]
     pub fn get_mut(&mut self, key: K) -> Option<&mut V>
     where
-        K: Into<SSAKey>,
+        K: TryInto<SSAKey>,
+        <K as TryInto<SSAKey>>::Error: Debug,
     {
-        self.inner.get_mut(key.into())?.as_mut()
+        self.inner.get_mut(key.try_into().unwrap())?.as_mut()
     }
 
     #[inline]
