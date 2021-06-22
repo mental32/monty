@@ -10,16 +10,18 @@
 //! HLIR was designed to be constructable from any AST and is made
 //! to alleviate the problems working purely with an AST-based representation.
 
-use std::path::PathBuf;
+mod grapher;
+pub mod interpreter;
+pub mod typing;
 
-use montyc_core::TypeId;
-use montyc_parser::{AstVisitor, AstObject};
+use std::path::{Path, PathBuf};
 
-use petgraph::graph::DiGraph;
+use montyc_core::{ModuleRef, TypeId};
+use montyc_parser::ast;
 
-/// HLIR objects can be roughly thought of as the analogue to `PyObject`
+/// HLIR objects are dynamic/reflective representations of objects that we can typecheck and compile.
 ///
-/// They represent an object dynamically during compilation and keep track of
+/// They represent an object during compilation and keep track of
 /// properties such as the object's type or attributes.
 ///
 #[derive(Debug)]
@@ -27,31 +29,27 @@ pub struct Object {
     type_id: TypeId,
 }
 
-
-type AstNodeGraph = DiGraph<montyc_parser::ast::AstNode, ()>;
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleObject {
-    pub path: PathBuf,
-    pub ast: montyc_parser::ast::Module,
-    pub body: AstNodeGraph,
+    path: PathBuf,
+    pub(crate) body: grapher::AstNodeGraph,
+    ast: ast::Module,
+    mref: ModuleRef,
 }
 
-struct HLIRVisitor(AstNodeGraph);
+impl ModuleObject {
+    pub fn new(path: PathBuf, ast: ast::Module, mref: ModuleRef) -> Self {
+        let body = grapher::NewType(ast.clone()).into();
 
-impl AstVisitor for HLIRVisitor {
-
-}
-
-pub fn to_hlir_object_graph(module: &montyc_parser::ast::Module) -> AstNodeGraph {
-    let mut visitor = HLIRVisitor(AstNodeGraph::new());
-
-    for stmt in module.body.iter() {
-        stmt.visit_with(&mut visitor);
+        Self { path, body, ast, mref }
     }
 
-    todo!();
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 #[derive(Debug)]
-pub enum Value {}
+pub enum Value {
+    
+}
