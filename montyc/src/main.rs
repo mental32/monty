@@ -55,8 +55,16 @@ use structopt::StructOpt;
 fn main() -> std::io::Result<()> {
     env_logger::init();
 
-    let opts = CompilerOptions::from_args().verify();
-    let gcx = GlobalContext::initialize(&opts);
+    let opts = CompilerOptions::from_args();
+    let opts2 = opts.clone().verify();
+
+    let gcx = GlobalContext::initialize(&opts2);
+
+    match opts  {
+        CompilerOptions::Check { libstd, input } => todo!(),
+        CompilerOptions::Build { libstd, input, output, show_ir, cc, ld, cranelift_settings } => todo!(),
+        CompilerOptions::Expand { libstd, input } => todo!(),        
+    }
 
     Ok(())
 }
