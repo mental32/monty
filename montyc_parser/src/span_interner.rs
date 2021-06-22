@@ -44,7 +44,7 @@ impl SpanInterner {
     }
 
     #[inline]
-    pub fn static_name_to_spanref<const N: u32>(&self, name: &'static str) -> Result<SpanRef, ()> {
+    pub fn name_to_spanref<const N: u32>(&self, name: &str) -> Result<SpanRef, ()> {
         let mut bound = self.contextualize(name, ModuleRef(N))?;
         Ok(bound.insert(0..name.len()))
     }
