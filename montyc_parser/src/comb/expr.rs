@@ -1,9 +1,7 @@
 use nom::{branch::alt, IResult};
 
 use crate::TokenSlice;
-use crate::ast::Expr;
-use crate::ast::InfixOp;
-use crate::ast::UnaryOp;
+use crate::ast::models::{Expr, InfixOp, UnaryOp};
 use crate::spanned::Spanned;
 use crate::token::PyToken;
 
