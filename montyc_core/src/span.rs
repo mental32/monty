@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{hash::Hash, ops::Range};
 
 #[derive(Debug)]
 pub struct SpanData {
@@ -18,6 +18,17 @@ pub struct SpanData {
 /// distinct identifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SpanRef(u32, u32);
+
+
+impl SpanRef {
+    pub fn group(&self) -> u32 {
+        self.0
+    }
+
+    pub fn distinct(&self) -> u32 {
+        self.1
+    }
+}
 
 impl From<(u32, u32)> for SpanRef {
     fn from((l, r): (u32, u32)) -> Self {
