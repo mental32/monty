@@ -180,7 +180,7 @@ pub enum PyToken {
 
     #[regex(r"-?\d+", |lex| lex.slice().parse())]
     #[regex(r"-?0[xX][0-9a-fA-F]+", |lex| lex.slice().parse())]
-    Digits(isize),
+    Digits(i64),
 
     // -- SpanRef tokens
     #[regex("[a-zA-Z_][_a-zA-Z0-9]*")]
