@@ -18,6 +18,10 @@ use std::path::{Path, PathBuf};
 
 use montyc_core::{ModuleRef, TypeId};
 use montyc_parser::ast;
+use petgraph::graph::NodeIndex;
+
+pub type ObjectGraph = petgraph::graph::DiGraph<Object, ()>;
+pub type ObjectGraphIndex = NodeIndex<u32>;
 
 /// HLIR objects are dynamic/reflective representations of objects that we can typecheck and compile.
 ///
@@ -27,6 +31,8 @@ use montyc_parser::ast;
 #[derive(Debug)]
 pub struct Object {
     type_id: TypeId,
+
+    properties: crate::interpreter::PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +47,12 @@ impl ModuleObject {
     pub fn new(path: PathBuf, ast: ast::Module, mref: ModuleRef) -> Self {
         let body = grapher::NewType(ast.clone()).into();
 
-        Self { path, body, ast, mref }
+        Self {
+            path,
+            body,
+            ast,
+            mref,
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -50,6 +61,4 @@ impl ModuleObject {
 }
 
 #[derive(Debug)]
-pub enum Value {
-    
-}
+pub enum Value {}

@@ -9,7 +9,7 @@ pub type PyResult<T> = Result<T, exception::PyException>;
 use montyc_core::{ModuleRef, SpanRef};
 use montyc_parser::ast::ImportDecl;
 
-pub use runtime::Runtime;
+pub use {runtime::Runtime, object::PyDictRaw};
 
 use object::alloc::ObjAllocId;
 
@@ -17,6 +17,8 @@ use crate::{ModuleObject, typing::TypingContext};
 
 pub trait HostGlue {
     fn name_to_spanref(&self, name: &str) -> SpanRef;
+
+    fn spanref_to_str(&self, sref: SpanRef) -> &str;
 
     fn import_module(&self, decl: ImportDecl) -> Vec<(ModuleRef, SpanRef)>;
 

@@ -1,4 +1,4 @@
-use super::{PyResult, object::PyObjectRef};
+use super::{PyResult};
 
 
 #[derive(Debug)]

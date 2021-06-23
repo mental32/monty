@@ -7,10 +7,9 @@ use montyc_parser::{ast, AstObject, AstVisitor};
 
 use petgraph::{graph::NodeIndex, visit::NodeIndexable};
 
-use crate::interpreter::{
-    object::{PyObject, PyObjectRef, RawObject},
-    HostGlue, ObjAllocId, PyResult,
-};
+use crate::interpreter::{HashKeyT, HostGlue, ObjAllocId, PyResult, object::{int::IntObj, string::StrObj, PyObject, RawObject}};
+
+use super::object::func;
 
 #[derive(Debug, Clone, Copy)]
 enum StackFrame {
@@ -26,24 +25,6 @@ macro_rules! patma {
             _ => None,
         }
     };
-}
-
-impl StackFrame {
-    pub fn set<'global>(
-        &self,
-        name: SpanRef,
-        value: ObjAllocId,
-        ex: &ModuleExecutor<'global, '_>,
-    ) {
-        let o = patma!(o; Self::Module(o) | Self::Function(o) = self)
-            .unwrap()
-            .clone();
-
-        let obj = ex.runtime.objects.get(o).unwrap();
-        let hash = dbg!(ex.runtime.hash(name.group()));
-
-        obj.borrow_mut().__dict__.insert(hash, value);
-    }
 }
 
 /// Responsible for executing a single module.
@@ -71,12 +52,18 @@ impl<'global, 'module> ModuleExecutor<'global, 'module> {
         }
     }
 
-    pub fn define(&mut self, name: SpanRef, value: ObjAllocId) {
+    pub fn define(&mut self, name: SpanRef, value: ObjAllocId) -> PyResult<()> {
         let (_, frame) = self.eval_stack.last().as_ref().unwrap();
-        let frame =
-            patma!(*o; StackFrame::Function(o) | StackFrame::Module(o) = frame).unwrap();
+        let mut frame = patma!(*o; StackFrame::Function(o) | StackFrame::Module(o) = frame).unwrap();
 
-        frame.setattr_static(self.runtime, name.group(), value);
+        let name = self.host.spanref_to_str(name);
+        let hash = self.runtime.hash(name);
+
+        let name = self.string(Some(name))?;
+
+        frame.set_attribute_direct(self.runtime, hash, name, value);
+
+        Ok(())
     }
 
     pub fn lookup(&mut self, name: SpanRef) -> Option<ObjAllocId> {
@@ -110,76 +97,79 @@ impl<'global, 'module> ModuleExecutor<'global, 'module> {
         unreachable!()
     }
 
+    fn insert_new_object(
+        &mut self,
+        f: impl FnOnce(&mut Self, ObjAllocId) -> PyResult<Box<dyn PyObject>>,
+    ) -> PyResult<ObjAllocId> {
+        let object_alloc_id = self.runtime.objects.reserve();
+        let object = f(self, object_alloc_id)?;
+        let _ = self.runtime.objects.try_set_value(object_alloc_id, object);
+        Ok(object_alloc_id)
+    }
+
     /// Create a new string object.
     pub(super) fn string(&mut self, initial: Option<impl AsRef<str>>) -> PyResult<ObjAllocId> {
-        let str_class = self
+        let __class__ = self
             .runtime
             .builtins
             .getattr_static(self.runtime, "str")
             .unwrap();
 
-        let str_obj = self.runtime.new_object_from_class(str_class);
-        let string = initial.map(|r| r.as_ref().to_owned()).unwrap_or_default();
+        let initial = initial.map(|r| r.as_ref().to_owned()).unwrap_or_default();
 
-        self.runtime
-            .objects
-            .get(str_obj)
-            .unwrap()
-            .borrow_mut()
-            .__impl__ = Some(Box::new(string.into_boxed_str()));
+        self.insert_new_object(move |_, object_alloc_id| {
+            let object = RawObject {
+                alloc_id: object_alloc_id,
+                __dict__: Default::default(),
+                __class__,
+            };
 
-        Ok(str_obj)
+            let string = StrObj {
+                header: object,
+                value: initial,
+            };
+
+            Ok(Box::new(string))
+        })
     }
 
     /// Create a new integer object.
     #[inline]
     pub(super) fn integer(&mut self, n: i64) -> PyResult<ObjAllocId> {
-        let int_class = self
+        let __class__ = self
             .runtime
             .builtins
             .getattr_static(self.runtime, "int")
             .unwrap();
 
-        let int_obj = self.runtime.new_object_from_class(int_class);
+        self.insert_new_object(|_, object_alloc_id| {
+            let object = RawObject {
+                alloc_id: object_alloc_id,
+                __dict__: Default::default(),
+                __class__,
+            };
 
-        self.runtime
-            .objects
-            .get(int_obj)
-            .unwrap()
-            .borrow_mut()
-            .__impl__ = Some(Box::new(n));
+            let integer = IntObj {
+                header: object,
+                value: n,
+            };
 
-        Ok(int_obj)
+            Ok(Box::new(integer))
+        })
     }
 
     #[inline]
-    pub fn try_as_int_value(
-        &self,
-        alloc_id: ObjAllocId,
-    ) -> PyResult<crate::interpreter::HashKeyT> {
-        let obj = match self.runtime.objects.get(alloc_id) {
-            Some(objref) => PyObjectRef(objref),
-            None => todo!("RuntimError"),
-        };
+    pub fn try_as_int_value(&self, alloc_id: ObjAllocId) -> PyResult<i64> {
+        let obj = self.runtime.objects.get(alloc_id).unwrap();
+        let obj = &*obj.borrow();
 
-        let builtins_int = self
-            .runtime
-            .builtins
-            .attr(self, self.name_to_spanref_hashed("int"))?
-            .alloc_id();
+        use std::any::Any;
 
-        assert!(obj.isinstance(self, builtins_int)?);
-
-        let n = obj
-            .0
-            .borrow()
-            .__impl__
-            .as_ref()
-            .and_then(|inner| inner.downcast_ref::<i64>())
-            .cloned()
-            .unwrap();
-
-        Ok(n as u64)
+        if let Some(int) = (obj as &dyn Any).downcast_ref::<IntObj>() {
+            Ok(int.value)
+        } else {
+            todo!("TypeError: not an integer");
+        }
     }
 
     fn advance_next_node(&mut self) {
@@ -198,52 +188,52 @@ impl<'global, 'module> ModuleExecutor<'global, 'module> {
         let __class__ = self
             .runtime
             .builtins
-            .as_object_ref(&self)
+            .get_attribute_direct(self.runtime, self.runtime.hash("_module_type_"), alloc_id)
             .unwrap()
-            .attr(&self, self.runtime.hash("_module_type_"))?
             .alloc_id();
 
         let module = RawObject {
             alloc_id,
             __dict__: Default::default(),
-            __impl__: None,
             __class__,
         };
 
         self.runtime
             .objects
-            .try_set_value(alloc_id, RefCell::new(module))
+            .try_set_value(alloc_id, module)
             .unwrap();
 
         Ok(alloc_id)
     }
 
     #[inline]
-    fn function_from_closure<F>(&mut self, name: &str, f: F) -> PyResult<ObjAllocId>
-    where
-        F: Fn() + 'static,
-    {
-        let class = self
+    fn function_from_closure(&mut self, name: &str, f: func::NativeFn) -> PyResult<ObjAllocId> {
+        let __class__ = self
             .runtime
             .builtins
             .getattr_static(self.runtime, "_function_type_")
             .unwrap();
 
-        let function = self.runtime.new_object_from_class(class);
+        self.insert_new_object(move |ex, object_alloc_id| {
+            let __name__ = ex.string(Some("__name__"))?;
+            let hash = ex.runtime.hash(name);
+            let name = ex.string(Some(name))?;
 
-        let __name__ = self.string(Some("__name__")).unwrap();
-        let name = self.string(Some(name)).unwrap();
+            let mut object = RawObject {
+                alloc_id: object_alloc_id,
+                __dict__: Default::default(),
+                __class__,
+            };
 
-        function.setattr(self, __name__, name).unwrap();
+            object.set_attribute_direct(ex.runtime, hash, __name__, name);
 
-        self.runtime
-            .objects
-            .get(function)
-            .unwrap()
-            .borrow_mut()
-            .__impl__ = Some(Box::new(f));
+            let object = func::Function {
+                header: object,
+                inner: func::Callable::Native(f),
+            };
 
-        Ok(function)
+            Ok(Box::new(object))
+        })
     }
 
     #[inline]
@@ -254,7 +244,7 @@ impl<'global, 'module> ModuleExecutor<'global, 'module> {
     pub fn run_until_complete(mut self) -> PyResult<ObjAllocId> {
         let raw_nodes = self.module.body.raw_nodes();
 
-        let __monty = self
+        let mut __monty = self
             .runtime
             .modules
             .get(&ModuleRef(0))
@@ -265,8 +255,11 @@ impl<'global, 'module> ModuleExecutor<'global, 'module> {
 
         let ex = &mut self;
 
-        if __monty.attr(ex, initialized).is_err() {
-            let extern_func = ex.function_from_closure("extern", || {})?;
+        if __monty
+            .get_attribute_direct(ex.runtime, initialized, __monty)
+            .is_none()
+        {
+            let extern_func = ex.function_from_closure("extern", |ex, args| todo!())?;
             let extern_func_name = dbg!(ex.host.name_to_spanref("extern"));
 
             __monty.setattr_static(ex.runtime, extern_func_name.group(), extern_func);
@@ -317,12 +310,9 @@ impl<'global, 'module> AstVisitor<EvalResult> for ModuleExecutor<'global, 'modul
 
     fn visit_assign(&mut self, asn: &ast::Assign) -> EvalResult {
         let value = asn.value.inner.visit_with(self)?.unwrap();
+        let name = asn.name.inner.as_name().unwrap();
 
-        self.eval_stack
-            .last()
-            .unwrap()
-            .1
-            .set(asn.name.inner.as_name().unwrap(), value, self);
+        self.define(name, value)?;
 
         self.advance_next_node();
 
@@ -334,7 +324,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for ModuleExecutor<'global, 'modul
 
         for decl in import.decls() {
             for (module, _) in self.host.import_module(decl.clone()) {
-                let source = match self.runtime.modules.get(&module) {
+                let moduke_object = match self.runtime.modules.get(&module).cloned() {
                     Some(module) => module,
                     None => {
                         self.runtime.consteval(module, &*self.host)?;
@@ -343,11 +333,12 @@ impl<'global, 'module> AstVisitor<EvalResult> for ModuleExecutor<'global, 'modul
                             .modules
                             .get(&module)
                             .expect("The module should've been created by now.")
+                            .clone()
                     }
                 };
 
                 if from_import {
-                    let attr = match &decl.name.inner {
+                    let attr_sref = match &decl.name.inner {
                         ast::Primary::Atomic(atom) => match atom.inner {
                             ast::Atom::Name(name) => name,
                             _ => unreachable!(),
@@ -356,15 +347,15 @@ impl<'global, 'module> AstVisitor<EvalResult> for ModuleExecutor<'global, 'modul
                         _ => unreachable!(),
                     };
 
-                    let value = self
-                        .runtime
-                        .get_object(*source)
-                        .unwrap()
-                        .attr(self, dbg!(self.runtime.hash(dbg!(attr.group()))))
-                        .unwrap()
-                        .alloc_id();
+                    let attr = self.host.spanref_to_str(attr_sref);
+                    let hash = self.runtime.hash(attr);
+                    let attr = self.string(Some(attr))?;
 
-                    self.eval_stack.last().unwrap().1.set(attr, value, self);
+                    let value = moduke_object
+                        .get_attribute_direct(self.runtime, hash, attr)
+                        .unwrap();
+
+                    self.define(attr_sref, value)?;
                 } else {
                     todo!("regular import");
                 }
@@ -385,7 +376,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for ModuleExecutor<'global, 'modul
 
         let class_obj = self.runtime.define_new_class(&[object_class]);
 
-        self.define(classdef.name.inner.as_name().unwrap(), class_obj);
+        self.define(classdef.name.inner.as_name().unwrap(), class_obj)?;
 
         self.advance_next_node();
 
@@ -401,7 +392,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for ModuleExecutor<'global, 'modul
 
         let func_obj = self.runtime.define_new_class(&[function_type]);
 
-        self.define(fndef.name.inner.as_name().unwrap(), func_obj);
+        self.define(fndef.name.inner.as_name().unwrap(), func_obj)?;
 
         self.advance_next_node();
 

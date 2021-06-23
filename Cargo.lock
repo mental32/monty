@@ -337,6 +337,7 @@ name = "montyc_hlir"
 version = "0.0.0"
 dependencies = [
  "ahash",
+ "log",
  "montyc_core",
  "montyc_parser",
  "petgraph",

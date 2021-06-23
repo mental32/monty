@@ -1,12 +1,12 @@
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell},
     hash::{BuildHasher, Hasher},
 };
 
 use montyc_core::{utils::SSAMap, ModuleRef};
 use petgraph::graph::{Node, NodeIndex};
 
-use crate::{ModuleObject, interpreter::object::{PyObject, PyObjectRef}, typing::TypingContext};
+use crate::{interpreter::object::PyObject, typing::TypingContext, ModuleObject};
 
 use super::{
     object::{self, RawObject},
@@ -63,7 +63,7 @@ pub struct Runtime {
     op_ticks: u64,
 
     /// A map that contains every object.
-    pub(super) objects: SSAMap<ObjAllocId, RefCell<RawObject>>,
+    pub(super) objects: SSAMap<ObjAllocId, RefCell<Box<dyn PyObject>>>,
 
     /// per-Runtime state that allows producing multiple hashers with the same seed.
     hash_state: ahash::RandomState,
@@ -83,7 +83,7 @@ impl Runtime {
     #[inline]
     pub fn new(op_ticks: u64) -> Self {
         let mut objects = SSAMap::new();
-        let builtins = objects.reserve();
+        let mut builtins = objects.reserve();
 
         let mut this = Self {
             op_ticks,
@@ -111,7 +111,6 @@ impl Runtime {
                     alloc_id: builtins,
                     __dict__: Default::default(),
                     __class__: module_class,
-                    __impl__: None,
                 },
             )
             .unwrap();
@@ -149,8 +148,9 @@ impl Runtime {
             alloc_id: class_alloc_id,
             __dict__: Default::default(),
             __class__: base_class_id,
-            __impl__: None,
         };
+
+        let class_object = RefCell::new(Box::new(class_object) as Box<_>);
 
         self.objects
             .try_set_value(class_alloc_id, class_object)
@@ -166,8 +166,9 @@ impl Runtime {
             alloc_id: object_alloc_id,
             __dict__: Default::default(),
             __class__: class,
-            __impl__: None,
         };
+
+        let object = RefCell::new(Box::new(object) as Box<dyn PyObject>);
 
         self.objects.try_set_value(object_alloc_id, object).unwrap();
 
@@ -175,9 +176,11 @@ impl Runtime {
     }
 
     #[inline]
-    pub(super) fn get_object<'rt>(&'rt self, alloc_id: ObjAllocId) -> Option<PyObjectRef<'rt>> {
-        let raw = self.objects.get(alloc_id)?;
-        Some(PyObjectRef(raw))
+    pub(super) fn get_object<'this>(
+        &'this self,
+        alloc_id: ObjAllocId,
+    ) -> Option<&RefCell<Box<dyn PyObject>>> {
+        self.objects.get(alloc_id)
     }
 
     /// Hash any hashable using the runtime hash state.
@@ -218,8 +221,9 @@ impl Runtime {
             Ok(())
         })?;
 
-        let module_object = crate::Object {
+        let mut module_object = crate::Object {
             type_id: TypingContext::Module,
+            properties: Default::default(),
         };
 
         Ok(module_object)

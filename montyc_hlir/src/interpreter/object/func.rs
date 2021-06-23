@@ -2,12 +2,12 @@ use petgraph::graph::NodeIndex;
 
 use crate::interpreter::runtime::eval::ModuleExecutor;
 
-use super::{dict::PyDictRaw, ObjAllocId, PyObject, PyResult};
+use super::{ObjAllocId, PyObject, PyResult, RawObject, dict::PyDictRaw};
 
 pub(in crate::interpreter) type NativeFn =
     for<'rt> fn(&'rt ModuleExecutor, &[ObjAllocId]) -> PyResult<ObjAllocId>;
 
-enum Callable {
+pub(in crate::interpreter) enum Callable {
     Native(NativeFn),
     BoxedDyn(Box<dyn Fn(&ModuleExecutor, &[ObjAllocId]) -> PyResult<ObjAllocId>>),
     SourceDef(NodeIndex<u32>),
@@ -21,32 +21,29 @@ impl std::fmt::Debug for Callable {
 }
 
 #[derive(Debug)]
-struct Function {
-    alloc_id: ObjAllocId,
-    class_id: ObjAllocId,
-    __call__: Callable,
+pub(in crate::interpreter) struct Function {
+    pub(in crate::interpreter) header: RawObject,
+    pub(in crate::interpreter) inner: Callable,
 }
 
-impl Function {
-    pub fn native(alloc_id: ObjAllocId, class_id: ObjAllocId, f: NativeFn) -> Self {
-        Self {
-            alloc_id,
-            class_id,
-            __call__: Callable::Native(f),
-        }
-    }
-}
-
-impl<'rt> PyObject<'rt> for Function {
+impl PyObject for Function {
     fn alloc_id(&self) -> ObjAllocId {
-        self.alloc_id
+        self.header.alloc_id
     }
 
-    fn call(&self, ex: &'rt ModuleExecutor, args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
-        match self.__call__ {
-            Callable::Native(f) => f(ex, args),
-            Callable::BoxedDyn(ref f) => f(ex, args),
-            Callable::SourceDef(_) | Callable::Object(_) => todo!(),
-        }
+    fn set_attribute_direct(&mut self, rt: &crate::interpreter::Runtime, hash: crate::interpreter::HashKeyT, key: ObjAllocId, value: ObjAllocId) {
+        self.header.set_attribute_direct(rt, hash, key, value)
     }
+
+    fn get_attribute_direct(&self, rt: &crate::interpreter::Runtime, hash: crate::interpreter::HashKeyT, key: ObjAllocId) -> Option<ObjAllocId> {
+        self.header.get_attribute_direct(rt, hash, key)
+    }
+
+    // fn call(&self, ex: &'rt ModuleExecutor, args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
+    //     match self.__call__ {
+    //         Callable::Native(f) => f(ex, args),
+    //         Callable::BoxedDyn(ref f) => f(ex, args),
+    //         Callable::SourceDef(_) | Callable::Object(_) => todo!(),
+    //     }
+    // }
 }

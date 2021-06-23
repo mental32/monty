@@ -1,30 +1,54 @@
 //! `ObjAllocId`s are unique allocation identifiers for objects which also implement the `PyObject` trait for convenience.
 
-use std::convert::{TryFrom, TryInto};
+use std::{borrow::Borrow, convert::{TryFrom, TryInto}, hash::Hash};
 
-use crate::interpreter::runtime::eval::ModuleExecutor;
+use crate::interpreter::{Runtime, runtime::eval::ModuleExecutor};
 
-use super::{dict::PyDictRaw, PyObject, PyObjectRef};
+use super::{dict::PyDictRaw, PyObject};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::interpreter) struct ObjAllocId(pub usize);
 
-impl<'rt> PyObject<'rt> for ObjAllocId {
+impl ObjAllocId {
+    pub fn setattr_static(&mut self, rt: &mut Runtime, key: impl Hash, value: ObjAllocId) {
+        let hash = rt.hash(key);
+        self.set_attribute_direct(rt, hash, value, value);
+    }
+
+    pub fn getattr_static(&self, rt: &Runtime, key: impl Hash) -> Option<ObjAllocId> {
+        let hash = rt.hash(key);
+        self.get_attribute_direct(rt, hash, ObjAllocId(0))
+    }
+}
+
+impl<'rt> PyObject for ObjAllocId {
     fn alloc_id(&self) -> ObjAllocId {
         self.clone()
     }
 
-    fn with_dict<T>(&self, ex: &'rt ModuleExecutor, f: impl Fn(&PyDictRaw) -> T) -> T {
-        let obj = ex.runtime.get_object(self.clone()).unwrap();
-
-        obj.with_dict(ex, f)
+    fn set_attribute_direct(
+        &mut self,
+        rt: &crate::interpreter::Runtime,
+        hash: crate::interpreter::HashKeyT,
+        key: ObjAllocId,
+        value: ObjAllocId,
+    ) {
+        rt.get_object(self.alloc_id())
+            .unwrap()
+            .borrow_mut()
+            .set_attribute_direct(rt, hash, key, value)
     }
-}
 
-impl ObjAllocId {
-    pub fn as_object_ref<'rt>(&self, ex: &'rt ModuleExecutor) -> Option<PyObjectRef<'rt>> {
-        let raw = ex.runtime.objects.get(self.clone())?;
-        Some(PyObjectRef(raw))
+    fn get_attribute_direct(
+        &self,
+        rt: &crate::interpreter::Runtime,
+        hash: crate::interpreter::HashKeyT,
+        key: ObjAllocId,
+    ) -> Option<ObjAllocId> {
+        rt.get_object(self.alloc_id())
+            .unwrap()
+            .borrow()
+            .get_attribute_direct(rt, hash, key)
     }
 }
 

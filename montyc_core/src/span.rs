@@ -1,6 +1,6 @@
 use std::{hash::Hash, ops::Range};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpanData {
     pub range: Range<usize>,
     pub mdoule: crate::module::ModuleRef,
