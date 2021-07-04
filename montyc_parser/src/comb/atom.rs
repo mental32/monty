@@ -1,11 +1,11 @@
 use nom::sequence::tuple;
 use nom::{branch::alt, IResult};
 
-use crate::TokenSlice;
 use crate::ast::models::{Atom, Expr};
 use crate::comb::{expect, expect_any_of, expect_many_n, expect_with};
 use crate::spanned::Spanned;
 use crate::token::PyToken;
+use crate::TokenSlice;
 
 use super::expect_;
 
@@ -129,8 +129,7 @@ pub fn tuple_literal_inner<'a>(
 #[inline]
 fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
     let (stream, lparen) = expect(stream, PyToken::LParen)?;
-    let (stream, _) =
-        expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
+    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
     let (stream, values) = tuple_literal_inner(stream)?;
     let (stream, rparen) = expect(stream, PyToken::RParen)?;
 

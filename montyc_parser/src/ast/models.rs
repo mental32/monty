@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use montyc_core::SpanRef;
 
 use super::*;
-pub use super::{atom::*, expr::*, import::*, primary::*, ifstmt::*};
+pub use super::{atom::*, expr::*, ifstmt::*, import::*, primary::*};
 
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
@@ -80,7 +80,7 @@ pub struct Return {
 
 impl AstObject for Return {
     fn into_ast_node(&self) -> AstNode {
-        todo!()
+        AstNode::Ret(self.clone())
     }
 
     fn span(&self) -> Option<Span> {
@@ -174,7 +174,7 @@ impl AstObject for Annotation {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, _visitor: &mut dyn AstVisitor<U>) -> U
     where
         Self: Sized,
     {

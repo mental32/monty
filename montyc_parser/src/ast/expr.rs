@@ -1,6 +1,6 @@
 use logos::Span;
 
-use crate::{AstNode, AstObject, AstVisitor, spanned::Spanned};
+use crate::{spanned::Spanned, AstNode, AstObject, AstVisitor};
 
 use super::{Atom, Primary};
 
@@ -112,7 +112,7 @@ impl AstObject for Expr {
             Expr::BinOp { .. } => AstNode::BinOp(self.clone()),
             Expr::Unary { .. } => AstNode::Unary(self.clone()),
             Expr::Named { .. } => AstNode::NamedExpr(self.clone()),
-            Expr::Primary(_) => todo!(),
+            Expr::Primary(primary) => primary.into_ast_node(),
         }
     }
 
@@ -124,7 +124,10 @@ impl AstObject for Expr {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U where Self: Sized {
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    where
+        Self: Sized,
+    {
         match self {
             Expr::If { .. } => visitor.visit_ternary(self),
             Expr::BinOp { .. } => visitor.visit_binop(self),

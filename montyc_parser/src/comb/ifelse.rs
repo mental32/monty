@@ -3,7 +3,13 @@ use nom::{
     IResult,
 };
 
-use crate::{TokenSlice, ast::{If, IfChain}, comb::expect_many_n_var, spanned::Spanned, token::PyToken};
+use crate::{
+    ast::{If, IfChain},
+    comb::expect_many_n_var,
+    spanned::Spanned,
+    token::PyToken,
+    TokenSlice,
+};
 
 use super::{expect, expect_, expect_many_n, expression, stmt::statement};
 
@@ -33,10 +39,7 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
     let (stream, if_obj) = if let Ok((s, stmt)) = statement(stream) {
         body.push(stmt);
 
-        let if_obj = token.map(|_| If {
-            test,
-            body,
-        });
+        let if_obj = token.map(|_| If { test, body });
 
         (
             s,
@@ -78,10 +81,7 @@ pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<If
         }
 
         let mut if_chain = IfChain {
-            branches: vec![token.map(|_| If {
-                test: test,
-                body,
-            })],
+            branches: vec![token.map(|_| If { test: test, body })],
             orelse: None,
         };
 

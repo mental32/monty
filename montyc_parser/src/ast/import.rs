@@ -35,7 +35,10 @@ impl AstObject for Import {
         todo!()
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U where Self: Sized {
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    where
+        Self: Sized,
+    {
         visitor.visit_import(self)
     }
 }

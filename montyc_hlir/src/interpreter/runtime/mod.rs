@@ -1,22 +1,26 @@
 use std::{
-    cell::{Ref, RefCell},
+    cell::{RefCell},
     hash::{BuildHasher, Hasher},
 };
 
 use montyc_core::{utils::SSAMap, ModuleRef};
-use petgraph::graph::{Node, NodeIndex};
 
-use crate::{interpreter::object::PyObject, typing::TypingContext, ModuleObject};
+use petgraph::graph::{NodeIndex};
+
+use crate::{
+    interpreter::object::{int::IntObj, string::StrObj, PyObject},
+    ObjectGraph, ObjectGraphIndex,
+};
 
 use super::{
-    object::{self, RawObject},
-    HostGlue, ObjAllocId, PyResult,
+    object::{self, class::ClassObj, RawObject},
+    HostGlue, ObjAllocId, PyDictRaw, PyResult,
 };
 
 #[derive(Debug, Default)]
-struct LookupGraph(petgraph::graph::DiGraph<ObjAllocId, ()>);
+struct ScopeGraph(petgraph::graph::DiGraph<ObjAllocId, ()>);
 
-impl LookupGraph {
+impl ScopeGraph {
     #[inline]
     pub fn insert(&mut self, node: ObjAllocId) -> NodeIndex<u32> {
         self.0.add_node(node)
@@ -75,7 +79,10 @@ pub struct Runtime {
     modules: ahash::AHashMap<ModuleRef, ObjAllocId>,
 
     /// A graph of all the objects that act like as namespaces i.e. modules, classes, functions.
-    scope_graph: LookupGraph,
+    scope_graph: ScopeGraph,
+
+    /// A map for interned strings.
+    strings: ahash::AHashMap<u64, ObjAllocId>,
 }
 
 impl Runtime {
@@ -92,16 +99,17 @@ impl Runtime {
             modules: Default::default(),
             hash_state: ahash::RandomState::new(),
             scope_graph: Default::default(),
+            strings: Default::default(),
         };
 
         // class type(Self): ...
-        let type_class = this.define_new_class(&[]);
+        let type_class = this.define_new_static_class(&[]);
 
         // class object(type): ...
-        let object_class = this.define_new_class(&[type_class]);
+        let object_class = this.define_new_static_class(&[type_class]);
 
         // class ModuleType(object): ...
-        let module_class = this.define_new_class(&[object_class]);
+        let module_class = this.define_new_static_class(&[object_class]);
 
         // __builtins__ = ModuleType()
         this.objects
@@ -119,17 +127,22 @@ impl Runtime {
         builtins.setattr_static(&mut this, "_object_type_", object_class);
 
         // class str(object): ...
-        let str_class = this.define_new_class(&[object_class]);
+        let str_class = this.define_new_static_class(&[object_class]);
 
         builtins.setattr_static(&mut this, "str", str_class);
 
         // class int(object): ...
-        let int_class = this.define_new_class(&[object_class]);
+        let int_class = this.define_new_static_class(&[object_class]);
 
         builtins.setattr_static(&mut this, "int", int_class);
 
+        // class dict(object): ...
+        let dict_class = this.define_new_static_class(&[object_class]);
+
+        builtins.setattr_static(&mut this, "dict", dict_class);
+
         // class function(object): ...
-        let func_class = this.define_new_class(&[object_class]);
+        let func_class = this.define_new_static_class(&[object_class]);
 
         builtins.setattr_static(&mut this, "_function_type_", func_class);
 
@@ -140,7 +153,7 @@ impl Runtime {
         this
     }
 
-    fn define_new_class(&mut self, bases: &[ObjAllocId]) -> ObjAllocId {
+    fn define_new_static_class(&mut self, bases: &[ObjAllocId]) -> ObjAllocId {
         let class_alloc_id = self.objects.reserve();
         let base_class_id = bases.get(0).cloned().unwrap_or(class_alloc_id);
 
@@ -148,6 +161,10 @@ impl Runtime {
             alloc_id: class_alloc_id,
             __dict__: Default::default(),
             __class__: base_class_id,
+        };
+
+        let class_object = ClassObj {
+            header: class_object,
         };
 
         let class_object = RefCell::new(Box::new(class_object) as Box<_>);
@@ -185,7 +202,7 @@ impl Runtime {
 
     /// Hash any hashable using the runtime hash state.
     #[inline]
-    pub(super) fn hash(&self, thing: impl std::hash::Hash) -> super::HashKeyT {
+    pub fn hash(&self, thing: impl std::hash::Hash) -> super::HashKeyT {
         let mut hasher = self.hash_state.build_hasher();
 
         thing.hash(&mut hasher);
@@ -209,24 +226,79 @@ impl Runtime {
         }
     }
 
+    #[inline]
+    pub(in crate::interpreter) fn try_as_int_value(&self, alloc_id: ObjAllocId) -> PyResult<i64> {
+        let obj = self.objects.get(alloc_id).unwrap();
+        let obj = &*obj.borrow();
+
+        if let Some(int) = obj.as_any().downcast_ref::<IntObj>() {
+            Ok(int.value)
+        } else {
+            todo!("TypeError: not an integer");
+        }
+    }
+
+    #[inline]
+    pub(in crate::interpreter) fn try_as_str_value(
+        &self,
+        alloc_id: ObjAllocId,
+    ) -> PyResult<String> {
+        let obj = self.objects.get(alloc_id).unwrap();
+        let obj = &*obj.borrow();
+
+        if let Some(st) = obj.as_any().downcast_ref::<StrObj>() {
+            Ok(st.value.clone())
+        } else {
+            todo!("TypeError: not a string");
+        }
+    }
+
     pub fn consteval<'global, 'module>(
         &'global mut self,
         mref: ModuleRef,
         gcx: &'global dyn HostGlue,
-    ) -> PyResult<crate::Object> {
+    ) -> PyResult<(ObjectGraphIndex, ObjectGraph)> {
         let mut module_object = super::object::alloc::ObjAllocId(usize::MAX);
+        let mut object_graph: crate::ObjectGraph = Default::default();
+
+        let module_index = object_graph.add_node(crate::Value::Module {
+            mref,
+            properties: Default::default(),
+        });
+
+        let mut properties: PyDictRaw<_> = Default::default();
 
         gcx.with_module(mref, &mut |module| {
             module_object = eval::ModuleExecutor::new(self, module, gcx).run_until_complete()?;
+
+            module_object.for_each(self, &mut |hash, key, value| {
+                let key = key.into_value(self, &mut object_graph);
+                let key = object_graph.add_string_node(
+                    if let crate::Value::String(st) = &key {
+                        self.hash(st)
+                    } else {
+                        unreachable!()
+                    },
+                    key,
+                );
+
+                let value = value.into_value(self, &mut object_graph);
+                let value = object_graph.add_node(value);
+
+                properties.insert(hash, (key, value));
+            });
+
             Ok(())
         })?;
 
-        let mut module_object = crate::Object {
-            type_id: TypingContext::Module,
-            properties: Default::default(),
+        let module_properties = match object_graph.node_weight_mut(module_index).unwrap() {
+            crate::Value::Module { properties, .. } => properties,
+            _ => unreachable!()
         };
 
-        Ok(module_object)
+        std::mem::swap(module_properties, &mut properties);
+
+        Ok((module_index, object_graph))
     }
 }
 

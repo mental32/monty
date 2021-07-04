@@ -4,7 +4,12 @@ use nom::{
     IResult,
 };
 
-use crate::{TokenSlice, ast::{Atom, Expr, models::Primary}, spanned::Spanned, token::PyToken};
+use crate::{
+    ast::{models::Primary, Atom, Expr},
+    spanned::Spanned,
+    token::PyToken,
+    TokenSlice,
+};
 
 use super::{
     atom::atom,

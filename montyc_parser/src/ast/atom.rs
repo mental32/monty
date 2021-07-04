@@ -1,7 +1,7 @@
 use logos::Span;
 use montyc_core::SpanRef;
 
-use crate::{AstNode, AstObject, AstVisitor, spanned::Spanned, token::PyToken};
+use crate::{spanned::Spanned, token::PyToken, AstNode, AstObject, AstVisitor};
 
 use super::Expr;
 
@@ -41,7 +41,10 @@ impl AstObject for Atom {
         todo!()
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U where Self: Sized {
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    where
+        Self: Sized,
+    {
         match self {
             Atom::None => visitor.visit_none(self),
             Atom::Ellipsis => visitor.visit_ellipsis(self),

@@ -1,8 +1,16 @@
 use nom::{branch::alt, sequence::terminated, IResult};
 
-use crate::{TokenSlice, ast::models::{Annotation, Atom, Expr, Primary, Statement}, spanned::Spanned, token::PyToken};
+use crate::{
+    ast::models::{Annotation, Atom, Expr, Primary, Statement},
+    spanned::Spanned,
+    token::PyToken,
+    TokenSlice,
+};
 
-use super::{assignment, expect, expect_, expect_many_n, expect_with, expression, funcdef::function_def, name, return_stmt};
+use super::{
+    assignment, expect, expect_, expect_many_n, expect_with, expression, funcdef::function_def,
+    name, return_stmt,
+};
 
 #[inline]
 fn dyn_assign<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Statement>> {
@@ -34,7 +42,10 @@ fn dyn_annotation<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned
 
     let ann = Spanned {
         span: ident.span.start..kind.span.end,
-        inner: Statement::Ann(Annotation { name: ident, kind: kind }),
+        inner: Statement::Ann(Annotation {
+            name: ident,
+            kind: kind,
+        }),
     };
 
     Ok((stream, ann))

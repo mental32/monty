@@ -21,6 +21,9 @@ structopt = "0.3.21"
 # thiserror = "1.0.24"
 # dashmap = "4.0.2"
 
+petgraph = "0.5.1"
+
+
 # Logging dependencies
 log = "0.4.14"
 env_logger = "0.8.3"

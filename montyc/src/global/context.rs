@@ -6,14 +6,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use montyc_core::{utils::SSAMap, ModuleRef, MontyError, SpanRef};
+use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef};
 use montyc_hlir::{
     interpreter::{self, HostGlue},
     typing::TypingContext,
+    Value,
 };
-use montyc_parser::{ast, SpanInterner};
+use montyc_parser::{ast, AstNode, SpanInterner};
 
-use crate::prelude::*;
+use crate::{global::value_context::ValueContext, prelude::*, typechk::Typecheck};
 
 const MAGICAL_NAMES: &[&'static str] = &[
     // names of builtin types or functions
@@ -214,6 +215,7 @@ impl ImportPath {
     }
 }
 
+#[derive(Debug)]
 pub struct GlobalContext {
     /// The options this context was created with.
     opts: CompilerOptions,
@@ -225,13 +227,13 @@ pub struct GlobalContext {
     static_names: StaticNames,
 
     /// A registry of the current modules that have been included.
-    modules: SSAMap<ModuleRef, RefCell<montyc_hlir::ModuleObject>>,
+    pub(super) modules: SSAMap<ModuleRef, RefCell<montyc_hlir::ModuleObject>>,
 
     /// A map of all the source code for every module imported.
     module_sources: ahash::AHashMap<ModuleRef, Box<str>>,
 
     /// An interpreter runtime for consteval.
-    const_runtime: RefCell<interpreter::Runtime>,
+    pub(super) const_runtime: RefCell<interpreter::Runtime>,
 
     /// Used to keep track of type information.
     typing_context: TypingContext,
@@ -283,7 +285,7 @@ impl GlobalContext {
     fn load_module_with<T>(
         &mut self,
         path: impl AsRef<Path>,
-        f: impl Fn(&Self, ModuleRef) -> T,
+        f: impl Fn(&mut Self, ModuleRef) -> T,
     ) -> io::Result<T> {
         let path = path.as_ref();
 
@@ -335,17 +337,29 @@ impl GlobalContext {
     }
 
     #[inline]
-    pub fn include_module(
-        &mut self,
-        path: impl AsRef<Path>,
-    ) -> montyc_core::MontyResult<ModuleRef> {
-        self.load_module_with(path, |gcx, mref| {
-            let mut rt = gcx.const_runtime.borrow_mut();
-            let module_object = rt.consteval(mref, gcx).unwrap();
+    pub fn include_module(&mut self, path: impl AsRef<Path>) -> MontyResult<ModuleRef> {
+        self.load_module_with(path, |gcx, mref| -> MontyResult<ModuleRef> {
+            let (module_index, object_graph) =
+                gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
 
-            todo!("{:?}", module_object);
+            let (mref, properties) = match object_graph
+                .node_weight(module_index)
+                .expect("missing module index.")
+            {
+                Value::Module { mref, properties } => (*mref, properties),
+                _ => unreachable!(),
+            };
+
+            let module_object = gcx.modules.get(mref).unwrap();
+            for (hash, (key, value)) in properties.iter() {
+                let value = object_graph.node_weight(*value).unwrap();
+
+                value.typecheck(ValueContext { mref, gcx, value })?;
+            }
+
+            Ok(mref)
         })
-        .map_err(|err| MontyError::IO(err))
+        .map_err(|err| MontyError::IO(err))?
     }
 
     #[inline]
@@ -446,9 +460,11 @@ impl HostGlue for GlobalContext {
     }
 
     fn spanref_to_str(&self, sref: SpanRef) -> &str {
-        self.spanner.spanref_to_name(sref, |mref, range| {
-            self.module_sources.get(&mref)?.get(range)
-        }).expect("unable to translate spanref to string")
+        self.spanner
+            .spanref_to_name(sref, |mref, range| {
+                self.module_sources.get(&mref)?.get(range)
+            })
+            .expect("unable to translate spanref to string")
     }
 
     fn import_module(&self, decl: ast::ImportDecl) -> Vec<(ModuleRef, SpanRef)> {

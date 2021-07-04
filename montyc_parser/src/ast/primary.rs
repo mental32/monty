@@ -1,10 +1,9 @@
 use logos::Span;
 use montyc_core::SpanRef;
 
-use crate::{AstNode, AstObject, AstVisitor, spanned::Spanned};
+use crate::{spanned::Spanned, AstNode, AstObject, AstVisitor};
 
 use super::{Atom, Expr};
-
 
 #[derive(Debug, Clone)]
 pub enum Primary {
@@ -35,10 +34,10 @@ pub enum Primary {
 impl AstObject for Primary {
     fn into_ast_node(&self) -> AstNode {
         match self {
-            Primary::Atomic(_) => todo!(),
-            Primary::Subscript { value, index } => todo!(),
-            Primary::Call { func, args } => todo!(),
-            Primary::Attribute { left, attr } => todo!(),
+            Primary::Atomic(atom) => atom.into_ast_node(),
+            Primary::Subscript { .. } => AstNode::Subscript(self.clone()),
+            Primary::Call { func: _, args: _ } => todo!(),
+            Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!(),
         }
     }
@@ -51,12 +50,15 @@ impl AstObject for Primary {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U where Self: Sized {
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    where
+        Self: Sized,
+    {
         match self {
             Primary::Atomic(atom) => atom.visit_with(visitor),
-            Primary::Subscript { value, index } => todo!(),
-            Primary::Call { func, args } => todo!(),
-            Primary::Attribute { left, attr } => todo!(),
+            Primary::Subscript { value: _, index: _ } => todo!(),
+            Primary::Call { func: _, args: _ } => todo!(),
+            Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!(),
         }
     }

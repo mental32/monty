@@ -1,4 +1,5 @@
 pub mod alloc;
+pub mod class;
 pub mod dict;
 pub mod func;
 
@@ -33,6 +34,30 @@ pub mod string {
             key: super::alloc::ObjAllocId,
         ) -> Option<super::alloc::ObjAllocId> {
             self.header.get_attribute_direct(rt, hash, key)
+        }
+
+        fn for_each(
+            &self,
+            rt: &crate::interpreter::Runtime,
+            f: &mut dyn FnMut(crate::interpreter::HashKeyT, ObjAllocId, ObjAllocId),
+        ) {
+            self.header.for_each(rt, f)
+        }
+
+        fn into_value(
+            &self,
+            _rt: &crate::interpreter::Runtime,
+            _object_graph: &mut crate::ObjectGraph,
+        ) -> crate::Value {
+            crate::Value::String(self.value.clone())
+        }
+
+        fn hash(&self, rt: &crate::interpreter::Runtime) -> Option<crate::interpreter::HashKeyT> {
+            Some(rt.hash(self.value.clone()))
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
         }
     }
 }
@@ -69,11 +94,35 @@ pub mod int {
         ) -> Option<super::alloc::ObjAllocId> {
             self.header.get_attribute_direct(rt, hash, key)
         }
+
+        fn for_each(
+            &self,
+            rt: &crate::interpreter::Runtime,
+            f: &mut dyn FnMut(crate::interpreter::HashKeyT, ObjAllocId, ObjAllocId),
+        ) {
+            self.header.for_each(rt, f)
+        }
+
+        fn into_value(
+            &self,
+            _rt: &crate::interpreter::Runtime,
+            _object_graph: &mut crate::ObjectGraph,
+        ) -> crate::Value {
+            todo!()
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
     }
 }
 
 pub mod raw {
     use std::cell::RefCell;
+
+    use petgraph::graph::NodeIndex;
+
+    use crate::{interpreter::HashKeyT, typing::TypingContext, ObjectGraph};
 
     use super::{dict::PyDictRaw, ObjAllocId, PyObject};
 
@@ -84,10 +133,43 @@ pub mod raw {
         pub alloc_id: ObjAllocId,
 
         /// This **the** `__dict__` slot, almost everything Python-centric gets stored here.
-        pub __dict__: PyDictRaw<ObjAllocId>,
+        pub __dict__: PyDictRaw<(ObjAllocId, ObjAllocId)>,
 
         /// The class of the object.
         pub __class__: ObjAllocId,
+    }
+
+    impl RawObject {
+        pub fn into_value_dict(
+            &self,
+            rt: &crate::interpreter::Runtime,
+            object_graph: &mut ObjectGraph,
+        ) -> PyDictRaw<(NodeIndex, NodeIndex)> {
+            let mut properties: PyDictRaw<_> = Default::default();
+
+            self.for_each(rt, &mut |hash, key, value| {
+                let key = key.into_value(rt, object_graph);
+                let key = object_graph.add_string_node(
+                    if let crate::Value::String(st) = &key {
+                        rt.hash(st)
+                    } else {
+                        unreachable!()
+                    },
+                    key,
+                );
+
+                let value = value.into_value(rt, object_graph);
+                let value = if let crate::Value::String(st) = &value {
+                    object_graph.add_string_node(rt.hash(st), value)
+                } else {
+                    object_graph.add_node(value)
+                };
+
+                properties.insert(hash, (key, value));
+            });
+
+            properties
+        }
     }
 
     impl From<RawObject> for RefCell<Box<dyn PyObject>> {
@@ -103,33 +185,62 @@ pub mod raw {
 
         fn set_attribute_direct(
             &mut self,
-            rt: &crate::interpreter::Runtime,
+            _rt: &crate::interpreter::Runtime,
             hash: crate::interpreter::HashKeyT,
             key: ObjAllocId,
             value: ObjAllocId,
         ) {
-            self.__dict__.insert(hash, value);
+            self.__dict__.insert(hash, (key, value));
         }
 
         fn get_attribute_direct(
             &self,
-            rt: &crate::interpreter::Runtime,
+            _rt: &crate::interpreter::Runtime,
             hash: crate::interpreter::HashKeyT,
-            key: ObjAllocId,
+            _key: ObjAllocId,
         ) -> Option<ObjAllocId> {
-            self.__dict__.get(hash)
+            self.__dict__.get(hash).map(|kv| kv.1)
+        }
+
+        fn for_each(
+            &self,
+            _rt: &crate::interpreter::Runtime,
+            f: &mut dyn FnMut(HashKeyT, ObjAllocId, ObjAllocId),
+        ) {
+            self.__dict__.0.iter().for_each(|(h, (k, v))| f(*h, *k, *v))
+        }
+
+        fn into_value(
+            &self,
+            rt: &crate::interpreter::Runtime,
+            object_graph: &mut crate::ObjectGraph,
+        ) -> crate::Value {
+            let properties = self.into_value_dict(rt, object_graph);
+
+            crate::Value::Object(crate::Object {
+                type_id: TypingContext::Unknown,
+                properties,
+            })
+        }
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
         }
     }
 }
+
+use std::hash::Hash;
 
 pub(in crate::interpreter) use raw::RawObject;
 
 pub use dict::PyDictRaw;
 
-use super::{exception::PyException, runtime::eval::ModuleExecutor, ObjAllocId, PyResult, Runtime};
+use super::{runtime::eval::ModuleExecutor, HashKeyT, ObjAllocId, PyResult, Runtime};
 
 /// An object safe base trait for all Python "objects".
-pub(in crate::interpreter) trait PyObject: core::fmt::Debug + core::any::Any + 'static {
+pub(in crate::interpreter) trait PyObject:
+    core::fmt::Debug + core::any::Any + 'static
+{
     /// The allocation ID (`ObjAllocId`) for this particular object.
     fn alloc_id(&self) -> ObjAllocId;
 
@@ -163,6 +274,41 @@ pub(in crate::interpreter) trait PyObject: core::fmt::Debug + core::any::Any + '
         hash: super::HashKeyT,
         key: ObjAllocId,
     ) -> Option<ObjAllocId>;
+
+    /// The objects native `__hash__` dunder, returns `None` if `__hash__ = NotImplemented`
+    ///
+    /// `hash(obj) == obj.__hash__() = type(obj).__hash__(obj)`
+    ///
+    #[inline]
+    fn hash(&self, rt: &Runtime) -> Option<HashKeyT> {
+        unimplemented!("hash on {:?}", rt.get_object(self.alloc_id()));
+
+        // rt.get_object(self.alloc_id())
+        //     .map(|obj| obj as *const _ as HashKeyT)
+    }
+
+    /// Iterate through this objects `__dict__` and call `f` with the hash, key, and value of every entry.
+    fn for_each(&self, rt: &Runtime, f: &mut dyn FnMut(HashKeyT, ObjAllocId, ObjAllocId));
+
+    /// Produce a `crate::Value` from this interpreter object.
+    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value;
+
+    /// Support for `obj[x] = y` or `obj.__setitem__(x, y)`
+    fn set_item(
+        &mut self,
+        rt: &Runtime,
+        key: ObjAllocId,
+        value: ObjAllocId,
+    ) -> Option<(ObjAllocId, ObjAllocId)> {
+        None
+    }
+
+    /// Support for `obj[x]` or `obj.__getitem__(x)`
+    fn get_item(&mut self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
+        None
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 pub(in crate::interpreter) trait PyObjectEx: PyObject {

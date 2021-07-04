@@ -4,7 +4,7 @@ use nom::{
     Err, IResult,
 };
 
-use crate::{TokenSlice, spanned::Spanned, token::PyToken};
+use crate::{spanned::Spanned, token::PyToken, TokenSlice};
 
 #[inline]
 pub fn expect_many_n<const N: usize>(

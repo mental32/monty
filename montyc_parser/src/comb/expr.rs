@@ -1,9 +1,9 @@
 use nom::{branch::alt, IResult};
 
-use crate::TokenSlice;
 use crate::ast::models::{Expr, InfixOp, UnaryOp};
 use crate::spanned::Spanned;
 use crate::token::PyToken;
+use crate::TokenSlice;
 
 use super::core::{
     expect, expect_, expect_any_of, expect_any_token, expect_many_n, expect_wrapped_values,
@@ -53,7 +53,10 @@ fn factor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> 
             _ => unreachable!(),
         };
 
-        let inner = Expr::Unary { op, value: Box::new(value) };
+        let inner = Expr::Unary {
+            op,
+            value: Box::new(value),
+        };
 
         let wrapped = Spanned {
             inner,

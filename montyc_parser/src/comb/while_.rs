@@ -1,6 +1,6 @@
 use nom::{sequence::tuple, IResult};
 
-use crate::{TokenSlice, ast::models::While, spanned::Spanned, token::PyToken};
+use crate::{ast::models::While, spanned::Spanned, token::PyToken, TokenSlice};
 
 use super::{
     expect, expect_, expect_many_n, expect_many_n_var, expression, stmt::statement_unstripped,

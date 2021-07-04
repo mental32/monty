@@ -43,34 +43,6 @@ impl AstVisitor for NodeGrapher<'_> {
         self.add_node(&node.into_ast_node());
     }
 
-    fn visit_funcdef(&mut self, funcdef: &ast::FunctionDef) {
-        self.add_node(funcdef);
-    }
-
-    fn visit_expr(&mut self, expr: &ast::Expr) {
-        self.add_node(expr);
-    }
-
-    fn visit_while(&mut self, while_stmt: &ast::While) {
-        self.add_node(while_stmt);
-    }
-
-    fn visit_pass(&mut self) {
-        self.add_node(&ast::Statement::Pass);
-    }
-
-    fn visit_import(&mut self, import: &ast::Import) {
-        self.add_node(import);
-    }
-
-    fn visit_classdef(&mut self, classdef: &ast::ClassDef) {
-        self.add_node(classdef);
-    }
-
-    fn visit_assign(&mut self, assign: &ast::Assign) {
-        self.add_node(assign)
-    }
-
     fn visit_ifstmt(&mut self, ifstmt: &ast::IfChain) {
         let mut predecessor = self.last.take();
         let mut branch_leaves = vec![];

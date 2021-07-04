@@ -13,6 +13,9 @@ pub enum TypeError {
         defined: SpanRef,
     },
 
+    #[error("Multiple parameters in a function have the same name.")]
+    DuplicateParameters,
+
     #[error("`return` found outside of a function.")]
     ReturnOutsideFunction(SpanRef),
 

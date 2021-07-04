@@ -44,7 +44,11 @@ impl SpanInterner {
     }
 
     #[inline]
-    pub fn spanref_to_name<'a>(&self, sref: SpanRef, resolver: impl Fn(ModuleRef, Range<usize>) -> Option<&'a str>) -> Option<&'a str> {
+    pub fn spanref_to_name<'a>(
+        &self,
+        sref: SpanRef,
+        resolver: impl Fn(ModuleRef, Range<usize>) -> Option<&'a str>,
+    ) -> Option<&'a str> {
         let data = self.0.borrow().map.get(sref.distinct())?.clone();
         resolver(data.mdoule, data.range)
     }

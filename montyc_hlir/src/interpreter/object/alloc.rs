@@ -1,10 +1,13 @@
 //! `ObjAllocId`s are unique allocation identifiers for objects which also implement the `PyObject` trait for convenience.
 
-use std::{borrow::Borrow, convert::{TryFrom, TryInto}, hash::Hash};
+use std::{
+    convert::{TryFrom, TryInto},
+    hash::Hash,
+};
 
-use crate::interpreter::{Runtime, runtime::eval::ModuleExecutor};
+use crate::interpreter::Runtime;
 
-use super::{dict::PyDictRaw, PyObject};
+use super::PyObject;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::interpreter) struct ObjAllocId(pub usize);
@@ -21,7 +24,7 @@ impl ObjAllocId {
     }
 }
 
-impl<'rt> PyObject for ObjAllocId {
+impl PyObject for ObjAllocId {
     fn alloc_id(&self) -> ObjAllocId {
         self.clone()
     }
@@ -49,6 +52,55 @@ impl<'rt> PyObject for ObjAllocId {
             .unwrap()
             .borrow()
             .get_attribute_direct(rt, hash, key)
+    }
+
+    fn for_each(
+        &self,
+        rt: &Runtime,
+        f: &mut dyn FnMut(crate::interpreter::HashKeyT, ObjAllocId, ObjAllocId),
+    ) {
+        rt.get_object(self.alloc_id())
+            .unwrap()
+            .borrow()
+            .for_each(rt, f)
+    }
+
+    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value {
+        rt.objects
+            .get(self.alloc_id())
+            .map(|obj| obj.borrow().into_value(rt, object_graph))
+            .unwrap()
+    }
+
+    fn set_item(
+        &mut self,
+        rt: &crate::interpreter::Runtime,
+        key: ObjAllocId,
+        value: ObjAllocId,
+    ) -> Option<(ObjAllocId, ObjAllocId)> {
+        rt.objects
+            .get(self.alloc_id())
+            .map(|obj| obj.borrow_mut().set_item(rt, key, value))
+            .unwrap()
+    }
+
+    fn get_item(
+        &mut self,
+        rt: &crate::interpreter::Runtime,
+        key: ObjAllocId,
+    ) -> Option<(ObjAllocId, ObjAllocId)> {
+        rt.objects
+            .get(self.alloc_id())
+            .map(|obj| obj.borrow_mut().get_item(rt, key))
+            .unwrap()
+    }
+
+    fn hash(&self, rt: &Runtime) -> Option<crate::interpreter::HashKeyT> {
+        rt.get_object(self.alloc_id()).map(|obj| obj.borrow().hash(rt))?
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

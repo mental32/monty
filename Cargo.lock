@@ -321,6 +321,7 @@ dependencies = [
  "montyc_core",
  "montyc_hlir",
  "montyc_parser",
+ "petgraph",
  "structopt",
  "target-lexicon",
 ]

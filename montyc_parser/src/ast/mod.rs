@@ -2,10 +2,10 @@
 
 mod atom;
 mod expr;
+mod ifstmt;
 mod import;
 mod primary;
 mod statement;
-mod ifstmt;
 
 use logos::Span;
 
@@ -31,6 +31,8 @@ pub enum AstNode {
     NamedExpr(models::Expr),
     None(models::Atom),
     Ellipsis(models::Atom),
+    Subscript(models::Primary),
+    Ret(models::Return),
     Pass,
 }
 
@@ -55,6 +57,8 @@ impl AstNode {
             AstNode::NamedExpr(_) => todo!(),
             AstNode::None(_) => todo!(),
             AstNode::Ellipsis(_) => todo!(),
+            AstNode::Subscript(_) => todo!(),
+            AstNode::Ret(_) => todo!(),
         }
     }
 }
@@ -98,6 +102,8 @@ impl AstObject for AstNode {
                 AstNode::NamedExpr(_) => todo!(),
                 AstNode::None(_) => todo!(),
                 AstNode::Ellipsis(_) => todo!(),
+                AstNode::Subscript(_) => todo!(),
+                AstNode::Ret(_) => todo!(),
             }
         }
     }
@@ -124,6 +130,8 @@ impl From<AstNode> for Box<dyn AstObject> {
             AstNode::NamedExpr(_) => todo!(),
             AstNode::None(_) => todo!(),
             AstNode::Ellipsis(_) => todo!(),
+            AstNode::Subscript(_) => todo!(),
+            AstNode::Ret(_) => todo!(),
         }
     }
 }

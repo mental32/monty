@@ -2,18 +2,18 @@ mod exception;
 mod object;
 mod runtime;
 
-pub(in self) type HashKeyT = u64;
+pub(self) type HashKeyT = u64;
 
 pub type PyResult<T> = Result<T, exception::PyException>;
 
 use montyc_core::{ModuleRef, SpanRef};
 use montyc_parser::ast::ImportDecl;
 
-pub use {runtime::Runtime, object::PyDictRaw};
+pub use {object::PyDictRaw, runtime::Runtime};
 
 use object::alloc::ObjAllocId;
 
-use crate::{ModuleObject, typing::TypingContext};
+use crate::{typing::TypingContext, ModuleObject};
 
 pub trait HostGlue {
     fn name_to_spanref(&self, name: &str) -> SpanRef;

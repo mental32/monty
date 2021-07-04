@@ -1,18 +1,12 @@
 #![warn(warnings)]
-// #![feature(
-//     variant_count,
-//     bool_to_option,
-//     drain_filter,
-//     assert_matches,
-//     box_syntax
-// )]
 
 mod opts;
+mod typechk;
 
 pub mod prelude {
     use super::*;
 
-    pub use global::GlobalContext;
+    pub use global::context::GlobalContext;
     pub use opts::{CompilerOptions, VerifiedCompilerOptions};
 }
 

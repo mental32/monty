@@ -19,7 +19,6 @@ pub struct SpanData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SpanRef(u32, u32);
 
-
 impl SpanRef {
     pub fn group(&self) -> u32 {
         self.0

@@ -118,7 +118,7 @@ pub enum PythonType {
     Generic { args: Option<Vec<TypeId>> },
 
     /// Any builtin primitive type.
-    Builtin { inner: BuiltinType }
+    Builtin { inner: BuiltinType },
 }
 
 /// Defines an objects in-memory layout.
@@ -145,10 +145,10 @@ impl<'tcx> LocalTypeId<'tcx> {
         // SAFETY: `TypingContext::contextualize` already checks if `self.type_id` is present within the map.
         unsafe {
             self.context
-            .inner
-            .get_unchecked(self.type_id)
-            .map(|ty| matches!(ty.kind, PythonType::Union { .. }))
-            .unwrap_or(false)
+                .inner
+                .get_unchecked(self.type_id)
+                .map(|ty| matches!(ty.kind, PythonType::Union { .. }))
+                .unwrap_or(false)
         }
     }
 }

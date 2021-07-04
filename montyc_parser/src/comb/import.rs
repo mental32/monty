@@ -1,6 +1,11 @@
 use nom::{branch::alt, IResult};
 
-use crate::{TokenSlice, ast::{Atom, Import, Primary}, spanned::Spanned, token::PyToken};
+use crate::{
+    ast::{Atom, Import, Primary},
+    spanned::Spanned,
+    token::PyToken,
+    TokenSlice,
+};
 
 use super::{expect, expect_many_n, primary};
 

@@ -198,9 +198,7 @@ pub enum PyToken {
 impl From<PyToken> for Option<SpanRef> {
     fn from(token: PyToken) -> Self {
         match token {
-            PyToken::StringRef(n)
-            | PyToken::CommentRef(n)
-            | PyToken::Ident(n) => Some(n),
+            PyToken::StringRef(n) | PyToken::CommentRef(n) | PyToken::Ident(n) => Some(n),
             _ => None,
         }
     }

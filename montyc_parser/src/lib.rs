@@ -13,8 +13,8 @@ pub mod spanned;
 pub mod token;
 pub mod token_iter;
 
-pub use span_interner::SpanInterner;
 pub use ast::{AstNode, AstObject, AstVisitor};
+pub use span_interner::SpanInterner;
 use spanned::Spanned;
 use token::PyToken;
 use token_iter::TokenStreamIter;
@@ -46,10 +46,15 @@ impl Parser<'_> {
     }
 }
 
-pub fn parse<P, R>(source: impl AsRef<str>, func: P, span_ref: Option<SpanInterner>, mref: ModuleRef) -> R
+pub fn parse<P, R>(
+    source: impl AsRef<str>,
+    func: P,
+    span_ref: Option<SpanInterner>,
+    mref: ModuleRef,
+) -> R
 where
     P: for<'a> Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, R>,
-    R: Debug
+    R: Debug,
 {
     let source = source.as_ref();
     let parser = match span_ref {
