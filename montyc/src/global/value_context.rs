@@ -66,7 +66,9 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                     }
                 }
 
-                let ret = dbg!(dbg!(annotations).get(dbg!(cx.gcx.const_runtime.borrow().hash("return"))));
+                if let Some(ret) = annotations.get(cx.gcx.const_runtime.borrow().hash("return")) {
+                    dbg!(ret);
+                }
 
                 // for stmt in funcdef.body.iter() {
                 //     let node = stmt.inner.into_ast_node();

@@ -1,14 +1,18 @@
 use std::{
-    cell::{RefCell},
+    cell::RefCell,
     hash::{BuildHasher, Hasher},
+    rc::Rc,
 };
 
 use montyc_core::{utils::SSAMap, ModuleRef};
 
-use petgraph::graph::{NodeIndex};
+use petgraph::graph::NodeIndex;
 
 use crate::{
-    interpreter::object::{int::IntObj, string::StrObj, PyObject},
+    interpreter::{
+        object::{int::IntObj, string::StrObj, PyObject},
+        runtime::eval::AstExecutor,
+    },
     ObjectGraph, ObjectGraphIndex,
 };
 
@@ -67,7 +71,7 @@ pub struct Runtime {
     op_ticks: u64,
 
     /// A map that contains every object.
-    pub(super) objects: SSAMap<ObjAllocId, RefCell<Box<dyn PyObject>>>,
+    pub(super) objects: SSAMap<ObjAllocId, Rc<RefCell<Rc<dyn PyObject>>>>,
 
     /// per-Runtime state that allows producing multiple hashers with the same seed.
     hash_state: ahash::RandomState,
@@ -86,7 +90,12 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// Create a new `Runtime` with a maximum tick count of `op_ticks`.
+    /// Start creating a `Runtime` with a maximum tick count of `op_ticks`.
+    ///
+    /// The `new` constructor is cheap and will return a second stage initialization
+    /// constructor which works to initialize the `__monty` module and prepare everything
+    /// for proper evaluation.
+    ///
     #[inline]
     pub fn new(op_ticks: u64) -> Self {
         let mut objects = SSAMap::new();
@@ -153,6 +162,28 @@ impl Runtime {
         this
     }
 
+    pub fn initialize_monty_module(&mut self, _: &dyn HostGlue) {
+        let mut __monty = self
+            .modules
+            .get(&ModuleRef(0))
+            .cloned()
+            .expect("`__monty` module should exist.");
+
+        if __monty
+            .get_attribute_direct(self, self.hash("initialized"), __monty)
+            .is_none()
+        {
+            // let extern_func = ex.function_from_closure("extern", |_ex, _args| todo!())?;
+
+            let extern_func = self.new_object_from_class(self.builtins.get_attribute_direct(self, self.hash("_function_type_"), __monty).unwrap());
+
+            __monty.setattr_static(self, "extern", extern_func);
+
+
+            // __monty.set_attribute_direct(self, self.hash("initialized"), __monty, __monty);
+        }
+    }
+
     fn define_new_static_class(&mut self, bases: &[ObjAllocId]) -> ObjAllocId {
         let class_alloc_id = self.objects.reserve();
         let base_class_id = bases.get(0).cloned().unwrap_or(class_alloc_id);
@@ -167,7 +198,7 @@ impl Runtime {
             header: class_object,
         };
 
-        let class_object = RefCell::new(Box::new(class_object) as Box<_>);
+        let class_object = Rc::new(RefCell::new(Rc::new(class_object) as Rc<dyn PyObject>));
 
         self.objects
             .try_set_value(class_alloc_id, class_object)
@@ -185,19 +216,14 @@ impl Runtime {
             __class__: class,
         };
 
-        let object = RefCell::new(Box::new(object) as Box<dyn PyObject>);
-
         self.objects.try_set_value(object_alloc_id, object).unwrap();
 
         object_alloc_id
     }
 
     #[inline]
-    pub(super) fn get_object<'this>(
-        &'this self,
-        alloc_id: ObjAllocId,
-    ) -> Option<&RefCell<Box<dyn PyObject>>> {
-        self.objects.get(alloc_id)
+    pub(super) fn get_object<'this>(&'this self, alloc_id: ObjAllocId) -> Option<Rc<dyn PyObject>> {
+        Some(self.objects.get(alloc_id)?.borrow().clone())
     }
 
     /// Hash any hashable using the runtime hash state.
@@ -228,7 +254,7 @@ impl Runtime {
 
     #[inline]
     pub(in crate::interpreter) fn try_as_int_value(&self, alloc_id: ObjAllocId) -> PyResult<i64> {
-        let obj = self.objects.get(alloc_id).unwrap();
+        let obj = self.objects.get(alloc_id).unwrap().clone();
         let obj = &*obj.borrow();
 
         if let Some(int) = obj.as_any().downcast_ref::<IntObj>() {
@@ -243,7 +269,7 @@ impl Runtime {
         &self,
         alloc_id: ObjAllocId,
     ) -> PyResult<String> {
-        let obj = self.objects.get(alloc_id).unwrap();
+        let obj = self.objects.get(alloc_id).unwrap().clone();
         let obj = &*obj.borrow();
 
         if let Some(st) = obj.as_any().downcast_ref::<StrObj>() {
@@ -269,9 +295,9 @@ impl Runtime {
         let mut properties: PyDictRaw<_> = Default::default();
 
         gcx.with_module(mref, &mut |module| {
-            module_object = eval::ModuleExecutor::new(self, module, gcx).run_until_complete()?;
+            module_object = AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
 
-            module_object.for_each(self, &mut |hash, key, value| {
+            module_object.for_each(self, &mut |_, hash, key, value| {
                 let key = key.into_value(self, &mut object_graph);
                 let key = object_graph.add_string_node(
                     if let crate::Value::String(st) = &key {
@@ -293,7 +319,7 @@ impl Runtime {
 
         let module_properties = match object_graph.node_weight_mut(module_index).unwrap() {
             crate::Value::Module { properties, .. } => properties,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         std::mem::swap(module_properties, &mut properties);

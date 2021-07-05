@@ -107,6 +107,49 @@ impl AstVisitor for NodeGrapher<'_> {
     }
 }
 
+
+impl From<NewType<ast::FunctionDef>> for AstNodeGraph {
+    fn from(NewType(mut funcdef): NewType<ast::FunctionDef>) -> Self {
+        // Insert a universal "entry" node.
+        funcdef.body.insert(
+            0,
+            Spanned {
+                span: 0..0,
+                inner: ast::Statement::Pass,
+            },
+        );
+
+        // Insert a universal "exit" node.
+        funcdef.body.push(Spanned {
+            span: 0..0,
+            inner: ast::Statement::Pass,
+        });
+
+        funcdef.body.retain(|node| {
+            !matches!(
+                node.inner,
+                ast::Statement::Expr(ast::Expr::Primary(Spanned {
+                    inner: ast::Primary::Atomic(Spanned {
+                        inner: ast::Atom::Comment(_),
+                        ..
+                    }),
+                    ..
+                }))
+            )
+        });
+
+        let graph = AstNodeGraph::new();
+        let grapher = NodeGrapher {
+            graph,
+            last: None,
+            seq: funcdef.body.iter().peekable(),
+        };
+
+        grapher.consume()
+    }
+}
+
+
 impl From<NewType<ast::Module>> for AstNodeGraph {
     fn from(NewType(mut module): NewType<ast::Module>) -> Self {
         // Insert a universal "entry" node.

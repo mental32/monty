@@ -32,6 +32,7 @@ pub enum AstNode {
     None(models::Atom),
     Ellipsis(models::Atom),
     Subscript(models::Primary),
+    Call(models::Primary),
     Ret(models::Return),
     Pass,
 }
@@ -45,20 +46,7 @@ impl AstNode {
             AstNode::If(ifch) => ifch,
             AstNode::Assign(asn) => asn,
             AstNode::Pass => self,
-            AstNode::Int(_) => todo!(),
-            AstNode::Str(_) => todo!(),
-            AstNode::Bool(_) => todo!(),
-            AstNode::Float(_) => todo!(),
-            AstNode::Tuple(_) => todo!(),
-            AstNode::Name(_) => todo!(),
-            AstNode::BinOp(_) => todo!(),
-            AstNode::IfExpr(_) => todo!(),
-            AstNode::Unary(_) => todo!(),
-            AstNode::NamedExpr(_) => todo!(),
-            AstNode::None(_) => todo!(),
-            AstNode::Ellipsis(_) => todo!(),
-            AstNode::Subscript(_) => todo!(),
-            AstNode::Ret(_) => todo!(),
+            _ => todo!(),
         }
     }
 }
@@ -89,21 +77,8 @@ impl AstObject for AstNode {
                 AstNode::FuncDef(fndef) => fndef.visit_with(visitor),
                 AstNode::If(ifch) => ifch.visit_with(visitor),
                 AstNode::Assign(asn) => asn.visit_with(visitor),
-                AstNode::Pass => unreachable!(),
-                AstNode::Int(_) => todo!(),
-                AstNode::Str(_) => todo!(),
-                AstNode::Bool(_) => todo!(),
-                AstNode::Float(_) => todo!(),
-                AstNode::Tuple(_) => todo!(),
-                AstNode::Name(_) => todo!(),
-                AstNode::BinOp(_) => todo!(),
-                AstNode::IfExpr(_) => todo!(),
-                AstNode::Unary(_) => todo!(),
-                AstNode::NamedExpr(_) => todo!(),
-                AstNode::None(_) => todo!(),
-                AstNode::Ellipsis(_) => todo!(),
-                AstNode::Subscript(_) => todo!(),
-                AstNode::Ret(_) => todo!(),
+                AstNode::Ret(ret) => ret.visit_with(visitor),
+                _ => todo!("{:?}", self),
             }
         }
     }
@@ -118,20 +93,7 @@ impl From<AstNode> for Box<dyn AstObject> {
             AstNode::If(ifstmt) => Box::new(ifstmt),
             AstNode::Pass => Box::new(Statement::Pass),
             AstNode::Assign(asn) => Box::new(asn),
-            AstNode::Int(_) => todo!(),
-            AstNode::Str(_) => todo!(),
-            AstNode::Bool(_) => todo!(),
-            AstNode::Float(_) => todo!(),
-            AstNode::Tuple(_) => todo!(),
-            AstNode::Name(_) => todo!(),
-            AstNode::BinOp(_) => todo!(),
-            AstNode::IfExpr(_) => todo!(),
-            AstNode::Unary(_) => todo!(),
-            AstNode::NamedExpr(_) => todo!(),
-            AstNode::None(_) => todo!(),
-            AstNode::Ellipsis(_) => todo!(),
-            AstNode::Subscript(_) => todo!(),
-            AstNode::Ret(_) => todo!(),
+            _ => todo!(),
         }
     }
 }
@@ -193,32 +155,32 @@ pub trait AstVisitor<T = ()> {
         self.visit_any(int)
     }
 
-    fn visit_float(&mut self, int: &Atom) -> T {
-        self.visit_any(int)
+    fn visit_float(&mut self, node: &Atom) -> T {
+        self.visit_any(node)
     }
 
-    fn visit_str(&mut self, int: &Atom) -> T {
-        self.visit_any(int)
+    fn visit_str(&mut self, node: &Atom) -> T {
+        self.visit_any(node)
     }
 
-    fn visit_none(&mut self, int: &Atom) -> T {
-        self.visit_any(int)
+    fn visit_none(&mut self, node: &Atom) -> T {
+        self.visit_any(node)
     }
 
-    fn visit_name(&mut self, int: &Atom) -> T {
-        self.visit_any(int)
+    fn visit_name(&mut self, node: &Atom) -> T {
+        self.visit_any(node)
     }
 
-    fn visit_tuple(&mut self, int: &Atom) -> T {
-        self.visit_any(int)
+    fn visit_tuple(&mut self, node: &Atom) -> T {
+        self.visit_any(node)
     }
 
-    fn visit_ellipsis(&mut self, int: &Atom) -> T {
-        self.visit_any(int)
+    fn visit_ellipsis(&mut self, node: &Atom) -> T {
+        self.visit_any(node)
     }
 
-    fn visit_bool(&mut self, int: &Atom) -> T {
-        self.visit_any(int)
+    fn visit_bool(&mut self, node: &Atom) -> T {
+        self.visit_any(node)
     }
 
     fn visit_import(&mut self, import: &Import) -> T {
@@ -263,6 +225,10 @@ pub trait AstVisitor<T = ()> {
 
     fn visit_named_expr(&mut self, expr: &Expr) -> T {
         self.visit_any(expr)
+    }
+
+    fn visit_call(&mut self, call: &Primary) -> T {
+        self.visit_any(call)
     }
 }
 

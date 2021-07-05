@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use ahash::AHashMap;
 
-use crate::interpreter::HashKeyT;
+use crate::interpreter::{HashKeyT, Runtime};
 
 use super::{PyObject, RawObject, alloc::ObjAllocId};
 
@@ -55,8 +55,8 @@ impl PyObject for PyDict {
 
     fn set_attribute_direct(
         &mut self,
-        _rt: &crate::interpreter::Runtime,
-        hash: crate::interpreter::HashKeyT,
+        _rt: &Runtime,
+        hash: HashKeyT,
         key: ObjAllocId,
         value: ObjAllocId,
     ) {
@@ -65,8 +65,8 @@ impl PyObject for PyDict {
 
     fn get_attribute_direct(
         &self,
-        _rt: &crate::interpreter::Runtime,
-        hash: crate::interpreter::HashKeyT,
+        _rt: &Runtime,
+        hash: HashKeyT,
         _key: ObjAllocId,
     ) -> Option<ObjAllocId> {
         self.data.get(hash).map(|kv| kv.0)
@@ -74,20 +74,20 @@ impl PyObject for PyDict {
 
     fn for_each(
         &self,
-        _rt: &crate::interpreter::Runtime,
-        f: &mut dyn FnMut(crate::interpreter::HashKeyT, ObjAllocId, ObjAllocId),
+        rt: &Runtime,
+        f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
-        self.data .0.iter().for_each(|(h, (k, v))| f(*h, *k, *v))
+        self.data .0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
     }
 
     fn into_value(
         &self,
-        rt: &crate::interpreter::Runtime,
+        rt: &Runtime,
         object_graph: &mut crate::ObjectGraph,
     ) -> crate::Value {
         let mut data: PyDictRaw<_> = Default::default();
 
-        self.for_each(rt, &mut |hash, key, value| {
+        self.for_each(rt, &mut |rt, hash, key, value| {
             let key = key.into_value(rt, object_graph);
             let key = object_graph.add_string_node(
                 if let crate::Value::String(st) = &key {
@@ -121,7 +121,7 @@ impl PyObject for PyDict {
 
     fn set_item(
         &mut self,
-        rt: &crate::interpreter::Runtime,
+        rt: &Runtime,
         key: ObjAllocId,
         value: ObjAllocId,
     ) -> Option<(ObjAllocId, ObjAllocId)> {
@@ -130,10 +130,10 @@ impl PyObject for PyDict {
 
     fn get_item(
         &mut self,
-        rt: &crate::interpreter::Runtime,
+        rt: &Runtime,
         key: ObjAllocId,
     ) -> Option<(ObjAllocId, ObjAllocId)> {
-        todo!();
+        self.data.get(key.hash(rt).unwrap())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

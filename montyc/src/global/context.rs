@@ -251,6 +251,10 @@ impl GlobalContext {
             typing_context: TypingContext::initialized(),
         };
 
+        gcx.const_runtime
+            .borrow_mut()
+            .initialize_monty_module(&gcx);
+
         gcx.modules.skip(1);
 
         log::debug!("[global_context:initialize] {:?}", opts);

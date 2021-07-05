@@ -108,6 +108,7 @@ pub enum Value {
     },
 
     String(String),
+    Integer(i64),
 
     Dict {
         object: self::Object,

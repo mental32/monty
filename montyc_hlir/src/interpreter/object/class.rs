@@ -34,7 +34,7 @@ impl PyObject for ClassObj {
         self.header.get_attribute_direct(rt, hash, key)
     }
 
-    fn for_each(&self, rt: &Runtime, f: &mut dyn FnMut(HashKeyT, ObjAllocId, ObjAllocId)) {
+    fn for_each(&self, rt: &Runtime, f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId)) {
         self.header.for_each(rt, f)
     }
 
@@ -51,22 +51,6 @@ impl PyObject for ClassObj {
         }
     }
 
-    fn set_item(
-        &mut self,
-        rt: &Runtime,
-        key: ObjAllocId,
-        value: ObjAllocId,
-    ) -> Option<(ObjAllocId, ObjAllocId)> {
-        None
-    }
-
-    fn get_item(
-        &mut self,
-        rt: &Runtime,
-        key: ObjAllocId,
-    ) -> Option<(ObjAllocId, ObjAllocId)> {
-        None
-    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

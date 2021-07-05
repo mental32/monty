@@ -3,9 +3,10 @@
 use std::{
     convert::{TryFrom, TryInto},
     hash::Hash,
+    rc::Rc,
 };
 
-use crate::interpreter::Runtime;
+use crate::interpreter::{runtime::eval::AstExecutor, HashKeyT, Runtime};
 
 use super::PyObject;
 
@@ -22,6 +23,19 @@ impl ObjAllocId {
         let hash = rt.hash(key);
         self.get_attribute_direct(rt, hash, ObjAllocId(0))
     }
+
+    pub fn as_ref<T>(&self, rt: &Runtime, mut f: impl FnMut(&dyn PyObject) -> T) -> T {
+        let object = rt.get_object(self.alloc_id()).unwrap();
+        f(&*object)
+    }
+
+    pub fn as_mut<T>(&self, rt: &Runtime, mut f: impl FnMut(&mut dyn PyObject) -> T) -> T {
+        let object = rt.objects.get(self.alloc_id()).unwrap().clone();
+        let object = &mut *object.borrow_mut();
+        let object = Rc::get_mut(object).unwrap();
+
+        f(object)
+    }
 }
 
 impl PyObject for ObjAllocId {
@@ -31,72 +45,63 @@ impl PyObject for ObjAllocId {
 
     fn set_attribute_direct(
         &mut self,
-        rt: &crate::interpreter::Runtime,
-        hash: crate::interpreter::HashKeyT,
+        rt: &Runtime,
+        hash: HashKeyT,
         key: ObjAllocId,
         value: ObjAllocId,
     ) {
-        rt.get_object(self.alloc_id())
-            .unwrap()
-            .borrow_mut()
-            .set_attribute_direct(rt, hash, key, value)
+        self.as_mut(rt, |obj| obj.set_attribute_direct(rt, hash, key, value))
     }
 
     fn get_attribute_direct(
         &self,
-        rt: &crate::interpreter::Runtime,
-        hash: crate::interpreter::HashKeyT,
+        rt: &Runtime,
+        hash: HashKeyT,
         key: ObjAllocId,
     ) -> Option<ObjAllocId> {
         rt.get_object(self.alloc_id())
             .unwrap()
-            .borrow()
             .get_attribute_direct(rt, hash, key)
     }
 
     fn for_each(
         &self,
         rt: &Runtime,
-        f: &mut dyn FnMut(crate::interpreter::HashKeyT, ObjAllocId, ObjAllocId),
+        f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
-        rt.get_object(self.alloc_id())
-            .unwrap()
-            .borrow()
-            .for_each(rt, f)
+        rt.get_object(self.alloc_id()).unwrap().for_each(rt, f)
     }
 
     fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value {
-        rt.objects
-            .get(self.alloc_id())
-            .map(|obj| obj.borrow().into_value(rt, object_graph))
-            .unwrap()
+        self.as_ref(rt, |obj| obj.into_value(rt, object_graph))
     }
 
     fn set_item(
         &mut self,
-        rt: &crate::interpreter::Runtime,
+        rt: &Runtime,
         key: ObjAllocId,
         value: ObjAllocId,
     ) -> Option<(ObjAllocId, ObjAllocId)> {
-        rt.objects
-            .get(self.alloc_id())
-            .map(|obj| obj.borrow_mut().set_item(rt, key, value))
-            .unwrap()
+        self.as_mut(rt, |obj| obj.set_item(rt, key, value))
     }
 
-    fn get_item(
-        &mut self,
-        rt: &crate::interpreter::Runtime,
-        key: ObjAllocId,
-    ) -> Option<(ObjAllocId, ObjAllocId)> {
-        rt.objects
-            .get(self.alloc_id())
-            .map(|obj| obj.borrow_mut().get_item(rt, key))
-            .unwrap()
+    fn get_item(&mut self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
+        self.as_mut(rt, |obj| obj.get_item(rt, key))
     }
 
-    fn hash(&self, rt: &Runtime) -> Option<crate::interpreter::HashKeyT> {
-        rt.get_object(self.alloc_id()).map(|obj| obj.borrow().hash(rt))?
+    fn hash(&self, rt: &Runtime) -> Option<HashKeyT> {
+        self.as_ref(rt, |obj| obj.hash(rt))
+    }
+
+    fn call(
+        &self,
+        ex: &mut AstExecutor,
+        args: &[ObjAllocId],
+    ) -> crate::interpreter::PyResult<ObjAllocId> {
+        ex.runtime
+            .get_object(self.alloc_id())
+            .map(|obj| obj.call(ex, args))
+            .unwrap()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

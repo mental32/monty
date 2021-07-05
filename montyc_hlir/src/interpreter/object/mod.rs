@@ -4,6 +4,8 @@ pub mod dict;
 pub mod func;
 
 pub mod string {
+    use crate::interpreter::{HashKeyT, Runtime};
+
     use super::{alloc::ObjAllocId, PyObject, RawObject};
 
     #[derive(Debug)]
@@ -19,8 +21,8 @@ pub mod string {
 
         fn set_attribute_direct(
             &mut self,
-            rt: &crate::interpreter::Runtime,
-            hash: crate::interpreter::HashKeyT,
+            rt: &Runtime,
+            hash: HashKeyT,
             key: super::alloc::ObjAllocId,
             value: super::alloc::ObjAllocId,
         ) {
@@ -29,8 +31,8 @@ pub mod string {
 
         fn get_attribute_direct(
             &self,
-            rt: &crate::interpreter::Runtime,
-            hash: crate::interpreter::HashKeyT,
+            rt: &Runtime,
+            hash: HashKeyT,
             key: super::alloc::ObjAllocId,
         ) -> Option<super::alloc::ObjAllocId> {
             self.header.get_attribute_direct(rt, hash, key)
@@ -38,21 +40,21 @@ pub mod string {
 
         fn for_each(
             &self,
-            rt: &crate::interpreter::Runtime,
-            f: &mut dyn FnMut(crate::interpreter::HashKeyT, ObjAllocId, ObjAllocId),
+            rt: &Runtime,
+            f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
         ) {
             self.header.for_each(rt, f)
         }
 
         fn into_value(
             &self,
-            _rt: &crate::interpreter::Runtime,
+            _rt: &Runtime,
             _object_graph: &mut crate::ObjectGraph,
         ) -> crate::Value {
             crate::Value::String(self.value.clone())
         }
 
-        fn hash(&self, rt: &crate::interpreter::Runtime) -> Option<crate::interpreter::HashKeyT> {
+        fn hash(&self, rt: &Runtime) -> Option<HashKeyT> {
             Some(rt.hash(self.value.clone()))
         }
 
@@ -63,6 +65,8 @@ pub mod string {
 }
 
 pub mod int {
+    use crate::interpreter::{HashKeyT, Runtime};
+
     use super::{alloc::ObjAllocId, PyObject, RawObject};
 
     #[derive(Debug)]
@@ -78,8 +82,8 @@ pub mod int {
 
         fn set_attribute_direct(
             &mut self,
-            rt: &crate::interpreter::Runtime,
-            hash: crate::interpreter::HashKeyT,
+            rt: &Runtime,
+            hash: HashKeyT,
             key: super::alloc::ObjAllocId,
             value: super::alloc::ObjAllocId,
         ) {
@@ -88,8 +92,8 @@ pub mod int {
 
         fn get_attribute_direct(
             &self,
-            rt: &crate::interpreter::Runtime,
-            hash: crate::interpreter::HashKeyT,
+            rt: &Runtime,
+            hash: HashKeyT,
             key: super::alloc::ObjAllocId,
         ) -> Option<super::alloc::ObjAllocId> {
             self.header.get_attribute_direct(rt, hash, key)
@@ -97,18 +101,18 @@ pub mod int {
 
         fn for_each(
             &self,
-            rt: &crate::interpreter::Runtime,
-            f: &mut dyn FnMut(crate::interpreter::HashKeyT, ObjAllocId, ObjAllocId),
+            rt: &Runtime,
+            f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
         ) {
             self.header.for_each(rt, f)
         }
 
         fn into_value(
             &self,
-            _rt: &crate::interpreter::Runtime,
-            _object_graph: &mut crate::ObjectGraph,
+            rt: &Runtime,
+            object_graph: &mut crate::ObjectGraph,
         ) -> crate::Value {
-            todo!()
+            crate::Value::Integer(self.value)
         }
 
         fn as_any(&self) -> &dyn std::any::Any {
@@ -118,11 +122,11 @@ pub mod int {
 }
 
 pub mod raw {
-    use std::cell::RefCell;
+    use std::{cell::RefCell, rc::Rc};
 
     use petgraph::graph::NodeIndex;
 
-    use crate::{interpreter::HashKeyT, typing::TypingContext, ObjectGraph};
+    use crate::{ObjectGraph, interpreter::{HashKeyT, Runtime}, typing::TypingContext};
 
     use super::{dict::PyDictRaw, ObjAllocId, PyObject};
 
@@ -142,12 +146,12 @@ pub mod raw {
     impl RawObject {
         pub fn into_value_dict(
             &self,
-            rt: &crate::interpreter::Runtime,
+            rt: &Runtime,
             object_graph: &mut ObjectGraph,
         ) -> PyDictRaw<(NodeIndex, NodeIndex)> {
             let mut properties: PyDictRaw<_> = Default::default();
 
-            self.for_each(rt, &mut |hash, key, value| {
+            self.for_each(rt, &mut |rt, hash, key, value| {
                 let key = key.into_value(rt, object_graph);
                 let key = object_graph.add_string_node(
                     if let crate::Value::String(st) = &key {
@@ -178,6 +182,18 @@ pub mod raw {
         }
     }
 
+    impl From<RawObject> for Rc<RefCell<Box<dyn PyObject>>> {
+        fn from(object: RawObject) -> Self {
+            Rc::new(object.into())
+        }
+    }
+
+    impl From<RawObject> for Rc<RefCell<Rc<dyn PyObject>>> {
+        fn from(object: RawObject) -> Self {
+            Rc::new(RefCell::new(Rc::new(object) as _))
+        }
+    }
+
     impl PyObject for RawObject {
         fn alloc_id(&self) -> ObjAllocId {
             self.alloc_id
@@ -185,7 +201,7 @@ pub mod raw {
 
         fn set_attribute_direct(
             &mut self,
-            _rt: &crate::interpreter::Runtime,
+            _rt: &Runtime,
             hash: crate::interpreter::HashKeyT,
             key: ObjAllocId,
             value: ObjAllocId,
@@ -195,7 +211,7 @@ pub mod raw {
 
         fn get_attribute_direct(
             &self,
-            _rt: &crate::interpreter::Runtime,
+            _rt: &Runtime,
             hash: crate::interpreter::HashKeyT,
             _key: ObjAllocId,
         ) -> Option<ObjAllocId> {
@@ -204,15 +220,15 @@ pub mod raw {
 
         fn for_each(
             &self,
-            _rt: &crate::interpreter::Runtime,
-            f: &mut dyn FnMut(HashKeyT, ObjAllocId, ObjAllocId),
+            rt: &Runtime,
+            f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
         ) {
-            self.__dict__.0.iter().for_each(|(h, (k, v))| f(*h, *k, *v))
+            self.__dict__.0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
         }
 
         fn into_value(
             &self,
-            rt: &crate::interpreter::Runtime,
+            rt: &Runtime,
             object_graph: &mut crate::ObjectGraph,
         ) -> crate::Value {
             let properties = self.into_value_dict(rt, object_graph);
@@ -229,13 +245,11 @@ pub mod raw {
     }
 }
 
-use std::hash::Hash;
-
 pub(in crate::interpreter) use raw::RawObject;
 
 pub use dict::PyDictRaw;
 
-use super::{runtime::eval::ModuleExecutor, HashKeyT, ObjAllocId, PyResult, Runtime};
+use super::{runtime::eval::AstExecutor, HashKeyT, ObjAllocId, PyResult, Runtime};
 
 /// An object safe base trait for all Python "objects".
 pub(in crate::interpreter) trait PyObject:
@@ -248,7 +262,6 @@ pub(in crate::interpreter) trait PyObject:
     fn class_alloc_id(&self, rt: &Runtime) -> ObjAllocId {
         rt.get_object(self.alloc_id())
             .expect("non-existent object for alloc id.")
-            .borrow()
             .class_alloc_id(rt)
     }
 
@@ -288,7 +301,7 @@ pub(in crate::interpreter) trait PyObject:
     }
 
     /// Iterate through this objects `__dict__` and call `f` with the hash, key, and value of every entry.
-    fn for_each(&self, rt: &Runtime, f: &mut dyn FnMut(HashKeyT, ObjAllocId, ObjAllocId));
+    fn for_each(&self, rt: &Runtime, f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId));
 
     /// Produce a `crate::Value` from this interpreter object.
     fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value;
@@ -296,16 +309,20 @@ pub(in crate::interpreter) trait PyObject:
     /// Support for `obj[x] = y` or `obj.__setitem__(x, y)`
     fn set_item(
         &mut self,
-        rt: &Runtime,
-        key: ObjAllocId,
-        value: ObjAllocId,
+        _rt: &Runtime,
+        _key: ObjAllocId,
+        _value: ObjAllocId,
     ) -> Option<(ObjAllocId, ObjAllocId)> {
         None
     }
 
     /// Support for `obj[x]` or `obj.__getitem__(x)`
-    fn get_item(&mut self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
+    fn get_item(&mut self, _rt: &Runtime, _key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
         None
+    }
+
+    fn call(&self, ex: &mut AstExecutor, args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
+        todo!();
     }
 
     fn as_any(&self) -> &dyn std::any::Any;

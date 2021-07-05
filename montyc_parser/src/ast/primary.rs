@@ -36,7 +36,7 @@ impl AstObject for Primary {
         match self {
             Primary::Atomic(atom) => atom.into_ast_node(),
             Primary::Subscript { .. } => AstNode::Subscript(self.clone()),
-            Primary::Call { func: _, args: _ } => todo!(),
+            Primary::Call { .. } => AstNode::Call(self.clone()),
             Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!(),
         }
@@ -57,7 +57,7 @@ impl AstObject for Primary {
         match self {
             Primary::Atomic(atom) => atom.visit_with(visitor),
             Primary::Subscript { value: _, index: _ } => todo!(),
-            Primary::Call { func: _, args: _ } => todo!(),
+            Primary::Call { .. } => visitor.visit_call(self),
             Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!(),
         }
