@@ -216,7 +216,10 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
         graph_ctor: impl Fn() -> AstNodeGraph,
         mut f: impl FnMut(&mut Self, &AstNodeGraph) -> PyResult<()>,
     ) -> PyResult<()> {
-        let _ = self.subgraphs.entry(node).or_insert_with(|| Rc::new(graph_ctor()));
+        let _ = self
+            .subgraphs
+            .entry(node)
+            .or_insert_with(|| Rc::new(graph_ctor()));
         let graph = self.subgraphs.get(&node).unwrap().clone();
 
         f(self, &*graph)?;
@@ -343,14 +346,14 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 
     /// Create a new `function` object.
     #[inline]
-    fn function(&mut self, name: &str, node: NodeIndex<u32>) -> PyResult<ObjAllocId> {
+    fn function(&mut self, name: &str, node: NodeIndex, module: NodeIndex) -> PyResult<ObjAllocId> {
         let __class__ = self
             .runtime
             .builtins
             .getattr_static(self.runtime, "_function_type_")
             .unwrap();
 
-        self.insert_new_object(__class__, move |ex, mut object, _| {
+        self.insert_new_object(__class__, move |ex, mut object, alloc_id| {
             ex.set_attribute(&mut object, "__name__", name)?;
 
             let funcdef = &ex.graph.raw_nodes().get(node.index()).unwrap().weight;
@@ -358,6 +361,9 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
                 AstNode::FuncDef(fndef) => fndef,
                 _ => unreachable!(),
             };
+
+            let idx = ex.runtime.scope_graph.insert(alloc_id);
+            ex.runtime.scope_graph.nest(idx, module);
 
             let annotations = {
                 let mut annotations = ex.dict()?;
@@ -392,7 +398,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 
             let object = func::Function {
                 header: RefCell::new(object),
-                inner: func::Callable::SourceDef(node),
+                inner: func::Callable::SourceDef(node, idx),
                 defsite: Some(node),
             };
 
@@ -582,7 +588,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
             })
             .unwrap();
 
-        let func_obj = self.function(name, idx)?;
+        let func_obj = self.function(name, idx, self.eval_stack.last().unwrap().0)?;
 
         self.define(fndef.name.inner.as_name().unwrap(), func_obj)?;
 

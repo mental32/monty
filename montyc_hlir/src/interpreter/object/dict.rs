@@ -9,6 +9,13 @@ use super::{PyObject, RawObject, alloc::ObjAllocId};
 #[derive(Debug)]
 pub struct PyDictRaw<V>(pub AHashMap<HashKeyT, V>);
 
+#[derive(Debug)]
+pub struct PyDictNormal<'a, V> {
+    inner: &'a mut PyDictRaw<V>,
+    hash_state: ahash::RandomState,
+}
+
+
 impl<V> DerefMut for PyDictRaw<V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
@@ -39,6 +46,13 @@ where
 
     pub fn insert(&mut self, key: HashKeyT, value: V) -> Option<V> {
         self.0.insert(key, value)
+    }
+
+    pub fn normalize(&mut self, state: ahash::RandomState) -> PyDictNormal<V> {
+        PyDictNormal {
+            inner: self,
+            hash_state: state,
+        }
     }
 }
 

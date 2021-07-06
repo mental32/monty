@@ -19,6 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use interpreter::object::ObjAllocId;
 use montyc_core::{ModuleRef, TypeId};
 use montyc_parser::ast;
 use petgraph::graph::NodeIndex;
@@ -29,6 +30,7 @@ use crate::interpreter::PyDictRaw;
 pub struct ObjectGraph {
     graph: petgraph::graph::DiGraph<Value, ()>,
     strings: ahash::AHashMap<u64, ObjectGraphIndex>,
+    alloc_to_idx: ahash::AHashMap<interpreter::object::ObjAllocId, ObjectGraphIndex>,
 }
 
 impl ObjectGraph {
@@ -41,6 +43,12 @@ impl ObjectGraph {
 
         self.strings.insert(hash, idx);
 
+        idx
+    }
+
+    fn add_node_traced(&mut self, value: crate::Value, obj: ObjAllocId) -> ObjectGraphIndex {
+        let idx = self.graph.add_node(value);
+        self.alloc_to_idx.insert(obj, idx);
         idx
     }
 }
@@ -120,11 +128,13 @@ pub enum Value {
         properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
         annotations: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
         defsite: Option<ObjectGraphIndex>,
+        parent: Option<ObjectGraphIndex>,
     },
 
     Class {
         name: String,
         properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-        // def: ObjectGraphIndex,
+        // defsite: ObjectGraphIndex,
+        // parent: ObjectGraphIndex,
     },
 }

@@ -1,12 +1,13 @@
 use std::{
     cell::RefCell,
     hash::{BuildHasher, Hasher},
+    ops::{Deref, DerefMut},
     rc::Rc,
 };
 
 use montyc_core::{utils::SSAMap, ModuleRef};
 
-use petgraph::graph::NodeIndex;
+use petgraph::{graph::NodeIndex, EdgeDirection::Outgoing};
 
 use crate::{
     interpreter::{
@@ -22,7 +23,21 @@ use super::{
 };
 
 #[derive(Debug, Default)]
-struct ScopeGraph(petgraph::graph::DiGraph<ObjAllocId, ()>);
+pub(in crate::interpreter) struct ScopeGraph(petgraph::graph::DiGraph<ObjAllocId, ()>);
+
+impl DerefMut for ScopeGraph {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Deref for ScopeGraph {
+    type Target = petgraph::graph::DiGraph<ObjAllocId, ()>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl ScopeGraph {
     #[inline]
@@ -33,6 +48,15 @@ impl ScopeGraph {
     #[inline]
     pub fn nest(&mut self, child: NodeIndex<u32>, parent: NodeIndex<u32>) {
         self.0.add_edge(child, parent, ());
+    }
+
+    #[inline]
+    pub(in crate::interpreter) fn parent_of(&self, idx: NodeIndex<u32>) -> Option<ObjAllocId> {
+        self.0
+            .neighbors_directed(idx, Outgoing)
+            .next()
+            .and_then(|idx| self.0.node_weight(idx))
+            .cloned()
     }
 
     #[inline]
@@ -83,7 +107,7 @@ pub struct Runtime {
     modules: ahash::AHashMap<ModuleRef, ObjAllocId>,
 
     /// A graph of all the objects that act like as namespaces i.e. modules, classes, functions.
-    scope_graph: ScopeGraph,
+    pub(in crate::interpreter) scope_graph: ScopeGraph,
 
     /// A map for interned strings.
     strings: ahash::AHashMap<u64, ObjAllocId>,
@@ -162,6 +186,10 @@ impl Runtime {
         this
     }
 
+    pub fn hash_state(&self) -> ahash::RandomState {
+        self.hash_state.clone()
+    }
+
     pub fn initialize_monty_module(&mut self, _: &dyn HostGlue) {
         let mut __monty = self
             .modules
@@ -175,10 +203,13 @@ impl Runtime {
         {
             // let extern_func = ex.function_from_closure("extern", |_ex, _args| todo!())?;
 
-            let extern_func = self.new_object_from_class(self.builtins.get_attribute_direct(self, self.hash("_function_type_"), __monty).unwrap());
+            let extern_func = self.new_object_from_class(
+                self.builtins
+                    .get_attribute_direct(self, self.hash("_function_type_"), __monty)
+                    .unwrap(),
+            );
 
             __monty.setattr_static(self, "extern", extern_func);
-
 
             // __monty.set_attribute_direct(self, self.hash("initialized"), __monty, __monty);
         }
@@ -297,6 +328,8 @@ impl Runtime {
         gcx.with_module(mref, &mut |module| {
             module_object = AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
 
+            object_graph.alloc_to_idx.insert(module_object.alloc_id(), module_index);
+
             module_object.for_each(self, &mut |_, hash, key, value| {
                 let key = key.into_value(self, &mut object_graph);
                 let key = object_graph.add_string_node(
@@ -308,8 +341,9 @@ impl Runtime {
                     key,
                 );
 
+                let value_alloc_id = value.alloc_id();
                 let value = value.into_value(self, &mut object_graph);
-                let value = object_graph.add_node(value);
+                let value = object_graph.add_node_traced(value, value_alloc_id);
 
                 properties.insert(hash, (key, value));
             });

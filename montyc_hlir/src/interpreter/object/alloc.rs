@@ -10,8 +10,8 @@ use crate::interpreter::{runtime::eval::AstExecutor, HashKeyT, Runtime};
 
 use super::PyObject;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(in crate::interpreter) struct ObjAllocId(pub usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(in crate) struct ObjAllocId(pub usize);
 
 impl ObjAllocId {
     pub fn setattr_static(&mut self, rt: &mut Runtime, key: impl Hash, value: ObjAllocId) {
@@ -24,12 +24,12 @@ impl ObjAllocId {
         self.get_attribute_direct(rt, hash, ObjAllocId(0))
     }
 
-    pub fn as_ref<T>(&self, rt: &Runtime, mut f: impl FnMut(&dyn PyObject) -> T) -> T {
+    pub(in crate::interpreter) fn as_ref<T>(&self, rt: &Runtime, mut f: impl FnMut(&dyn PyObject) -> T) -> T {
         let object = rt.get_object(self.alloc_id()).unwrap();
         f(&*object)
     }
 
-    pub fn as_mut<T>(&self, rt: &Runtime, mut f: impl FnMut(&mut dyn PyObject) -> T) -> T {
+    pub(in crate::interpreter) fn as_mut<T>(&self, rt: &Runtime, mut f: impl FnMut(&mut dyn PyObject) -> T) -> T {
         let object = rt.objects.get(self.alloc_id()).unwrap().clone();
         let object = &mut *object.borrow_mut();
         let object = Rc::get_mut(object).unwrap();

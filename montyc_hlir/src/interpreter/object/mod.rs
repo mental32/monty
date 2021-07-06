@@ -162,11 +162,12 @@ pub mod raw {
                     key,
                 );
 
+                let value_alloc_id = value.alloc_id();
                 let value = value.into_value(rt, object_graph);
                 let value = if let crate::Value::String(st) = &value {
                     object_graph.add_string_node(rt.hash(st), value)
                 } else {
-                    object_graph.add_node(value)
+                    object_graph.add_node_traced(value, value_alloc_id)
                 };
 
                 properties.insert(hash, (key, value));
@@ -249,7 +250,9 @@ pub(in crate::interpreter) use raw::RawObject;
 
 pub use dict::PyDictRaw;
 
-use super::{runtime::eval::AstExecutor, HashKeyT, ObjAllocId, PyResult, Runtime};
+use super::{runtime::eval::AstExecutor, HashKeyT, PyResult, Runtime};
+
+pub(in crate) use alloc::ObjAllocId;
 
 /// An object safe base trait for all Python "objects".
 pub(in crate::interpreter) trait PyObject:

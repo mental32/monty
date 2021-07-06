@@ -1,5 +1,5 @@
 mod exception;
-mod object;
+pub(crate) mod object;
 mod runtime;
 
 pub(self) type HashKeyT = u64;

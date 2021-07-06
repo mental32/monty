@@ -33,6 +33,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                 properties,
                 annotations,
                 defsite,
+                parent
             } => {
                 let defsite = match defsite {
                     None => return Ok(()),

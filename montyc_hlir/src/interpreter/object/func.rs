@@ -4,9 +4,8 @@ use montyc_parser::{AstNode, AstObject};
 use petgraph::{graph::NodeIndex, visit::NodeIndexable};
 
 use crate::{
-    grapher::{AstNodeGraph, NewType},
+    grapher::NewType,
     interpreter::{
-        object::func,
         runtime::eval::{AstExecutor, StackFrame},
         HashKeyT, Runtime,
     },
@@ -20,7 +19,7 @@ pub(in crate::interpreter) type NativeFn =
 pub(in crate::interpreter) enum Callable {
     Native(NativeFn),
     BoxedDyn(Box<dyn Fn(&AstExecutor, &[ObjAllocId]) -> PyResult<ObjAllocId>>),
-    SourceDef(NodeIndex<u32>),
+    SourceDef(NodeIndex, NodeIndex),
     Object(ObjAllocId),
 }
 
@@ -85,8 +84,7 @@ impl PyObject for Function {
             .get_attribute_direct(rt, rt.hash("__annotations__"), self.alloc_id())
             .unwrap();
 
-        let __annotations__ = rt
-            .get_object(__annotations__)
+        rt.get_object(__annotations__)
             .unwrap()
             .as_any()
             .downcast_ref::<PyDict>()
@@ -102,11 +100,12 @@ impl PyObject for Function {
                     key,
                 );
 
+                let value_alloc_id = value.alloc_id();
                 let value = value.into_value(rt, object_graph);
                 let value = if let crate::Value::String(st) = &value {
                     object_graph.add_string_node(rt.hash(st), value)
                 } else {
-                    object_graph.add_node(value)
+                    object_graph.add_node_traced(value, value_alloc_id)
                 };
 
                 annotations.insert(hash, (key, value));
@@ -117,6 +116,15 @@ impl PyObject for Function {
             annotations,
             properties,
             defsite: self.defsite,
+            parent: match self.inner {
+                Callable::SourceDef(_, scope) => object_graph
+                    .alloc_to_idx
+                    .get(&rt.scope_graph.parent_of(scope).unwrap())
+                    .or_else(|| panic!())
+                    .cloned(),
+
+                _ => None,
+            },
         }
     }
 
@@ -124,7 +132,7 @@ impl PyObject for Function {
         match self.inner {
             Callable::Native(_) => todo!(),
             Callable::BoxedDyn(_) => todo!(),
-            Callable::SourceDef(idx) => {
+            Callable::SourceDef(idx, _) => {
                 let funcdef = &ex.graph.raw_nodes().get(idx.index()).unwrap().weight;
                 let funcdef = match funcdef {
                     AstNode::FuncDef(funcdef) => funcdef,
