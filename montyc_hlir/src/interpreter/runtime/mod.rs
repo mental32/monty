@@ -7,7 +7,7 @@ use std::{
 
 use montyc_core::{utils::SSAMap, ModuleRef};
 
-use petgraph::{graph::NodeIndex, EdgeDirection::Outgoing};
+use petgraph::{EdgeDirection::Outgoing, graph::NodeIndex, visit::NodeIndexable};
 
 use crate::{
     interpreter::{
@@ -61,29 +61,34 @@ impl ScopeGraph {
 
     #[inline]
     pub fn search(
-        &mut self,
-        start: NodeIndex<u32>,
-        f: impl Fn(ObjAllocId) -> bool,
+        &self,
+        start: ObjAllocId,
+        f: impl Fn(ObjAllocId) -> Option<ObjAllocId>,
     ) -> Option<ObjAllocId> {
         let nodes = self.0.raw_nodes();
-        let mut index = start;
-        let mut node = nodes[index.index()].weight;
+        let index = {
+            nodes
+                .iter()
+                .enumerate()
+                .find(|(_, node)| node.weight == start)?
+                .0
+        };
 
-        'outer: loop {
-            if f(node) {
-                break Some(node);
+        let mut node = nodes[index].weight;
+        let mut index = self.0.from_index(index);
+
+        loop {
+            if let node @ Some(_) = f(node) {
+                break node;
             }
 
-            for neighbour in self
+            let parent = self
                 .0
                 .neighbors_directed(index, petgraph::EdgeDirection::Outgoing)
-            {
-                index = neighbour;
-                node = nodes[index.index()].weight;
-                continue 'outer;
-            }
+                .next()?;
 
-            break None;
+            index = parent;
+            node = nodes[index.index()].weight;
         }
     }
 }
@@ -328,7 +333,9 @@ impl Runtime {
         gcx.with_module(mref, &mut |module| {
             module_object = AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
 
-            object_graph.alloc_to_idx.insert(module_object.alloc_id(), module_index);
+            object_graph
+                .alloc_to_idx
+                .insert(module_object.alloc_id(), module_index);
 
             module_object.for_each(self, &mut |_, hash, key, value| {
                 let key = key.into_value(self, &mut object_graph);

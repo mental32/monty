@@ -177,36 +177,22 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 
     #[inline]
     pub fn lookup(&mut self, name: SpanRef) -> Option<ObjAllocId> {
-        let (mut ix, frame) = self
+        let (_, frame) = self
             .eval_stack
             .last()
-            .as_ref()
+            .cloned()
             .expect("Must be running to perform lookups.");
 
-        let mut scope_object =
-            patma!(*o; StackFrame::Function(o) | StackFrame::Module(o) = frame).unwrap();
+        let frame = patma!(o; StackFrame::Function(o) | StackFrame::Module(o) = frame).unwrap();
 
-        let nodes = self.runtime.scope_graph.0.raw_nodes();
         let name = self.host.spanref_to_str(name);
 
-        while {
-            match scope_object.getattr_static(self.runtime, name) {
-                Some(o) => return Some(o),
-                None => true,
-            }
-        } {
-            let parent = self
-                .runtime
-                .scope_graph
-                .0
-                .neighbors_directed(ix, petgraph::EdgeDirection::Outgoing)
-                .next()?;
+        let object = self
+            .runtime
+            .scope_graph
+            .search(frame, |scope| scope.getattr_static(self.runtime, name))?;
 
-            ix = parent;
-            scope_object = nodes[parent.index()].weight;
-        }
-
-        unreachable!()
+        Some(object)
     }
 
     #[inline]
