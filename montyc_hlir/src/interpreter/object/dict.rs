@@ -1,10 +1,16 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::{Deref, DerefMut},
+};
 
 use ahash::AHashMap;
 
-use crate::interpreter::{HashKeyT, Runtime};
+use crate::{
+    interpreter::{HashKeyT, Runtime},
+    object_graph, ObjectGraph, ObjectGraphIndex,
+};
 
-use super::{PyObject, RawObject, alloc::ObjAllocId};
+use super::{alloc::ObjAllocId, PyObject, RawObject};
 
 #[derive(Debug)]
 pub struct PyDictRaw<V>(pub AHashMap<HashKeyT, V>);
@@ -14,7 +20,6 @@ pub struct PyDictNormal<'a, V> {
     inner: &'a mut PyDictRaw<V>,
     hash_state: ahash::RandomState,
 }
-
 
 impl<V> DerefMut for PyDictRaw<V> {
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -56,10 +61,58 @@ where
     }
 }
 
+impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
+    pub fn iter_by_alloc_asc(&self, graph: &ObjectGraph) -> impl Iterator<Item = ObjectGraphIndex> {
+        let values = {
+            let mut values = BTreeSet::new();
+
+            for (_, value) in self.0.values() {
+                log::trace!(
+                    "[PyDictRaw::iter_by_alloc_asc] {:?} := {:?}",
+                    value,
+                    graph.node_weight(*value)
+                );
+                values.insert(*value);
+            }
+
+            values
+        };
+
+        let mut allocs: Vec<_> = graph
+            .alloc_to_idx
+            .iter()
+            .filter_map(|(alloc, index)| {
+                log::trace!(
+                    "[PyDictRaw::iter_by_alloc_asc] Checking filter for value pair: {:?} ({:?})",
+                    (index, alloc),
+                    graph.node_weight(*index)
+                );
+
+                let pair = values.contains(index).then(|| (*alloc, *index));
+
+                log::trace!(
+                    "[PyDictRaw::iter_by_alloc_asc] Filter result? {}",
+                    if pair.is_some() {
+                        "Retained"
+                    } else {
+                        "Discarded"
+                    }
+                );
+
+                pair
+            })
+            .collect();
+
+        allocs.sort_unstable_by(|(a, _), (b, _)| a.0.cmp(&b.0));
+
+        allocs.into_iter().map(|(_, b)| b)
+    }
+}
+
 #[derive(Debug)]
 pub(in crate::interpreter) struct PyDict {
     pub header: RawObject,
-    pub data: PyDictRaw<(ObjAllocId, ObjAllocId)>
+    pub data: PyDictRaw<(ObjAllocId, ObjAllocId)>,
 }
 
 impl PyObject for PyDict {
@@ -91,14 +144,10 @@ impl PyObject for PyDict {
         rt: &Runtime,
         f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
-        self.data .0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
+        self.data.0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
     }
 
-    fn into_value(
-        &self,
-        rt: &Runtime,
-        object_graph: &mut crate::ObjectGraph,
-    ) -> crate::Value {
+    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value {
         let mut data: PyDictRaw<_> = Default::default();
 
         self.for_each(rt, &mut |rt, hash, key, value| {
@@ -112,11 +161,12 @@ impl PyObject for PyDict {
                 key,
             );
 
+            let value_alloc = value.alloc_id();
             let value = value.into_value(rt, object_graph);
             let value = if let crate::Value::String(st) = &value {
                 object_graph.add_string_node(rt.hash(st), value)
             } else {
-                object_graph.add_node(value)
+                object_graph.add_node_traced(value, value_alloc)
             };
 
             data.insert(hash, (key, value));
@@ -127,10 +177,7 @@ impl PyObject for PyDict {
             _ => unreachable!(),
         };
 
-        crate::Value::Dict {
-            object,
-            data,
-        }
+        crate::Value::Dict { object, data }
     }
 
     fn set_item(
@@ -142,11 +189,7 @@ impl PyObject for PyDict {
         self.data.insert(key.hash(rt).unwrap(), (key, value))
     }
 
-    fn get_item(
-        &mut self,
-        rt: &Runtime,
-        key: ObjAllocId,
-    ) -> Option<(ObjAllocId, ObjAllocId)> {
+    fn get_item(&mut self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
         self.data.get(key.hash(rt).unwrap())
     }
 

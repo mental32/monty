@@ -16,6 +16,8 @@ use montyc_parser::{ast, AstNode, SpanInterner};
 
 use crate::{global::value_context::ValueContext, prelude::*, typechk::Typecheck};
 
+use super::value_store::GlobalValueStore;
+
 const MAGICAL_NAMES: &[&'static str] = &[
     // names of builtin types or functions
     "int",
@@ -145,6 +147,7 @@ pub struct ImportPath {
 }
 
 impl ImportPath {
+    #[inline]
     pub fn new(base: PathBuf) -> Self {
         Self {
             base: base.clone(),
@@ -177,6 +180,7 @@ impl ImportPath {
         None
     }
 
+    #[inline]
     pub fn advance(&mut self, expected: impl AsRef<str>) -> Option<PathBuf> {
         let expected = expected.as_ref();
 
@@ -237,6 +241,9 @@ pub struct GlobalContext {
 
     /// Used to keep track of type information.
     typing_context: TypingContext,
+
+    /// A global caching store for all processed values.
+    pub(super) value_store: RefCell<GlobalValueStore>,
 }
 
 impl GlobalContext {
@@ -249,11 +256,10 @@ impl GlobalContext {
             module_sources: Default::default(),
             const_runtime: RefCell::new(interpreter::Runtime::new(0x1000)),
             typing_context: TypingContext::initialized(),
+            value_store: RefCell::new(GlobalValueStore::default()),
         };
 
-        gcx.const_runtime
-            .borrow_mut()
-            .initialize_monty_module(&gcx);
+        gcx.const_runtime.borrow_mut().initialize_monty_module(&gcx);
 
         gcx.modules.skip(1);
 
@@ -354,11 +360,18 @@ impl GlobalContext {
                 _ => unreachable!(),
             };
 
-            let module_object = gcx.modules.get(mref).unwrap();
-            for (hash, (key, value)) in properties.iter() {
-                let value = object_graph.node_weight(*value).unwrap();
+            // let module_object = gcx.modules.get(mref).unwrap();
 
-                value.typecheck(ValueContext { mref, gcx, value })?;
+            for value_idx in properties.iter_by_alloc_asc(&object_graph) {
+                let value = object_graph.node_weight(value_idx).unwrap();
+
+                value.typecheck(ValueContext {
+                    mref,
+                    gcx,
+                    value,
+                    value_idx,
+                    object_graph: &object_graph,
+                })?;
             }
 
             Ok(mref)

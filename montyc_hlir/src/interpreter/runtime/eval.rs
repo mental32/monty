@@ -167,8 +167,10 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
         let mut frame =
             patma!(*o; StackFrame::Function(o) | StackFrame::Module(o) = frame).unwrap();
 
-        let name = self.host.spanref_to_str(name);
-        let (name, hash) = self.string(name)?;
+        let st_name = self.host.spanref_to_str(name);
+        let (name, hash) = self.string(st_name)?;
+
+        log::trace!("[AstExecutor::define] setattr {:?} . {:?} = {:?}", frame, st_name, value);
 
         frame.set_attribute_direct(self.runtime, hash, name, value);
 

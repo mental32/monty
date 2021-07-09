@@ -44,6 +44,18 @@ impl FunctionDef {
             .map(|args| args.iter().any(|arg| arg.1.is_none()))
             .unwrap_or(false)
     }
+
+    pub fn is_ellipsis_stubbed(&self) -> bool {
+        match self.body.as_slice() {
+            [] => unreachable!(),
+            [head] => matches!(head.into_ast_node(), AstNode::Ellipsis(_)),
+            [head, tail] => {
+                matches!(head.into_ast_node(), AstNode::Str(_))
+                    && matches!(tail.into_ast_node(), AstNode::Ellipsis(_))
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

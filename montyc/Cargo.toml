@@ -16,7 +16,7 @@ montyc_core = { path = "../montyc_core" }
 montyc_hlir = { path = "../montyc_hlir" }
 
 # "make my life easier" dependencies
-# derive_more = "0.99.13"
+derive_more = "0.99"
 structopt = "0.3.21"
 # thiserror = "1.0.24"
 # dashmap = "4.0.2"
