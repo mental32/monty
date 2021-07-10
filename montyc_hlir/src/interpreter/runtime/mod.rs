@@ -114,6 +114,9 @@ pub struct Runtime {
     /// A graph of all the objects that act like as namespaces i.e. modules, classes, functions.
     pub(in crate::interpreter) scope_graph: ScopeGraph,
 
+    /// The scope index for the builtins module.
+    pub (in crate::interpreter) builtins_scope: NodeIndex,
+
     /// A map for interned strings.
     strings: ahash::AHashMap<u64, ObjAllocId>,
 }
@@ -137,6 +140,7 @@ impl Runtime {
             modules: Default::default(),
             hash_state: ahash::RandomState::new(),
             scope_graph: Default::default(),
+            builtins_scope: NodeIndex::end(),
             strings: Default::default(),
         };
 

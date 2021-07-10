@@ -11,7 +11,7 @@ use montyc_parser::ast::ImportDecl;
 
 pub use {object::PyDictRaw, runtime::Runtime};
 
-use object::alloc::ObjAllocId;
+pub use object::alloc::ObjAllocId;
 
 use crate::{typing::TypingContext, ModuleObject};
 

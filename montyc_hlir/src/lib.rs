@@ -54,6 +54,12 @@ mod object_graph {
             allocs.into_iter().map(|(_, b)| b)
         }
 
+        pub fn alloc_id_of(&self, idx: ObjectGraphIndex) -> Option<ObjAllocId> {
+            self.alloc_to_idx
+                .iter()
+                .find_map(|(alloc, index)| (*index == idx).then(|| *alloc))
+        }
+
         pub fn add_string_node(&mut self, hash: u64, string: crate::Value) -> ObjectGraphIndex {
             if let Some(idx) = self.strings.get(&hash) {
                 return idx.clone();
@@ -172,4 +178,25 @@ pub enum Value {
         // defsite: ObjectGraphIndex,
         // parent: ObjectGraphIndex,
     },
+}
+
+impl Value {
+    pub fn iter(&self) -> impl Iterator<Item = (&u64, &(ObjectGraphIndex, ObjectGraphIndex))> + '_ {
+        match self {
+            Value::Object(obj) => obj.properties.iter(),
+            Value::Module { mref, properties } => properties.iter(),
+            Value::Dict { object, data } => data.iter(),
+            Value::Function {
+                name,
+                properties,
+                annotations,
+                defsite,
+                parent,
+            } => properties.iter(),
+            Value::Class { name, properties } => properties.iter(),
+
+            Value::String(_) => todo!(),
+            Value::Integer(_) => todo!(),
+        }
+    }
 }

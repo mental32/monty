@@ -21,6 +21,7 @@ pub enum AstNode {
     Assign(models::Assign),
     Int(models::Atom),
     Str(models::Atom),
+    Comment(models::Atom),
     Bool(models::Atom),
     Float(models::Atom),
     Tuple(models::Atom),

@@ -1,6 +1,7 @@
-use cranelift_codegen::ir::Type;
+use std::rc::Rc;
+
 use montyc_core::{utils::SSAMap, TypeId};
-use montyc_hlir::ObjectGraphIndex;
+use montyc_hlir::{ObjectGraph, ObjectGraphIndex, interpreter::ObjAllocId};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct ValueId(usize);
@@ -19,61 +20,57 @@ impl From<usize> for ValueId {
 
 #[derive(Debug)]
 struct WrappedValue {
-    inner: ObjectGraphIndex,
+    alloc_id: ObjAllocId,
+    node_index: ObjectGraphIndex,
     type_id: Option<TypeId>,
-}
-
-#[derive(Debug, derive_more::From)]
-pub enum TypeDeducible {
-    Value(ValueId),
-    Index(ObjectGraphIndex),
 }
 
 /// A structure used to track and cache the results of `montyc_hlir::Value` typecheck/inference/whatever.
 #[derive(Default, Debug)]
 pub struct GlobalValueStore {
     values: SSAMap<ValueId, WrappedValue>,
-    values_by_index: ahash::AHashMap<ObjectGraphIndex, ValueId>,
+    values_by_global_id: ahash::AHashMap<ObjAllocId, ValueId>,
+    object_graphs: Vec<Rc<ObjectGraph>>,
 }
 
 impl GlobalValueStore {
     #[inline]
-    pub fn insert(&mut self, value_idx: ObjectGraphIndex) -> ValueId {
+    pub fn insert(&mut self, node_index: ObjectGraphIndex, alloc_id: ObjAllocId) -> ValueId {
+        if let Some(value_id) = self.values_by_global_id.get(&alloc_id) {
+            return *value_id;
+        }
+
         let value_id = self.values.insert(WrappedValue {
-            inner: value_idx,
+            alloc_id,
+            node_index,
             type_id: Default::default(),
         });
 
-        self.values_by_index.insert(value_idx, value_id);
+        self.values_by_global_id.insert(alloc_id, value_id);
 
         value_id
     }
 
-    pub fn contains(&self, value: ObjectGraphIndex) -> bool {
-        self.values_by_index.contains_key(&value)
+    #[inline]
+    pub fn insert_object_graph(&mut self, graph: ObjectGraph) -> Rc<ObjectGraph> {
+        self.object_graphs.push(Rc::new(graph));
+        self.object_graphs.get(self.object_graphs.len().saturating_sub(1)).unwrap().clone()
     }
 
     #[inline]
-    pub fn type_of(&self, value: impl Into<TypeDeducible>) -> Option<TypeId> {
-        let value = value.into();
-        let value_id = match value {
-            TypeDeducible::Index(idx) => self.values_by_index.get(&idx).cloned()?,
-            TypeDeducible::Value(value) => value,
-        };
+    pub fn get_value_from_alloc(&self, alloc_id: ObjAllocId) -> Option<ValueId> {
+        self.values_by_global_id.get(&alloc_id).cloned()
+    }
 
+    #[inline]
+    pub fn type_of(&self, value_id: ValueId) -> Option<TypeId> {
         self.values
             .get(value_id)
             .and_then(|value| value.type_id.clone())
     }
 
     #[inline]
-    pub fn set_type_of(&mut self, value: impl Into<TypeDeducible>, type_id: Option<TypeId>) {
-        let value = value.into();
-        let value_id = match value {
-            TypeDeducible::Index(idx) => self.values_by_index.get(&idx).cloned().unwrap(),
-            TypeDeducible::Value(value) => value,
-        };
-
+    pub fn set_type_of(&mut self, value_id: ValueId, type_id: Option<TypeId>) {
         self.values.get_mut(value_id).map(|value| value.type_id = type_id);
     }
 

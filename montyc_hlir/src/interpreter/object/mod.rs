@@ -252,7 +252,7 @@ pub use dict::PyDictRaw;
 
 use super::{runtime::eval::AstExecutor, HashKeyT, PyResult, Runtime};
 
-pub(in crate) use alloc::ObjAllocId;
+pub use alloc::ObjAllocId;
 
 /// An object safe base trait for all Python "objects".
 pub(in crate::interpreter) trait PyObject:

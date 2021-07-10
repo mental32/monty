@@ -1,10 +1,6 @@
 use std::iter::Peekable;
 
-use montyc_parser::{
-    ast::{self, Statement},
-    spanned::Spanned,
-    AstObject, AstVisitor,
-};
+use montyc_parser::{AstNode, AstObject, AstVisitor, ast::{self, Statement}, spanned::Spanned};
 
 use petgraph::graph::{DiGraph, NodeIndex};
 
@@ -127,14 +123,8 @@ impl From<NewType<ast::FunctionDef>> for AstNodeGraph {
 
         funcdef.body.retain(|node| {
             !matches!(
-                node.inner,
-                ast::Statement::Expr(ast::Expr::Primary(Spanned {
-                    inner: ast::Primary::Atomic(Spanned {
-                        inner: ast::Atom::Comment(_),
-                        ..
-                    }),
-                    ..
-                }))
+                node.into_ast_node(),
+                AstNode::Comment(_),
             )
         });
 
@@ -169,14 +159,8 @@ impl From<NewType<ast::Module>> for AstNodeGraph {
 
         module.body.retain(|node| {
             !matches!(
-                node.inner,
-                ast::Statement::Expr(ast::Expr::Primary(Spanned {
-                    inner: ast::Primary::Atomic(Spanned {
-                        inner: ast::Atom::Comment(_),
-                        ..
-                    }),
-                    ..
-                }))
+                node.into_ast_node(),
+                AstNode::Comment(_)
             )
         });
 

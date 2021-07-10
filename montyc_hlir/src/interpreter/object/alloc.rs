@@ -11,15 +11,15 @@ use crate::interpreter::{runtime::eval::AstExecutor, HashKeyT, Runtime};
 use super::PyObject;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(in crate) struct ObjAllocId(pub usize);
+pub struct ObjAllocId(pub usize);
 
 impl ObjAllocId {
-    pub fn setattr_static(&mut self, rt: &mut Runtime, key: impl Hash, value: ObjAllocId) {
+    pub(in crate::interpreter) fn setattr_static(&mut self, rt: &mut Runtime, key: impl Hash, value: ObjAllocId) {
         let hash = rt.hash(key);
         self.set_attribute_direct(rt, hash, value, value);
     }
 
-    pub fn getattr_static(&self, rt: &Runtime, key: impl Hash) -> Option<ObjAllocId> {
+    pub(in crate::interpreter) fn getattr_static(&self, rt: &Runtime, key: impl Hash) -> Option<ObjAllocId> {
         let hash = rt.hash(key);
         self.get_attribute_direct(rt, hash, ObjAllocId(0))
     }

@@ -5,7 +5,7 @@ use crate::{spanned::Spanned, token::PyToken, AstNode, AstObject, AstVisitor};
 
 use super::Expr;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, derive_more::Unwrap)]
 pub enum Atom {
     None,
     Ellipsis,
@@ -28,7 +28,7 @@ impl AstObject for Atom {
             Atom::Bool(_) => AstNode::Bool(self.clone()),
             Atom::Float(_) => AstNode::Float(self.clone()),
             Atom::Tuple(_) => AstNode::Tuple(self.clone()),
-            Atom::Comment(_) => todo!(),
+            Atom::Comment(_) => AstNode::Comment(self.clone()),
             Atom::Name(_) => AstNode::Name(self.clone()),
         }
     }

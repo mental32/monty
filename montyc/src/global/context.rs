@@ -12,7 +12,7 @@ use montyc_hlir::{
     typing::TypingContext,
     Value,
 };
-use montyc_parser::{ast, AstNode, SpanInterner};
+use montyc_parser::{ast, SpanInterner};
 
 use crate::{global::value_context::ValueContext, prelude::*, typechk::Typecheck};
 
@@ -352,6 +352,13 @@ impl GlobalContext {
             let (module_index, object_graph) =
                 gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
 
+            let object_graph = gcx
+                .value_store
+                .borrow_mut()
+                .insert_object_graph(object_graph);
+
+            let object_graph = &*object_graph;
+
             let (mref, properties) = match object_graph
                 .node_weight(module_index)
                 .expect("missing module index.")
@@ -360,9 +367,7 @@ impl GlobalContext {
                 _ => unreachable!(),
             };
 
-            // let module_object = gcx.modules.get(mref).unwrap();
-
-            for value_idx in properties.iter_by_alloc_asc(&object_graph) {
+            for value_idx in properties.iter_by_alloc_asc(object_graph) {
                 let value = object_graph.node_weight(value_idx).unwrap();
 
                 value.typecheck(ValueContext {
@@ -370,7 +375,7 @@ impl GlobalContext {
                     gcx,
                     value,
                     value_idx,
-                    object_graph: &object_graph,
+                    object_graph,
                 })?;
             }
 

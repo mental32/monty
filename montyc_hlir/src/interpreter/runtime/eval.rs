@@ -4,7 +4,7 @@ use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
 use montyc_core::{ModuleRef, SpanRef};
 use montyc_parser::{
-    ast::{self, ClassDef, FunctionDef},
+    ast::{self, ClassDef, FunctionDef, Module},
     AstNode, AstObject, AstVisitor,
 };
 
@@ -29,7 +29,7 @@ pub(in crate::interpreter) enum StackFrame {
 }
 
 macro_rules! patma {
-    ($n:expr; $( $pattern:pat )|+ $( if ($guard: expr) )? $(,)? = $e:expr) => {
+    ($n:expr => $( $pattern:pat )|+ $( if ($guard: expr) )? $(,)? in $e:expr) => {
         match $e {
             $( $pattern )|+ $( if $guard )? => Some($n),
             #[allow(warnings)]
@@ -111,6 +111,12 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
         let namespace = runtime.scope_graph.insert(ast_object_id);
         let frame = StackFrame::Module(ast_object_id);
 
+        if runtime.builtins_scope == NodeIndex::end() {
+            runtime.builtins_scope = namespace;
+        } else {
+            runtime.scope_graph.nest(namespace, runtime.builtins_scope);
+        }
+
         Self {
             runtime,
             graph,
@@ -165,12 +171,17 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
     pub fn define(&mut self, name: SpanRef, value: ObjAllocId) -> PyResult<()> {
         let (_, frame) = self.eval_stack.last().as_ref().unwrap();
         let mut frame =
-            patma!(*o; StackFrame::Function(o) | StackFrame::Module(o) = frame).unwrap();
+            patma!(*o => StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
         let st_name = self.host.spanref_to_str(name);
         let (name, hash) = self.string(st_name)?;
 
-        log::trace!("[AstExecutor::define] setattr {:?} . {:?} = {:?}", frame, st_name, value);
+        log::trace!(
+            "[AstExecutor::define] setattr {:?} . {:?} = {:?}",
+            frame,
+            st_name,
+            value
+        );
 
         frame.set_attribute_direct(self.runtime, hash, name, value);
 
@@ -185,7 +196,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
             .cloned()
             .expect("Must be running to perform lookups.");
 
-        let frame = patma!(o; StackFrame::Function(o) | StackFrame::Module(o) = frame).unwrap();
+        let frame = patma!(o => StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
         let name = self.host.spanref_to_str(name);
 
@@ -208,6 +219,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
             .subgraphs
             .entry(node)
             .or_insert_with(|| Rc::new(graph_ctor()));
+
         let graph = self.subgraphs.get(&node).unwrap().clone();
 
         f(self, &*graph)?;
@@ -368,15 +380,25 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
                             };
                         }
                     }
+                }
 
-                    if let Some(ret) = &funcdef.returns {
-                        let (returns, _) = ex.string("return")?;
+                dbg!(&funcdef);
 
-                        match ret.inner.visit_with(ex)? {
-                            Some(obj) => annotations.set_item(&mut ex.runtime, returns, obj),
-                            None => todo!("NameError: argument annotation not found."),
-                        };
-                    }
+                if let Some(ret) = &funcdef.returns {
+                    let (returns, _) = ex.string("return")?;
+
+                    match ret.inner.visit_with(ex)? {
+                        Some(obj) => {
+                            annotations.set_item(&mut ex.runtime, returns, obj);
+                            dbg!(ex
+                                .runtime
+                                .get_object(obj)
+                                .unwrap()
+                                .into_value(ex.runtime, &mut Default::default()))
+                        }
+
+                        None => todo!("NameError: argument annotation not found."),
+                    };
                 }
 
                 annotations
@@ -486,7 +508,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_int(&mut self, int: &ast::Atom) -> EvalResult {
-        let int = patma!(n; ast::Atom::Int(n) = int).unwrap().clone();
+        let int = patma!(n => ast::Atom::Int(n) in int).unwrap().clone();
 
         self.integer(int).map(Some)
     }
@@ -563,6 +585,11 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
         let fndef_name = fndef.name.inner.as_name().unwrap();
         let name = self.host.spanref_to_str(fndef_name.clone());
 
+        log::trace!(
+            "[AstExecutor::visit_funcdef] evaluating FunctionDef {:?}",
+            name
+        );
+
         let idx = self.graph
             .raw_nodes()
             .iter()
@@ -602,7 +629,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_name(&mut self, name: &ast::Atom) -> EvalResult {
-        let name = patma!(n; ast::Atom::Name(n) = name).unwrap();
+        let name = patma!(n => ast::Atom::Name(n) in name).unwrap();
         return Ok(self.lookup(*name));
     }
 
@@ -634,8 +661,6 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
 
         let _ = self.eval_stack.pop();
 
-        self.node_index = NodeIndex::end();
-
         return Ok(Some(value));
     }
 
@@ -660,7 +685,9 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_call(&mut self, call: &ast::Primary) -> EvalResult {
-        let (func, args) = patma!((func, args); ast::Primary::Call { func, args } = call).unwrap();
+        let (func, args) =
+            patma!((func, args) => ast::Primary::Call { func, args } in call).unwrap();
+        let func_name = func.inner.as_name();
 
         let func = func.inner.visit_with(self)?.unwrap();
         let mut params = Vec::with_capacity(args.as_ref().map(|args| args.len()).unwrap_or(0));
@@ -673,7 +700,10 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
 
         let result = func.call(self, params.as_slice())?;
 
-        self.advance_next_node();
+        self.graph.node_weight(self.node_index)
+            .and_then(|weight| patma!(f.inner.as_name() => AstNode::Call(ast::Primary::Call { func: f, .. }) in weight))
+            .and_then(|f_name| f_name.zip(func_name))
+            .and_then(|(l, r)| (l.distinct() == r.distinct()).then(|| self.advance_next_node()));
 
         Ok(Some(result))
     }
