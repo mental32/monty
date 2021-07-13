@@ -6,19 +6,23 @@ macro_rules! builtins {
     ($(.$tag:literal = $name:ident  { $display:literal, $size:literal },)+) => {
         impl self::TypingContext {
             $(
+                #[allow(missing_docs)]
                 pub const $name: ::montyc_core::types::TypeId = ::montyc_core::types::TypeId($tag);
             )*
         }
 
+        /// An enum of all builtin types.
         #[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Eq, Ord)]
         #[repr(u8)]
         pub enum BuiltinType {
             $(
+                #[allow(missing_docs)]
                 $name = $tag
             ),*
         }
 
         impl self::BuiltinType {
+            /// The size of this type in bytes.
             pub fn size_in_bytes(&self) -> usize {
                 match self {
                     $(
@@ -82,7 +86,9 @@ builtins!(
     .255 = Never { "never", 0 },
 );
 
+/// A native Python type.
 #[derive(Debug)]
+#[allow(missing_docs)]
 pub enum PythonType {
     /// Special type indicating that a function never returns.
     NoReturn,
@@ -140,6 +146,7 @@ pub struct LocalTypeId<'tcx> {
 }
 
 impl<'tcx> LocalTypeId<'tcx> {
+    /// Check if this type is a union type.
     #[inline]
     pub fn is_union(&self) -> bool {
         // SAFETY: `TypingContext::contextualize` already checks if `self.type_id` is present within the map.
@@ -153,6 +160,7 @@ impl<'tcx> LocalTypeId<'tcx> {
     }
 }
 
+/// A global registar for types.
 #[derive(Debug, Default)]
 pub struct TypingContext {
     inner: SSAMap<TypeId, Type>,
@@ -177,6 +185,15 @@ impl TypingContext {
         Some(LocalTypeId {
             type_id,
             context: self,
+        })
+    }
+
+    /// Create a tuple from a vector of `TypeId`s.
+    #[inline]
+    pub fn tuple(&mut self, elements: Vec<TypeId>) -> TypeId {
+        self.inner.insert(Type {
+            kind: PythonType::Tuple { members: Some(elements) },
+            layout: ObjectLayout {},
         })
     }
 }

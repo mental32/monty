@@ -38,11 +38,13 @@ impl RawSpanInterner {
 pub struct SpanInterner(Rc<RefCell<RawSpanInterner>>);
 
 impl SpanInterner {
+    /// Create a new SpanInterner instance.
     #[inline]
     pub fn new() -> Self {
         Self(Default::default())
     }
 
+    /// Return the string slice of the span's string.
     #[inline]
     pub fn spanref_to_name<'a>(
         &self,
@@ -50,9 +52,10 @@ impl SpanInterner {
         resolver: impl Fn(ModuleRef, Range<usize>) -> Option<&'a str>,
     ) -> Option<&'a str> {
         let data = self.0.borrow().map.get(sref.distinct())?.clone();
-        resolver(data.mdoule, data.range)
+        resolver(data.module, data.range)
     }
 
+    /// Return a new span reference to the given string.
     #[inline]
     pub fn name_to_spanref<const N: u32>(&self, name: &str) -> Result<SpanRef, ()> {
         let mut bound = self.contextualize(name, ModuleRef(N))?;
@@ -101,7 +104,7 @@ impl<'source, 'data> BoundMutInterner<'source, 'data> {
         let distinct = self.inner.map.insert(SpanData {
             range,
             hash,
-            mdoule: self.module,
+            module: self.module,
         });
 
         let group = self.inner.groups.entry(hash).or_insert(distinct).clone();

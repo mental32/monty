@@ -11,11 +11,12 @@ use crate::{
     },
 };
 
-use super::{dict::PyDict, ObjAllocId, PyDictRaw, PyObject, PyResult, RawObject};
+use super::{ObjAllocId, PyDictRaw, PyObject, PyResult, RawObject};
 
 pub(in crate::interpreter) type NativeFn =
     for<'rt> fn(&'rt AstExecutor, &[ObjAllocId]) -> PyResult<ObjAllocId>;
 
+#[allow(dead_code)]  // TODO: Remove once it is used.
 pub(in crate::interpreter) enum Callable {
     Native(NativeFn),
     BoxedDyn(Box<dyn Fn(&AstExecutor, &[ObjAllocId]) -> PyResult<ObjAllocId>>),
@@ -84,32 +85,7 @@ impl PyObject for Function {
             .get_attribute_direct(rt, rt.hash("__annotations__"), self.alloc_id())
             .unwrap();
 
-        rt.get_object(__annotations__)
-            .unwrap()
-            .as_any()
-            .downcast_ref::<PyDict>()
-            .unwrap()
-            .for_each(rt, &mut |rt, hash, key, value| {
-                let key = key.into_value(rt, object_graph);
-                let key = object_graph.add_string_node(
-                    if let crate::Value::String(st) = &key {
-                        rt.hash(st)
-                    } else {
-                        unreachable!()
-                    },
-                    key,
-                );
-
-                let value_alloc_id = value.alloc_id();
-                let value = value.into_value(rt, object_graph);
-                let value = if let crate::Value::String(st) = &value {
-                    object_graph.add_string_node(rt.hash(st), value)
-                } else {
-                    object_graph.add_node_traced(value, value_alloc_id)
-                };
-
-                annotations.insert(hash, (key, value));
-            });
+        __annotations__.properties_into_values(rt, object_graph, &mut annotations);
 
         crate::Value::Function {
             name,

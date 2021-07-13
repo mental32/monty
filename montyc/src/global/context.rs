@@ -18,6 +18,7 @@ use crate::{global::value_context::ValueContext, prelude::*, typechk::Typecheck}
 
 use super::value_store::GlobalValueStore;
 
+/// Statically known identifiers used to seed the span interner.
 const MAGICAL_NAMES: &[&'static str] = &[
     // names of builtin types or functions
     "int",
@@ -138,6 +139,7 @@ const MAGICAL_NAMES: &[&'static str] = &[
     "__value",
 ] as &[_];
 
+/// A mapping of all staticly known identifiers to their respective spans.
 type StaticNames = ahash::AHashMap<SpanRef, &'static str>;
 
 #[derive(Debug)]
@@ -219,6 +221,7 @@ impl ImportPath {
     }
 }
 
+/// Global state for the current compilation.
 #[derive(Debug)]
 pub struct GlobalContext {
     /// The options this context was created with.
@@ -240,13 +243,14 @@ pub struct GlobalContext {
     pub(super) const_runtime: RefCell<interpreter::Runtime>,
 
     /// Used to keep track of type information.
-    typing_context: TypingContext,
+    pub(crate) typing_context: RefCell<TypingContext>,
 
     /// A global caching store for all processed values.
     pub(super) value_store: RefCell<GlobalValueStore>,
 }
 
 impl GlobalContext {
+    /// Initiate a new context with the given, verified, options.
     pub fn initialize(VerifiedCompilerOptions(opts): &VerifiedCompilerOptions) -> Self {
         let mut gcx = Self {
             opts: opts.clone(),
@@ -255,7 +259,7 @@ impl GlobalContext {
             modules: SSAMap::new(),
             module_sources: Default::default(),
             const_runtime: RefCell::new(interpreter::Runtime::new(0x1000)),
-            typing_context: TypingContext::initialized(),
+            typing_context: RefCell::new(TypingContext::initialized()),
             value_store: RefCell::new(GlobalValueStore::default()),
         };
 
@@ -346,6 +350,11 @@ impl GlobalContext {
         Ok(f(self, mref))
     }
 
+    /// Add a new module, by its path, to the current context.
+    ///
+    /// This will load the module, parse it, consteval it, and typecheck it
+    /// before returning.
+    ///
     #[inline]
     pub fn include_module(&mut self, path: impl AsRef<Path>) -> MontyResult<ModuleRef> {
         self.load_module_with(path, |gcx, mref| -> MontyResult<ModuleRef> {
@@ -491,10 +500,6 @@ impl HostGlue for GlobalContext {
 
     fn import_module(&self, decl: ast::ImportDecl) -> Vec<(ModuleRef, SpanRef)> {
         self.import_module(decl).unwrap()
-    }
-
-    fn tcx(&self) -> &TypingContext {
-        &self.typing_context
     }
 
     fn with_module(

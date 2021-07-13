@@ -195,10 +195,12 @@ impl Runtime {
         this
     }
 
+    /// Get the runtimes hash state.
     pub fn hash_state(&self) -> ahash::RandomState {
         self.hash_state.clone()
     }
 
+    /// Initialize the runtime with the builtin `__monty` module.
     pub fn initialize_monty_module(&mut self, _: &dyn HostGlue) {
         let mut __monty = self
             .modules
@@ -293,6 +295,7 @@ impl Runtime {
     }
 
     #[inline]
+    #[allow(dead_code)]  // TODO: Remove when actually used.
     pub(in crate::interpreter) fn try_as_int_value(&self, alloc_id: ObjAllocId) -> PyResult<i64> {
         let obj = self.objects.get(alloc_id).unwrap().clone();
         let obj = &*obj.borrow();
@@ -319,6 +322,7 @@ impl Runtime {
         }
     }
 
+    /// Const-evaluate a module.
     pub fn consteval<'global, 'module>(
         &'global mut self,
         mref: ModuleRef,
@@ -341,23 +345,7 @@ impl Runtime {
                 .alloc_to_idx
                 .insert(module_object.alloc_id(), module_index);
 
-            module_object.for_each(self, &mut |_, hash, key, value| {
-                let key = key.into_value(self, &mut object_graph);
-                let key = object_graph.add_string_node(
-                    if let crate::Value::String(st) = &key {
-                        self.hash(st)
-                    } else {
-                        unreachable!()
-                    },
-                    key,
-                );
-
-                let value_alloc_id = value.alloc_id();
-                let value = value.into_value(self, &mut object_graph);
-                let value = object_graph.add_node_traced(value, value_alloc_id);
-
-                properties.insert(hash, (key, value));
-            });
+            module_object.properties_into_values(self, &mut object_graph, &mut properties);
 
             Ok(())
         })?;

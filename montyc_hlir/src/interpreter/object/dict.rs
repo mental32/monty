@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     ops::{Deref, DerefMut},
 };
 
@@ -7,11 +7,12 @@ use ahash::AHashMap;
 
 use crate::{
     interpreter::{HashKeyT, Runtime},
-    object_graph, ObjectGraph, ObjectGraphIndex,
+    ObjectGraph, ObjectGraphIndex,
 };
 
 use super::{alloc::ObjAllocId, PyObject, RawObject};
 
+/// A Python dict-like object that stores its values by a pre-computed hash.
 #[derive(Debug)]
 pub struct PyDictRaw<V>(pub AHashMap<HashKeyT, V>);
 
@@ -45,14 +46,17 @@ impl<V> PyDictRaw<V>
 where
     V: Clone,
 {
+    /// Get a value from the dictionary.
     pub fn get(&self, key: HashKeyT) -> Option<V> {
         self.0.get(&key).cloned()
     }
 
+    /// Insert a value into the dictionary.
     pub fn insert(&mut self, key: HashKeyT, value: V) -> Option<V> {
         self.0.insert(key, value)
     }
 
+    /// Curry the dictionary with a hashing state so it can be used to insert key-value pairs directly.
     pub fn normalize(&mut self, state: ahash::RandomState) -> PyDictNormal<V> {
         PyDictNormal {
             inner: self,
@@ -62,6 +66,7 @@ where
 }
 
 impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
+    /// Return an iterator of object indecies sorted by old to young.
     pub fn iter_by_alloc_asc(&self, graph: &ObjectGraph) -> impl Iterator<Item = ObjectGraphIndex> {
         let values = {
             let mut values = BTreeSet::new();
@@ -150,27 +155,7 @@ impl PyObject for PyDict {
     fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value {
         let mut data: PyDictRaw<_> = Default::default();
 
-        self.for_each(rt, &mut |rt, hash, key, value| {
-            let key = key.into_value(rt, object_graph);
-            let key = object_graph.add_string_node(
-                if let crate::Value::String(st) = &key {
-                    rt.hash(st)
-                } else {
-                    unreachable!()
-                },
-                key,
-            );
-
-            let value_alloc = value.alloc_id();
-            let value = value.into_value(rt, object_graph);
-            let value = if let crate::Value::String(st) = &value {
-                object_graph.add_string_node(rt.hash(st), value)
-            } else {
-                object_graph.add_node_traced(value, value_alloc)
-            };
-
-            data.insert(hash, (key, value));
-        });
+        self.properties_into_values(rt, object_graph, &mut data);
 
         let object = match self.header.into_value(rt, object_graph) {
             crate::Value::Object(obj) => obj,

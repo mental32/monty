@@ -51,6 +51,7 @@ use structopt::StructOpt;
 //         .status()
 //         .map(|_| ())
 
+
 fn main() -> std::io::Result<()> {
     env_logger::init();
 
@@ -72,11 +73,11 @@ fn main() -> std::io::Result<()> {
     }
 
     if let CompilerOptions::Build {
-        output,
-        show_ir,
-        cc,
-        ld,
-        cranelift_settings,
+        output: _,
+        show_ir: _,
+        cc: _,
+        ld: _,
+        cranelift_settings: _,
         ..
     } = opts
     {

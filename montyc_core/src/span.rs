@@ -3,7 +3,7 @@ use std::{hash::Hash, ops::Range};
 #[derive(Debug, Clone)]
 pub struct SpanData {
     pub range: Range<usize>,
-    pub mdoule: crate::module::ModuleRef,
+    pub module: crate::module::ModuleRef,
     pub hash: u64,
 }
 
@@ -16,14 +16,25 @@ pub struct SpanData {
 /// the group identifiers allow for cheap string and identifier equality checks
 /// e.g. all variable names `a` will have the same group identifier but different
 /// distinct identifiers.
+///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SpanRef(u32, u32);
 
 impl SpanRef {
+    /// Get the group identifier of the span ref.
+    ///
+    /// Multiple spans with the same hash are considered to be in the same group.
+    ///
+    #[inline]
     pub fn group(&self) -> u32 {
         self.0
     }
 
+    /// Get the distinct identifier of the span ref.
+    ///
+    /// This is a unique identifier for the span in the file.
+    ///
+    #[inline]
     pub fn distinct(&self) -> u32 {
         self.1
     }

@@ -4,8 +4,9 @@ version = "0.0.0"
 edition = "2018"
 
 [dependencies]
-ahash = "0.7.4"
-log = "0.4.14"
 montyc_core = { path = "../montyc_core" }
 montyc_parser = { path = "../montyc_parser" }
-petgraph = "0.5.1"
+
+ahash = "0.7.4"
+log = "0.4"
+petgraph = "0.6"

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use montyc_core::{utils::SSAMap, TypeId};
-use montyc_hlir::{ObjectGraph, ObjectGraphIndex, interpreter::ObjAllocId};
+use montyc_hlir::{ObjectGraph, ObjectGraphIndex, ObjAllocId};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct ValueId(usize);

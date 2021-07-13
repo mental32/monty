@@ -9,104 +9,23 @@
 //!
 //! HLIR was designed to be constructable from any AST and is made
 //! to alleviate the problems working purely with an AST-based representation.
+#![warn(missing_docs)]
 
 mod grapher;
 pub mod interpreter;
 pub mod typing;
+pub mod code;
 
-use std::{
-    ops::{Deref, DerefMut},
-    path::{Path, PathBuf},
-};
+pub use interpreter::{HostGlue, ObjAllocId};
 
-use interpreter::object::ObjAllocId;
+use std::path::{Path, PathBuf};
+
 use montyc_core::{ModuleRef, TypeId};
 use montyc_parser::ast;
-use petgraph::graph::NodeIndex;
 
 use crate::interpreter::PyDictRaw;
 
-mod object_graph {
-    use std::ops::{Deref, DerefMut};
-
-    use petgraph::graph::NodeIndex;
-
-    use crate::{
-        interpreter::{self, object::ObjAllocId},
-        Value,
-    };
-
-    pub type ObjectGraphIndex = NodeIndex<u32>;
-
-    #[derive(Debug, Default)]
-    pub struct ObjectGraph {
-        graph: petgraph::graph::DiGraph<Value, ()>,
-        strings: ahash::AHashMap<u64, ObjectGraphIndex>,
-        pub(crate) alloc_to_idx: ahash::AHashMap<interpreter::object::ObjAllocId, ObjectGraphIndex>,
-    }
-
-    impl ObjectGraph {
-        pub fn iter_by_alloc_asc(&self) -> impl Iterator<Item = ObjectGraphIndex> {
-            let mut allocs: Vec<_> = self.alloc_to_idx.iter().map(|(a, b)| (*a, *b)).collect();
-
-            allocs.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-            allocs.into_iter().map(|(_, b)| b)
-        }
-
-        pub fn alloc_id_of(&self, idx: ObjectGraphIndex) -> Option<ObjAllocId> {
-            self.alloc_to_idx
-                .iter()
-                .find_map(|(alloc, index)| (*index == idx).then(|| *alloc))
-        }
-
-        pub fn add_string_node(&mut self, hash: u64, string: crate::Value) -> ObjectGraphIndex {
-            if let Some(idx) = self.strings.get(&hash) {
-                return idx.clone();
-            }
-
-            let idx = self.graph.add_node(string);
-
-            self.strings.insert(hash, idx);
-
-            idx
-        }
-
-        pub(crate) fn add_node_traced(
-            &mut self,
-            value: crate::Value,
-            obj: ObjAllocId,
-        ) -> ObjectGraphIndex {
-            log::trace!("[ObjectGraph::trace] Tracing value: {:?}", value);
-
-            if let Some(idx) = self.alloc_to_idx.get(&obj) {
-                log::trace!("[ObjectGraph::trace] Value already exists! {:?}", idx);
-                return *idx;
-            }
-
-            let idx = self.graph.add_node(value);
-            self.alloc_to_idx.insert(obj, idx);
-
-            log::trace!("[ObjectGraph::trace] {:?} -> {:?}", obj, idx);
-
-            idx
-        }
-    }
-
-    impl DerefMut for ObjectGraph {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.graph
-        }
-    }
-
-    impl Deref for ObjectGraph {
-        type Target = petgraph::graph::DiGraph<Value, ()>;
-
-        fn deref(&self) -> &Self::Target {
-            &self.graph
-        }
-    }
-}
+mod object_graph;
 
 pub use object_graph::{ObjectGraph, ObjectGraphIndex};
 
@@ -181,19 +100,20 @@ pub enum Value {
 }
 
 impl Value {
+    /// Get an iterator over the properties of this value, i.e. the `__dict__` of the value.
+    ///
+    /// If `self` is a `Dict` then `iter()` will return an iterator over the hash, keys, and values of the dictionary.
+    ///
     pub fn iter(&self) -> impl Iterator<Item = (&u64, &(ObjectGraphIndex, ObjectGraphIndex))> + '_ {
         match self {
+            Value::Dict {
+                data: properties, ..
+            }
+            | Value::Module { properties, .. }
+            | Value::Function { properties, .. }
+            | Value::Class { properties, .. } => properties.iter(),
+
             Value::Object(obj) => obj.properties.iter(),
-            Value::Module { mref, properties } => properties.iter(),
-            Value::Dict { object, data } => data.iter(),
-            Value::Function {
-                name,
-                properties,
-                annotations,
-                defsite,
-                parent,
-            } => properties.iter(),
-            Value::Class { name, properties } => properties.iter(),
 
             Value::String(_) => todo!(),
             Value::Integer(_) => todo!(),

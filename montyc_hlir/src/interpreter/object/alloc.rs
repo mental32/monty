@@ -10,6 +10,10 @@ use crate::interpreter::{runtime::eval::AstExecutor, HashKeyT, Runtime};
 
 use super::PyObject;
 
+/// An `ObjAllocId` is a unique identifier for an object which also implements the `PyObject` trait for convenience.
+///
+/// It is used to track the allocation of objects in the interpreter.
+///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjAllocId(pub usize);
 

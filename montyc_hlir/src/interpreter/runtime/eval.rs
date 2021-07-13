@@ -1,10 +1,10 @@
 //! An executor that walks over a module and evaluates them/their side effects.
 
-use std::{cell::RefCell, convert::TryInto, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use montyc_core::{ModuleRef, SpanRef};
+use montyc_core::SpanRef;
 use montyc_parser::{
-    ast::{self, ClassDef, FunctionDef, Module},
+    ast::{self, ClassDef},
     AstNode, AstObject, AstVisitor,
 };
 
@@ -13,9 +13,7 @@ use petgraph::{graph::NodeIndex, visit::NodeIndexable};
 use crate::{
     grapher::AstNodeGraph,
     interpreter::{
-        object::{
-            class::ClassObj, dict, func::Function, int::IntObj, string::StrObj, PyObject, RawObject,
-        },
+        object::{class::ClassObj, dict, int::IntObj, string::StrObj, PyObject, RawObject},
         HashKeyT, HostGlue, ObjAllocId, PyDictRaw, PyResult,
     },
 };
@@ -124,32 +122,6 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
             subgraphs: Default::default(),
             ast_object: ast_object_id,
             node_index: module.body.from_index(0),
-            eval_stack: vec![(namespace, frame)],
-        }
-    }
-
-    #[inline]
-    pub fn new_with_func(
-        runtime: &'global mut super::Runtime,
-        (ast_object, funcdef, graph): (
-            &'module Function,
-            &'module FunctionDef,
-            &'module AstNodeGraph,
-        ),
-        host: &'global dyn HostGlue,
-    ) -> Self {
-        let ast_object_id = ast_object.alloc_id();
-
-        let namespace = runtime.scope_graph.insert(ast_object_id);
-        let frame = StackFrame::Function(ast_object_id);
-
-        Self {
-            runtime,
-            graph,
-            host,
-            subgraphs: Default::default(),
-            ast_object: ast_object.alloc_id(),
-            node_index: graph.from_index(1),
             eval_stack: vec![(namespace, frame)],
         }
     }
@@ -382,19 +354,16 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
                     }
                 }
 
-                dbg!(&funcdef);
-
                 if let Some(ret) = &funcdef.returns {
                     let (returns, _) = ex.string("return")?;
 
                     match ret.inner.visit_with(ex)? {
                         Some(obj) => {
                             annotations.set_item(&mut ex.runtime, returns, obj);
-                            dbg!(ex
-                                .runtime
+                            ex.runtime
                                 .get_object(obj)
                                 .unwrap()
-                                .into_value(ex.runtime, &mut Default::default()))
+                                .into_value(ex.runtime, &mut Default::default())
                         }
 
                         None => todo!("NameError: argument annotation not found."),
@@ -436,64 +405,6 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
         }
     }
 }
-
-// /// Responsible for executing a single module.
-// pub(in crate::interpreter) struct ModuleExecutor<'global, 'module> {
-//     pub runtime: &'global mut super::Runtime,
-//     pub module: &'module crate::ModuleObject,
-//     pub host: &'global dyn HostGlue,
-
-//     pub node_index: NodeIndex<u32>,
-//     pub eval_stack: Vec<(NodeIndex<u32>, StackFrame)>,
-// }
-
-// impl<'global, 'module> ModuleExecutor<'global, 'module> {
-//     pub fn new(
-//         runtime: &'global mut super::Runtime,
-//         module: &'module crate::ModuleObject,
-//         host: &'global dyn HostGlue,
-//     ) -> Self {
-//         Self {
-//             runtime,
-//             module,
-//             host,
-//             node_index: module.body.from_index(0),
-//             eval_stack: vec![],
-//         }
-//     }
-
-//     #[inline]
-//     fn function_from_closure(&mut self, name: &str, f: func::NativeFn) -> PyResult<ObjAllocId> {
-//         let __class__ = self
-//             .runtime
-//             .builtins
-//             .getattr_static(self.runtime, "_function_type_")
-//             .unwrap();
-
-//         self.insert_new_object(move |ex, object_alloc_id| {
-//             let mut object = RawObject {
-//                 alloc_id: object_alloc_id,
-//                 __dict__: Default::default(),
-//                 __class__,
-//             };
-
-//             let value = ex.string(Some(name))?.0;
-//             ex.set_attribute(&mut object, "__name__", value)?;
-
-//             let value = ex.dict()?;
-//             ex.set_attribute(&mut object, "__annotations__", value)?;
-
-//             let object = func::Function {
-//                 header: RefCell::new(object),
-//                 inner: func::Callable::Native(f),
-//                 defsite: None,
-//             };
-
-//             Ok(Box::new(object))
-//         })
-//     }
-
-// }
 
 type EvalResult = PyResult<Option<ObjAllocId>>;
 

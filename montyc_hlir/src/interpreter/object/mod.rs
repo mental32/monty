@@ -109,8 +109,8 @@ pub mod int {
 
         fn into_value(
             &self,
-            rt: &Runtime,
-            object_graph: &mut crate::ObjectGraph,
+            _rt: &Runtime,
+            _object_graph: &mut crate::ObjectGraph,
         ) -> crate::Value {
             crate::Value::Integer(self.value)
         }
@@ -144,6 +144,7 @@ pub mod raw {
     }
 
     impl RawObject {
+        #[inline]
         pub fn into_value_dict(
             &self,
             rt: &Runtime,
@@ -151,27 +152,7 @@ pub mod raw {
         ) -> PyDictRaw<(NodeIndex, NodeIndex)> {
             let mut properties: PyDictRaw<_> = Default::default();
 
-            self.for_each(rt, &mut |rt, hash, key, value| {
-                let key = key.into_value(rt, object_graph);
-                let key = object_graph.add_string_node(
-                    if let crate::Value::String(st) = &key {
-                        rt.hash(st)
-                    } else {
-                        unreachable!()
-                    },
-                    key,
-                );
-
-                let value_alloc_id = value.alloc_id();
-                let value = value.into_value(rt, object_graph);
-                let value = if let crate::Value::String(st) = &value {
-                    object_graph.add_string_node(rt.hash(st), value)
-                } else {
-                    object_graph.add_node_traced(value, value_alloc_id)
-                };
-
-                properties.insert(hash, (key, value));
-            });
+            self.properties_into_values(rt, object_graph, &mut properties);
 
             properties
         }
@@ -250,6 +231,8 @@ pub(in crate::interpreter) use raw::RawObject;
 
 pub use dict::PyDictRaw;
 
+use crate::ObjectGraphIndex;
+
 use super::{runtime::eval::AstExecutor, HashKeyT, PyResult, Runtime};
 
 pub use alloc::ObjAllocId;
@@ -309,6 +292,31 @@ pub(in crate::interpreter) trait PyObject:
     /// Produce a `crate::Value` from this interpreter object.
     fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value;
 
+    #[inline]
+    fn properties_into_values(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph, properties: &mut PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>) {
+        self.for_each(rt, &mut |rt, hash, key, value| {
+            let key_value = key.into_value(rt, object_graph);
+            let key = object_graph.add_string_node(
+                if let crate::Value::String(st) = &key_value {
+                    rt.hash(st)
+                } else {
+                    unreachable!()
+                },
+                key_value,
+            );
+
+            let value_alloc_id = value.alloc_id();
+            let value = value.into_value(rt, object_graph);
+            let value = if let crate::Value::String(st) = &value {
+                object_graph.add_string_node(rt.hash(st), value)
+            } else {
+                object_graph.add_node_traced(value, value_alloc_id)
+            };
+
+            properties.insert(hash, (key, value));
+        });
+    }
+
     /// Support for `obj[x] = y` or `obj.__setitem__(x, y)`
     fn set_item(
         &mut self,
@@ -324,7 +332,7 @@ pub(in crate::interpreter) trait PyObject:
         None
     }
 
-    fn call(&self, ex: &mut AstExecutor, args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
+    fn call(&self, _ex: &mut AstExecutor, _args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
         todo!();
     }
 

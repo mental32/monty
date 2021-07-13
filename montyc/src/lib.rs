@@ -1,7 +1,8 @@
 #![warn(warnings)]
 
-mod opts;
-mod typechk;
+pub(crate) mod opts;
+pub(crate) mod typechk;
+pub(crate) mod ribs;
 
 pub mod prelude {
     use super::*;
