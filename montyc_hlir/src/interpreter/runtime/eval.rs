@@ -387,13 +387,13 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 }
 
 impl<'global, 'module> AstExecutor<'global, 'module> {
-    pub fn run_until_complete(mut self) -> PyResult<ObjAllocId> {
+    pub fn run_until_complete(mut self) -> PyResult<(ObjAllocId, ahash::AHashMap<NodeIndex, Rc<AstNodeGraph>>)> {
         let raw_nodes = self.graph.raw_nodes();
 
         loop {
             let node_index = self.node_index.index();
             let node = if node_index == NodeIndex::<u32>::end().index() {
-                return Ok(self.ast_object);
+                return Ok((self.ast_object, self.subgraphs));
             } else {
                 &raw_nodes[node_index].weight
             };

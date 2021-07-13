@@ -1,8 +1,12 @@
+use std::ops::Range;
+
 use crate::{ModuleRef, SpanRef, TypeId};
 
 use thiserror::Error;
 
 pub type MontyResult<T> = Result<T, MontyError>;
+
+pub type Span = Range<usize>;
 
 #[derive(Debug, Clone, Error)]
 pub enum TypeError {
@@ -32,8 +36,8 @@ pub enum TypeError {
     BadReturnType {
         expected: TypeId,
         actual: TypeId,
-        ret_node: SpanRef,
-        def_node: SpanRef,
+        ret_node: Span,
+        def_node: Span,
     },
 
     #[error("Incompatible type used within a conditional.")]
@@ -81,7 +85,7 @@ pub enum TypeError {
     Unsupported { span: SpanRef, message: String },
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, derive_more::From)]
 pub enum MontyError {
     #[error("An IO error.")]
     IO(std::io::Error),

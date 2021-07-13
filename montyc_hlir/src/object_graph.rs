@@ -1,22 +1,21 @@
-use std::ops::{Deref, DerefMut};
+use std::{ops::{Deref, DerefMut}, rc::Rc};
 
 use petgraph::graph::NodeIndex;
 
-use crate::{
-    interpreter::{self, object::ObjAllocId},
-    Value,
-};
+use crate::{Value, grapher::AstNodeGraph, interpreter::{self, object::ObjAllocId}};
 
 pub type ObjectGraphIndex = NodeIndex<u32>;
 
 #[derive(Debug, Default)]
 pub struct ObjectGraph {
     graph: petgraph::graph::DiGraph<Value, ()>,
+    pub ast_subgraphs: ahash::AHashMap<NodeIndex, Rc<AstNodeGraph>>,
     strings: ahash::AHashMap<u64, ObjectGraphIndex>,
     pub(crate) alloc_to_idx: ahash::AHashMap<interpreter::object::ObjAllocId, ObjectGraphIndex>,
 }
 
 impl ObjectGraph {
+    #[inline]
     pub fn iter_by_alloc_asc(&self) -> impl Iterator<Item = ObjectGraphIndex> {
         let mut allocs: Vec<_> = self.alloc_to_idx.iter().map(|(a, b)| (*a, *b)).collect();
 
@@ -25,12 +24,14 @@ impl ObjectGraph {
         allocs.into_iter().map(|(_, b)| b)
     }
 
+    #[inline]
     pub fn alloc_id_of(&self, idx: ObjectGraphIndex) -> Option<ObjAllocId> {
         self.alloc_to_idx
             .iter()
             .find_map(|(alloc, index)| (*index == idx).then(|| *alloc))
     }
 
+    #[inline]
     pub fn add_string_node(&mut self, hash: u64, string: crate::Value) -> ObjectGraphIndex {
         if let Some(idx) = self.strings.get(&hash) {
             return idx.clone();

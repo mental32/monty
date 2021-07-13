@@ -66,7 +66,9 @@ fn main() -> std::io::Result<()> {
         | CompilerOptions::Build { libstd, input, .. } => (libstd, input),
     };
 
-    gcx.include_module(input).unwrap();
+    if let Err(err) = gcx.include_module(input) {
+        panic!("{:?}", err);  // TODO: re-implement codespan error handling. 
+    }
 
     if let CompilerOptions::Expand { .. } = opts {
         todo!();

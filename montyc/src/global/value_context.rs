@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use montyc_core::{ModuleRef, MontyError, TypeError};
 use montyc_hlir::{typing::TypingContext, ObjectGraph, ObjectGraphIndex, Value};
 use montyc_parser::{AstNode, AstObject};
+use petgraph::graph::NodeIndex;
 
 use crate::{
     prelude::GlobalContext,
@@ -21,7 +22,7 @@ pub struct ValueContext<'this, 'gcx> {
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
     /// Get the AST node from the modules body via the given index.
-    pub fn get_node_from_body(&self, idx: petgraph::graph::NodeIndex) -> Option<AstNode> {
+    pub fn get_node_from_module_body(&self, idx: NodeIndex) -> Option<AstNode> {
         self.gcx
             .modules
             .get(self.mref)?
@@ -52,7 +53,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                     Some(defsite) => *defsite,
                 };
 
-                let funcdef = match cx.get_node_from_body(defsite).unwrap() {
+                let funcdef = match cx.get_node_from_module_body(defsite).unwrap() {
                     AstNode::FuncDef(funcdef) => funcdef,
                     _ => unreachable!(),
                 };
@@ -153,8 +154,6 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                 let ribs = Rc::new(RefCell::new(ribs));
 
                 for node in funcdef.body.iter() {
-                    let node = node.into_ast_node();
-
                     node.typecheck(TypeEvalContext {
                         value_cx: &cx,
                         expected_return_value: return_type,
@@ -165,7 +164,10 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                 Ok(())
             }
 
-            montyc_hlir::Value::Class { name, properties: _ } => {
+            montyc_hlir::Value::Class {
+                name,
+                properties: _,
+            } => {
                 let mut store = cx.gcx.value_store.borrow_mut();
 
                 let alloc_id = cx.object_graph.alloc_id_of(cx.value_idx).unwrap();
@@ -197,11 +199,12 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
 
             Value::Dict { object: _, data: _ } => todo!(),
 
-            Value::Module { mref: _, properties: _ } => unreachable!(),
+            Value::Module {
+                mref: _,
+                properties: _,
+            } => unreachable!(),
 
-            Value::Object(_)
-            | Value::String(_)
-            | Value::Integer(_) => Ok(()),
+            Value::Object(_) | Value::String(_) | Value::Integer(_) => Ok(()),
         }
     }
 }

@@ -337,9 +337,13 @@ impl Runtime {
         });
 
         let mut properties: PyDictRaw<_> = Default::default();
+        let mut subgraphs = Default::default();
 
         gcx.with_module(mref, &mut |module| {
-            module_object = AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
+            let (obj, graphs) = AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
+
+            module_object = obj;
+            subgraphs = graphs;
 
             object_graph
                 .alloc_to_idx
@@ -349,6 +353,8 @@ impl Runtime {
 
             Ok(())
         })?;
+
+        object_graph.ast_subgraphs = subgraphs;
 
         let module_properties = match object_graph.node_weight_mut(module_index).unwrap() {
             crate::Value::Module { properties, .. } => properties,

@@ -41,7 +41,9 @@ pub struct Object {
     properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
 }
 
+/// A module object is a representation of a Python module.
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct ModuleObject {
     pub path: PathBuf,
     pub body: grapher::AstNodeGraph,
@@ -50,6 +52,8 @@ pub struct ModuleObject {
 }
 
 impl ModuleObject {
+    /// Create a new ModuleObject from a path and AST and module reference.
+    #[inline]
     pub fn new(path: PathBuf, ast: ast::Module, mref: ModuleRef) -> Self {
         let body = grapher::NewType(ast.clone()).into();
 
@@ -61,12 +65,15 @@ impl ModuleObject {
         }
     }
 
+    /// The path to the module.
+    #[inline]
     pub fn path(&self) -> &Path {
         &self.path
     }
 }
 
 #[derive(Debug)]
+#[allow(missing_docs)]
 pub enum Value {
     Object(self::Object),
 

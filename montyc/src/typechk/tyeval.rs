@@ -1,11 +1,15 @@
 //! Given the AST of a function, semantically evaluate it to reveal the types of the nodes.
 //!
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, ops::Range, rc::Rc};
 
-use montyc_core::{ModuleRef, TypeId};
-use montyc_hlir::{typing::TypingContext, ObjectGraph};
-use montyc_parser::{AstNode, AstObject, ast::{Atom, Expr}};
+use montyc_core::{ModuleRef, MontyError, TypeError, TypeId};
+use montyc_hlir::{ObjectGraph, Value, typing::TypingContext};
+use montyc_parser::{
+    ast::{Atom, Expr, FunctionDef, Primary},
+    spanned::Spanned,
+    AstNode, AstObject,
+};
 
 use crate::{global::value_context::ValueContext, prelude::GlobalContext, ribs::Ribs};
 
@@ -18,9 +22,25 @@ pub(crate) struct TypeEvalContext<'gcx, 'this> {
     pub ribs: Rc<RefCell<Ribs>>,
 }
 
-impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for AstNode {
+impl<'gcx, 'this, A> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for Spanned<A>
+where
+    A: AstObject,
+{
     fn typecheck(&self, cx: TypeEvalContext) -> montyc_core::MontyResult<Option<TypeId>> {
-        match self {
+        let Spanned { span, inner } = self;
+        let node = inner.into_ast_node();
+
+        (node, span.clone()).typecheck(cx)
+    }
+}
+
+impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
+    for (AstNode, Range<usize>)
+{
+    fn typecheck(&self, cx: TypeEvalContext) -> montyc_core::MontyResult<Option<TypeId>> {
+        let (node, span) = self;
+
+        match node {
             AstNode::Int(_) => Ok(Some(TypingContext::Int)),
             AstNode::Str(_) => Ok(Some(TypingContext::Str)),
             AstNode::Bool(_) => Ok(Some(TypingContext::Bool)),
@@ -39,22 +59,28 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
                 let name = asn.name.inner.as_name().unwrap();
                 let value_type = asn
                     .value
-                    .into_ast_node()
                     .typecheck(cx.clone())?
                     .expect("Assignment expressions should always produce a typed value");
 
                 if let Some(expected) = &asn.kind {
                     let expected_type = expected
-                        .into_ast_node()
                         .typecheck(cx.clone())?
                         .expect("Expected type of assignment should always produce a typed value");
 
                     if value_type != expected_type {
-                        todo!("Assignment expression type checking failed {:?} != {:?}", value_type, expected_type);
+                        todo!(
+                            "Assignment expression type checking failed {:?} != {:?}",
+                            value_type,
+                            expected_type
+                        );
                     }
                 }
 
-                log::trace!("[TypeEvalContext::typecheck] Assigning name={:?} as type={:?}", name, value_type);
+                log::trace!(
+                    "[TypeEvalContext::typecheck] Assigning name={:?} as type={:?}",
+                    name,
+                    value_type
+                );
 
                 cx.ribs.borrow_mut().add(name.group(), value_type);
 
@@ -65,14 +91,16 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
                 let mut elements = vec![];
 
                 for elem in elems {
-                    let elem_t = elem.into_ast_node().typecheck(cx.clone())?.expect("Tuple elements should always produce a typed value");
+                    let elem_t = elem
+                        .typecheck(cx.clone())?
+                        .expect("Tuple elements should always produce a typed value");
                     elements.push(elem_t);
                 }
 
                 cx.value_cx.gcx.typing_context.borrow_mut().tuple(elements);
 
                 Ok(None)
-            },
+            }
 
             AstNode::Name(name) => {
                 let sref = name.clone().unwrap_name();
@@ -83,14 +111,24 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
                 Ok(Some(type_id))
             }
 
-            AstNode::BinOp(Expr::BinOp { left: _, op: _, right: _ }) => {
+            AstNode::BinOp(Expr::BinOp {
+                left: _,
+                op: _,
+                right: _,
+            }) => Ok(todo!()),
 
-                Ok(todo!())
-            },
+            AstNode::IfExpr(Expr::If {
+                test: _,
+                body: left,
+                orelse: right,
+            }) => {
+                let left = left
+                    .typecheck(cx.clone())?
+                    .expect("If expression left side should always produce a typed value");
 
-            AstNode::IfExpr(Expr::If { test: _, body: left, orelse: right }) => {
-                let left = left.into_ast_node().typecheck(cx.clone())?.expect("If expression left side should always produce a typed value");
-                let right = right.into_ast_node().typecheck(cx.clone())?.expect("If expression right side should always produce a typed value");
+                let right = right
+                    .typecheck(cx.clone())?
+                    .expect("If expression right side should always produce a typed value");
 
                 let type_id = if left != right {
                     // Synthesize a new union type for the two sides.
@@ -100,7 +138,7 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
                 };
 
                 Ok(Some(type_id))
-            },
+            }
 
             AstNode::Unary(_) => todo!(),
             AstNode::NamedExpr(_) => todo!(),
@@ -108,33 +146,61 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
             AstNode::Ellipsis(_) => todo!(),
             AstNode::Subscript(_) => todo!(),
 
-            AstNode::Call(_) => todo!(),
+            AstNode::Call(Primary::Call { func, args }) => {
+                let func = func
+                    .typecheck(cx.clone())?
+                    .expect("Call expression function should always produce a typed value");
+
+                todo!();
+            }
 
             AstNode::Ret(ret) => {
                 let ret_t = ret
                     .value
                     .as_ref()
-                    .map(|expr| expr.into_ast_node().typecheck(cx.clone()))
+                    .map(|expr| expr.typecheck(cx.clone()))
                     .unwrap_or(Ok(Some(TypingContext::None)))?
                     .expect("return value expression should have a type.");
 
-                log::trace!("[TypeEvalContext::typecheck] Checking return value types {:?} == {:?}", ret_t, cx.expected_return_value);
+                log::trace!(
+                    "[TypeEvalContext::typecheck] Checking return value types {:?} == {:?}",
+                    ret_t,
+                    cx.expected_return_value
+                );
 
                 if cx.expected_return_value != ret_t {
-                    todo!(
-                        "mismatched return value {:?} != {:?}",
-                        ret_t,
-                        cx.expected_return_value
-                    );
+                    let funcdef = if let Value::Function { defsite: Some(defsite), .. } = cx.value_cx.value {
+                        cx.value_cx.get_node_from_module_body(*defsite).unwrap()
+                    } else {
+                        unreachable!();
+                    };
+
+                    let def_node = match funcdef {
+                        AstNode::FuncDef(FunctionDef { name, returns, .. }) => {
+                            name.span.start
+                                ..returns.map(|ret| ret.span.end).unwrap_or(name.span.end)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    return Err(MontyError::TypeError {
+                        module: cx.value_cx.mref,
+                        error: TypeError::BadReturnType {
+                            expected: cx.expected_return_value,
+                            actual: ret_t,
+                            ret_node: span.clone(),
+                            def_node,
+                        },
+                    });
                 }
 
                 Ok(None)
             }
 
             // truly unreachable patterns.
-            AstNode::IfExpr(_)
-            | AstNode::BinOp(_)
-            | AstNode::Tuple(_) => unreachable!("should've already been handled above. {:?}", self),
+            AstNode::IfExpr(_) | AstNode::BinOp(_) | AstNode::Call(_) | AstNode::Tuple(_) => {
+                unreachable!("should've already been handled above. {:?}", self)
+            }
         }
     }
 }
