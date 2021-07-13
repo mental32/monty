@@ -37,6 +37,7 @@ impl Ribs {
     pub fn get(&self, key: u32) -> Option<(TypeId, RibType)> {
         self.0
             .iter()
+            .rev()
             .find_map(|(kind, data)| data.get(&key).map(|v| (*v, *kind)))
     }
 }

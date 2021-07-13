@@ -156,9 +156,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                     let node = node.into_ast_node();
 
                     node.typecheck(TypeEvalContext {
-                        mref,
-                        gcx,
-                        object_graph,
+                        value_cx: &cx,
                         expected_return_value: return_type,
                         ribs: Rc::clone(&ribs),
                     })?;

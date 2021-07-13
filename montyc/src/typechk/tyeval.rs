@@ -7,15 +7,13 @@ use montyc_core::{ModuleRef, TypeId};
 use montyc_hlir::{typing::TypingContext, ObjectGraph};
 use montyc_parser::{AstNode, AstObject, ast::{Atom, Expr}};
 
-use crate::{prelude::GlobalContext, ribs::Ribs};
+use crate::{global::value_context::ValueContext, prelude::GlobalContext, ribs::Ribs};
 
 use super::Typecheck;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TypeEvalContext<'gcx, 'this> {
-    pub mref: ModuleRef,
-    pub gcx: &'gcx GlobalContext,
-    pub object_graph: &'this ObjectGraph,
+    pub value_cx: &'this ValueContext<'this, 'gcx>,
     pub expected_return_value: TypeId,
     pub ribs: Rc<RefCell<Ribs>>,
 }
@@ -56,6 +54,8 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
                     }
                 }
 
+                log::trace!("[TypeEvalContext::typecheck] Assigning name={:?} as type={:?}", name, value_type);
+
                 cx.ribs.borrow_mut().add(name.group(), value_type);
 
                 Ok(None)
@@ -69,14 +69,16 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
                     elements.push(elem_t);
                 }
 
-                cx.gcx.typing_context.borrow_mut().tuple(elements);
+                cx.value_cx.gcx.typing_context.borrow_mut().tuple(elements);
 
                 Ok(None)
             },
 
             AstNode::Name(name) => {
                 let sref = name.clone().unwrap_name();
-                let (type_id, _is_local) = cx.ribs.borrow().get(sref.group()).expect("NameError");
+                let (type_id, rib_type) = cx.ribs.borrow().get(sref.group()).expect("NameError");
+
+                log::trace!("[TypeEvalContext::typecheck] Performing name lookup {:?} -> {:?} (rib_type={:?})", sref, type_id, rib_type);
 
                 Ok(Some(type_id))
             }
@@ -115,6 +117,8 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for As
                     .map(|expr| expr.into_ast_node().typecheck(cx.clone()))
                     .unwrap_or(Ok(Some(TypingContext::None)))?
                     .expect("return value expression should have a type.");
+
+                log::trace!("[TypeEvalContext::typecheck] Checking return value types {:?} == {:?}", ret_t, cx.expected_return_value);
 
                 if cx.expected_return_value != ret_t {
                     todo!(
