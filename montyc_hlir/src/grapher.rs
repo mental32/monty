@@ -103,74 +103,46 @@ impl AstVisitor for NodeGrapher<'_> {
     }
 }
 
-
-impl From<NewType<ast::FunctionDef>> for AstNodeGraph {
-    fn from(NewType(mut funcdef): NewType<ast::FunctionDef>) -> Self {
-        // Insert a universal "entry" node.
-        funcdef.body.insert(
-            0,
-            Spanned {
-                span: 0..0,
-                inner: ast::Statement::Pass,
-            },
-        );
-
-        // Insert a universal "exit" node.
-        funcdef.body.push(Spanned {
-            span: 0..0,
-            inner: ast::Statement::Pass,
-        });
-
-        funcdef.body.retain(|node| {
-            !matches!(
-                node.into_ast_node(),
-                AstNode::Comment(_),
-            )
-        });
-
-        let graph = AstNodeGraph::new();
-        let grapher = NodeGrapher {
-            graph,
-            last: None,
-            seq: funcdef.body.iter().peekable(),
-        };
-
-        grapher.consume()
-    }
+macro_rules! node_grapher {
+    ($t:path) => {
+        impl From<NewType<$t>> for AstNodeGraph {
+            fn from(NewType(mut thing): NewType<$t>) -> Self {
+                // Insert a universal "entry" node.
+                thing.body.insert(
+                    0,
+                    Spanned {
+                        span: 0..0,
+                        inner: ast::Statement::Pass,
+                    },
+                );
+        
+                // Insert a universal "exit" node.
+                thing.body.push(Spanned {
+                    span: 0..0,
+                    inner: ast::Statement::Pass,
+                });
+        
+                thing.body.retain(|node| {
+                    !matches!(
+                        node.into_ast_node(),
+                        AstNode::Comment(_),
+                    )
+                });
+        
+                let graph = AstNodeGraph::new();
+                let grapher = NodeGrapher {
+                    graph,
+                    last: None,
+                    seq: thing.body.iter().peekable(),
+                };
+        
+                grapher.consume()
+            }
+        }
+    };
 }
 
 
-impl From<NewType<ast::Module>> for AstNodeGraph {
-    fn from(NewType(mut module): NewType<ast::Module>) -> Self {
-        // Insert a universal "entry" node.
-        module.body.insert(
-            0,
-            Spanned {
-                span: 0..0,
-                inner: ast::Statement::Pass,
-            },
-        );
-
-        // Insert a universal "exit" node.
-        module.body.push(Spanned {
-            span: 0..0,
-            inner: ast::Statement::Pass,
-        });
-
-        module.body.retain(|node| {
-            !matches!(
-                node.into_ast_node(),
-                AstNode::Comment(_)
-            )
-        });
-
-        let graph = AstNodeGraph::new();
-        let grapher = NodeGrapher {
-            graph,
-            last: None,
-            seq: module.body.iter().peekable(),
-        };
-
-        grapher.consume()
-    }
-}
+node_grapher!(ast::FunctionDef);
+node_grapher!(ast::Module);
+node_grapher!(ast::ClassDef);

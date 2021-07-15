@@ -79,6 +79,7 @@ impl AstObject for AstNode {
                 AstNode::If(ifch) => ifch.visit_with(visitor),
                 AstNode::Assign(asn) => asn.visit_with(visitor),
                 AstNode::Ret(ret) => ret.visit_with(visitor),
+                AstNode::Str(st) => st.visit_with(visitor),
                 _ => todo!("{:?}", self),
             }
         }

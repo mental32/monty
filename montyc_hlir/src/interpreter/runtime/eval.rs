@@ -11,7 +11,7 @@ use montyc_parser::{
 use petgraph::{graph::NodeIndex, visit::NodeIndexable};
 
 use crate::{
-    grapher::AstNodeGraph,
+    grapher::{AstNodeGraph, NewType},
     interpreter::{
         object::{class::ClassObj, dict, int::IntObj, string::StrObj, PyObject, RawObject},
         HashKeyT, HostGlue, ObjAllocId, PyDictRaw, PyResult,
@@ -24,6 +24,7 @@ use super::object::func;
 pub(in crate::interpreter) enum StackFrame {
     Module(ObjAllocId),
     Function(ObjAllocId),
+    Class(ObjAllocId),
 }
 
 macro_rules! patma {
@@ -143,7 +144,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
     pub fn define(&mut self, name: SpanRef, value: ObjAllocId) -> PyResult<()> {
         let (_, frame) = self.eval_stack.last().as_ref().unwrap();
         let mut frame =
-            patma!(*o => StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
+            patma!(*o => StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
         let st_name = self.host.spanref_to_str(name);
         let (name, hash) = self.string(st_name)?;
@@ -387,7 +388,9 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 }
 
 impl<'global, 'module> AstExecutor<'global, 'module> {
-    pub fn run_until_complete(mut self) -> PyResult<(ObjAllocId, ahash::AHashMap<NodeIndex, Rc<AstNodeGraph>>)> {
+    pub fn run_until_complete(
+        mut self,
+    ) -> PyResult<(ObjAllocId, ahash::AHashMap<NodeIndex, Rc<AstNodeGraph>>)> {
         let raw_nodes = self.graph.raw_nodes();
 
         loop {
@@ -484,6 +487,51 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
 
     fn visit_classdef(&mut self, classdef: &ast::ClassDef) -> EvalResult {
         let class_obj = self.new_class_object(classdef)?;
+        let class_name = classdef.name.inner.as_name().unwrap();
+
+        let idx = self.graph
+            .raw_nodes()
+            .iter()
+            .enumerate()
+            .find_map(|(idx, node)| {
+                if matches!(&node.weight, AstNode::ClassDef(klass) if klass.name.inner.as_name().map(|sref| sref.distinct() == class_name.distinct()).unwrap_or(false)) {
+                    Some(NodeIndex::from(idx as u32))
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+
+        self.within_subgraph(idx, || NewType(classdef.clone()).into(), |ex, graph| {
+            let raw_nodes = graph.raw_nodes();
+            let mut node_index = graph.from_index(0);
+
+            ex.eval_stack.push((idx, StackFrame::Class(class_obj.alloc_id())));
+
+            while {
+                ex.eval_stack
+                    .last()
+                    .map(|(_, frame)| matches!(frame, &StackFrame::Class(id) if id == class_obj.alloc_id()))
+                    .unwrap_or(false)
+            } {
+                let node = if node_index == NodeIndex::<u32>::end() {
+                    break;
+                } else {
+                    &raw_nodes[node_index.index()].weight
+                };
+
+                node.visit_with(ex)?;
+
+                node_index = graph
+                    .neighbors_directed(node_index, petgraph::EdgeDirection::Outgoing)
+                    .next()
+                    .unwrap_or(NodeIndex::end());
+            }
+
+            assert!(matches!(ex.eval_stack.pop(), Some((_, StackFrame::Class(id))) if id == class_obj.alloc_id()));
+
+            Ok(())
+        })?;
 
         self.define(classdef.name.inner.as_name().unwrap(), class_obj)?;
 
@@ -531,8 +579,12 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
         todo!("{:?}", int)
     }
 
-    fn visit_str(&mut self, int: &ast::Atom) -> EvalResult {
-        todo!("{:?}", int)
+    fn visit_str(&mut self, st: &ast::Atom) -> EvalResult {
+        let st = patma!(s => ast::Atom::Str(s) in st).unwrap().clone();
+        let st = self.host.spanref_to_str(st);
+        let (string, _) = self.string(st)?;
+        self.advance_next_node();
+        Ok(Some(string))
     }
 
     fn visit_none(&mut self, int: &ast::Atom) -> EvalResult {
