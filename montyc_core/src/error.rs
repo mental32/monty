@@ -52,11 +52,13 @@ pub enum TypeError {
 
     #[error("Object is not callable.")]
     NotCallable { kind: TypeId, callsite: SpanRef },
-    //     #[error("Failed to infer the type of a value.")]
-    //     UnknownType { node: Rc<dyn AstObject> },
 
-    // #[error("Could not find the definition of this variable.")]
-    // UndefinedVariable { node: Rc<dyn AstObject> },
+    #[error("Failed to infer the type of a value.")]
+    UnknownType { sref: String },
+
+    #[error("Could not find the definition of this variable.")]
+    UndefinedVariable { sref: String },
+
     #[error("Incompatible argument type.")]
     BadArgumentType {
         expected: TypeId,

@@ -72,6 +72,7 @@ builtins!(
     .8 = Unknown { "unknown", 0 },
     .9 = Type { "type", 8 },
     .10 = Object { "object", 8 },
+    .11 = UntypedFunc { "function", 0 },
     // Primitive, lower-level types.
     .100 = U8 { "u8", 1 },
     .101 = U17 { "u16", 2 },
@@ -192,7 +193,22 @@ impl TypingContext {
     #[inline]
     pub fn tuple(&mut self, elements: Vec<TypeId>) -> TypeId {
         self.inner.insert(Type {
-            kind: PythonType::Tuple { members: Some(elements) },
+            kind: PythonType::Tuple {
+                members: Some(elements),
+            },
+            layout: ObjectLayout {},
+        })
+    }
+
+    /// Create a callable type from a signature.
+    #[inline]
+    pub fn callable(&mut self, args: Option<Vec<TypeId>>, ret: TypeId) -> TypeId {
+        self.inner.insert(Type {
+            kind: PythonType::Callable {
+                args,
+                ret,
+            },
+
             layout: ObjectLayout {},
         })
     }

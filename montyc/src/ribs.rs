@@ -5,6 +5,7 @@ pub type RibData = AHashMap<u32, TypeId>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RibType {
+    Builtins,
     Global,
     Local,
 }
@@ -30,6 +31,12 @@ impl Ribs {
             rib.insert(key, value);
             (RibType::Local, rib)
         });
+    }
+
+    /// Extend by adding multiple entries into one level.
+    #[inline]
+    pub fn extend(&mut self, it: impl Iterator<Item = (u32, TypeId)>) {
+        self.0.push((RibType::Local, it.collect()));
     }
 
     /// Get the type associated with a name's span group.

@@ -1,8 +1,8 @@
 use std::{cell::RefCell, rc::Rc};
 
-use montyc_core::{ModuleRef, MontyError, TypeError};
+use montyc_core::{ModuleRef, MontyError, MontyResult, TypeError, TypeId};
 use montyc_hlir::{typing::TypingContext, ObjectGraph, ObjectGraphIndex, Value};
-use montyc_parser::{AstNode, AstObject};
+use montyc_parser::AstNode;
 use petgraph::graph::NodeIndex;
 
 use crate::{
@@ -18,6 +18,7 @@ pub struct ValueContext<'this, 'gcx> {
     pub value: &'this Value,
     pub value_idx: ObjectGraphIndex,
     pub object_graph: &'this ObjectGraph,
+    pub object_graph_index: usize,
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
@@ -33,8 +34,8 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
     }
 }
 
-impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
-    fn typecheck(&self, cx: ValueContext) -> montyc_core::MontyResult<()> {
+impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::Value {
+    fn typecheck(&self, cx: ValueContext) -> MontyResult<TypeId> {
         match self {
             montyc_hlir::Value::Function {
                 name: _,
@@ -46,10 +47,11 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                 cx.gcx.value_store.borrow_mut().insert(
                     cx.value_idx,
                     cx.object_graph.alloc_id_of(cx.value_idx).unwrap(),
+                    cx.object_graph_index,
                 );
 
                 let defsite = match defsite {
-                    None => return Ok(()),
+                    None => return Ok(TypingContext::UntypedFunc),
                     Some(defsite) => *defsite,
                 };
 
@@ -59,26 +61,20 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                 };
 
                 let funcdef_args = funcdef.args.as_ref();
+                let ribs = Rc::new(RefCell::new({
+                    if cx.mref != ModuleRef(1) {
+                        let builtin_rib = cx
+                            .gcx
+                            .value_store
+                            .borrow_mut()
+                            .get_rib_data_of(ModuleRef(1))
+                            .unwrap();
 
-                if let Some(args) = funcdef_args {
-                    let mut seen = ahash::AHashSet::with_capacity(args.len());
-
-                    // Verify that the parameter names are all unique.
-                    for (arg, _) in args.iter() {
-                        // true iff the spanref group was already present in the set.
-                        if !seen.insert(arg.group()) {
-                            return Err(MontyError::TypeError {
-                                module: cx.mref.clone(),
-                                error: TypeError::DuplicateParameters,
-                            });
-                        }
+                        Ribs::new(Some(builtin_rib), Some(RibType::Builtins))
+                    } else {
+                        Ribs::new(None, None)
                     }
-
-                    // Ignore any function definitions with non-annotated arguments.
-                    if funcdef.is_dynamically_typed() {
-                        return Ok(());
-                    }
-                }
+                }));
 
                 let return_type = if let Some((_, ret_v)) =
                     annotations.get(cx.gcx.const_runtime.borrow().hash("return"))
@@ -108,50 +104,68 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                     TypingContext::None
                 };
 
+                let mut params =
+                    Vec::with_capacity(funcdef_args.map(|args| args.len()).unwrap_or(0));
+
+                let arg_t = if let Some(args) = funcdef_args {
+                    let mut seen = ahash::AHashSet::with_capacity(args.len());
+
+                    // Verify that the parameter names are all unique.
+                    for (arg, kind) in args.iter() {
+                        // true iff the spanref group was already present in the set.
+                        if !seen.insert(arg.group()) {
+                            return Err(MontyError::TypeError {
+                                module: cx.mref.clone(),
+                                error: TypeError::DuplicateParameters,
+                            });
+                        }
+
+                        if let Some(kind) = kind.as_ref() {
+                            let kind = kind
+                                .typecheck(TypeEvalContext {
+                                    value_cx: &cx,
+                                    expected_return_value: return_type,
+                                    ribs: Rc::clone(&ribs),
+                                })?
+                                .unwrap();
+
+                            params.push((arg.group(), kind))
+                        }
+                    }
+
+                    // Ignore any function definitions with non-annotated arguments.
+                    if funcdef.is_dynamically_typed() {
+                        return Ok(TypingContext::UntypedFunc);
+                    } else {
+                        Some(params.iter().map(|(_, t)| *t).collect())
+                    }
+                } else {
+                    None
+                };
+
+                let func_type = cx
+                    .gcx
+                    .typing_context
+                    .borrow_mut()
+                    .callable(arg_t, return_type);
+
                 // Don't typecheck the bodies of ellipsis-stubbed functions as they are
                 // essentially either "extern" declarations or nops.
                 if funcdef.is_ellipsis_stubbed() || parent.is_none() {
-                    return Ok(());
+                    return Ok(func_type);
                 }
 
-                let parent = parent.unwrap();
+                {
+                    let module_rib = cx
+                        .gcx
+                        .value_store
+                        .borrow_mut()
+                        .get_rib_data_of(cx.mref)
+                        .unwrap();
 
-                let ValueContext {
-                    mref,
-                    gcx,
-                    object_graph,
-                    ..
-                } = cx;
-
-                let ribs = {
-                    let mut names = ahash::AHashMap::new();
-                    let parent = object_graph.node_weight(parent).unwrap();
-
-                    for (_, (key, value)) in parent.iter() {
-                        let key = object_graph
-                            .node_weight(*key)
-                            .map(|weight| match weight {
-                                Value::String(st) => {
-                                    montyc_hlir::HostGlue::name_to_spanref(cx.gcx, st)
-                                }
-                                _ => unreachable!(),
-                            })
-                            .unwrap();
-
-                        let value_t = match object_graph.node_weight(*value).unwrap() {
-                            Value::Module { .. } => TypingContext::Module,
-                            Value::String(_) => TypingContext::Str,
-                            Value::Integer(_) => TypingContext::Int,
-                            _ => TypingContext::Unknown,
-                        };
-
-                        names.insert(key.group(), value_t);
-                    }
-
-                    Ribs::new(Some(names), Some(RibType::Global))
-                };
-
-                let ribs = Rc::new(RefCell::new(ribs));
+                    ribs.borrow_mut().extend(module_rib.into_iter());
+                    ribs.borrow_mut().extend(params.into_iter());
+                }
 
                 for node in funcdef.body.iter() {
                     node.typecheck(TypeEvalContext {
@@ -161,23 +175,24 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                     })?;
                 }
 
-                Ok(())
+                Ok(func_type)
             }
 
             montyc_hlir::Value::Class {
                 name,
                 properties: _,
             } => {
+                log::trace!("[Value::typecheck(ValueContext)] Typechecking Value::Class {{ name: {:?} }}", name);
+
                 let mut store = cx.gcx.value_store.borrow_mut();
 
                 let alloc_id = cx.object_graph.alloc_id_of(cx.value_idx).unwrap();
-                let value_id = store.insert(cx.value_idx, alloc_id);
-
-                store.set_type_of(value_id, {
+                let value_id = store.insert(cx.value_idx, alloc_id, cx.object_graph_index);
+                let type_id = {
                     if cx.mref == ModuleRef(1) {
                         // builtins
 
-                        let ty = match name.as_str() {
+                        let type_id = match name.as_str() {
                             "int" => TypingContext::Int,
                             "str" => TypingContext::Str,
                             "bool" => TypingContext::Bool,
@@ -187,24 +202,28 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>> for montyc_hlir::Value {
                             name => todo!("custom builtin class is not supported yet {:?}", name),
                         };
 
-                        Some(ty)
+                        log::trace!("[Value::typecheck(ValueContext)] Setting value = {:?} as class of type = {:?}", value_id, type_id);
+
+                        store.set_class_of(type_id, value_id);
+
+                        Some(type_id)
                     } else {
                         // any other module.
                         todo!();
                     }
-                });
+                };
 
-                Ok(())
+                store.set_type_of(value_id, type_id);
+
+                Ok(store.type_of(value_id).unwrap())
             }
 
             Value::Dict { object: _, data: _ } => todo!(),
 
-            Value::Module {
-                mref: _,
-                properties: _,
-            } => unreachable!(),
-
-            Value::Object(_) | Value::String(_) | Value::Integer(_) => Ok(()),
+            Value::Module { .. } => Ok(TypingContext::Module),
+            Value::String(_) => Ok(TypingContext::Str),
+            Value::Integer(_) => Ok(TypingContext::Int),
+            Value::Object(_) => Ok(TypingContext::Object),
         }
     }
 }

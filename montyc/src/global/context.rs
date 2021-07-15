@@ -234,19 +234,19 @@ pub struct GlobalContext {
     static_names: StaticNames,
 
     /// A registry of the current modules that have been included.
-    pub(super) modules: SSAMap<ModuleRef, RefCell<montyc_hlir::ModuleObject>>,
+    pub(crate) modules: SSAMap<ModuleRef, RefCell<montyc_hlir::ModuleObject>>,
 
     /// A map of all the source code for every module imported.
     module_sources: ahash::AHashMap<ModuleRef, Box<str>>,
 
     /// An interpreter runtime for consteval.
-    pub(super) const_runtime: RefCell<interpreter::Runtime>,
+    pub(crate) const_runtime: RefCell<interpreter::Runtime>,
 
     /// Used to keep track of type information.
     pub(crate) typing_context: RefCell<TypingContext>,
 
     /// A global caching store for all processed values.
-    pub(super) value_store: RefCell<GlobalValueStore>,
+    pub(crate) value_store: RefCell<GlobalValueStore>,
 }
 
 impl GlobalContext {
@@ -361,7 +361,7 @@ impl GlobalContext {
             let (module_index, object_graph) =
                 gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
 
-            let object_graph = gcx
+            let (object_graph, object_graph_index) = gcx
                 .value_store
                 .borrow_mut()
                 .insert_object_graph(object_graph);
@@ -376,16 +376,60 @@ impl GlobalContext {
                 _ => unreachable!(),
             };
 
-            for value_idx in properties.iter_by_alloc_asc(object_graph) {
+            let module_alloc_id = object_graph.alloc_id_of(module_index).unwrap();
+            let _ = gcx.value_store.borrow_mut().insert_module(
+                module_index,
+                module_alloc_id,
+                object_graph_index,
+            );
+
+            let mut rib = {
+                let parent = object_graph.node_weight(module_index).unwrap();
+                let mut names = ahash::AHashMap::new();
+
+                for (_, (key, _)) in parent.iter() {
+                    let key = object_graph
+                        .node_weight(*key)
+                        .map(|weight| match weight {
+                            Value::String(st) => montyc_hlir::HostGlue::name_to_spanref(gcx, st),
+                            _ => unreachable!(),
+                        })
+                        .unwrap();
+
+                    names.insert(key.group(), TypingContext::Unknown);
+                }
+
+                names
+            };
+
+            gcx.value_store
+                .borrow_mut()
+                .set_rib_data_of(mref, Some(rib.clone()));
+
+            for (key_idx, value_idx) in properties.iter_by_alloc_asc(object_graph) {
                 let value = object_graph.node_weight(value_idx).unwrap();
 
-                value.typecheck(ValueContext {
+                let value_type = value.typecheck(ValueContext {
                     mref,
                     gcx,
                     value,
                     value_idx,
                     object_graph,
+                    object_graph_index,
                 })?;
+
+                if let Some(key) = object_graph
+                    .node_weight(key_idx)
+                    .map(|weight| match weight {
+                        Value::String(st) => montyc_hlir::HostGlue::name_to_spanref(gcx, st),
+                        _ => unreachable!(),
+                    })
+                {
+                    rib.insert(key.group(), value_type);
+                    gcx.value_store
+                        .borrow_mut()
+                        .set_rib_data_of(mref, Some(rib.clone()));
+                }
             }
 
             Ok(mref)

@@ -3,15 +3,15 @@
 
 use std::{cell::RefCell, ops::Range, rc::Rc};
 
-use montyc_core::{ModuleRef, MontyError, TypeError, TypeId};
-use montyc_hlir::{ObjectGraph, Value, typing::TypingContext};
+use montyc_core::{MontyError, TypeError, TypeId};
+use montyc_hlir::{HostGlue, Value, typing::TypingContext};
 use montyc_parser::{
     ast::{Atom, Expr, FunctionDef, Primary},
     spanned::Spanned,
     AstNode, AstObject,
 };
 
-use crate::{global::value_context::ValueContext, prelude::GlobalContext, ribs::Ribs};
+use crate::{global::value_context::ValueContext, ribs::Ribs};
 
 use super::Typecheck;
 
@@ -104,18 +104,44 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
 
             AstNode::Name(name) => {
                 let sref = name.clone().unwrap_name();
-                let (type_id, rib_type) = cx.ribs.borrow().get(sref.group()).expect("NameError");
+                let (type_id, rib_type) = match cx.ribs.borrow().get(sref.group()) {
+                    Some(i) => dbg!(i),
+                    None => {
+                        return Err(MontyError::TypeError {
+                            module: cx.value_cx.mref,
+                            error: TypeError::UndefinedVariable { sref: cx.value_cx.gcx.spanref_to_str(sref).to_string() },
+                        })
+                    }
+                };
+
+                if type_id == TypingContext::Unknown {
+                    return Err(MontyError::TypeError {
+                        module: cx.value_cx.mref,
+                        error: TypeError::UnknownType { sref: cx.value_cx.gcx.spanref_to_str(sref).to_string() },
+                    });
+                }
 
                 log::trace!("[TypeEvalContext::typecheck] Performing name lookup {:?} -> {:?} (rib_type={:?})", sref, type_id, rib_type);
 
                 Ok(Some(type_id))
             }
 
-            AstNode::BinOp(Expr::BinOp {
-                left: _,
-                op: _,
-                right: _,
-            }) => Ok(todo!()),
+            AstNode::BinOp(Expr::BinOp { left, op: _, right }) => {
+                let left_type = left.typecheck(cx.clone())?.expect(
+                    "Left-hand side of binary operation should always produce a typed value",
+                );
+
+                let value_store = cx.value_cx.gcx.value_store.borrow();
+
+                let left_class = value_store.class_of(left_type);
+                log::trace!("[TypeEvalContext::typecheck] Getting class of type_id={:?} -> {:?}", left_type, left_class);
+
+                let _right_type = right.typecheck(cx.clone())?.expect(
+                    "Right-hand side of binary operation should always produce a typed value",
+                );
+
+                Ok(todo!("{:?}", left_class))
+            }
 
             AstNode::IfExpr(Expr::If {
                 test: _,
@@ -146,8 +172,8 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
             AstNode::Ellipsis(_) => todo!(),
             AstNode::Subscript(_) => todo!(),
 
-            AstNode::Call(Primary::Call { func, args }) => {
-                let func = func
+            AstNode::Call(Primary::Call { func, args: _ }) => {
+                let _func = func
                     .typecheck(cx.clone())?
                     .expect("Call expression function should always produce a typed value");
 
@@ -169,7 +195,11 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
                 );
 
                 if cx.expected_return_value != ret_t {
-                    let funcdef = if let Value::Function { defsite: Some(defsite), .. } = cx.value_cx.value {
+                    let funcdef = if let Value::Function {
+                        defsite: Some(defsite),
+                        ..
+                    } = cx.value_cx.value
+                    {
                         cx.value_cx.get_node_from_module_body(*defsite).unwrap()
                     } else {
                         unreachable!();

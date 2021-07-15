@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeSet,
     ops::{Deref, DerefMut},
 };
 
@@ -67,17 +66,21 @@ where
 
 impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
     /// Return an iterator of object indecies sorted by old to young.
-    pub fn iter_by_alloc_asc(&self, graph: &ObjectGraph) -> impl Iterator<Item = ObjectGraphIndex> {
+    pub fn iter_by_alloc_asc(
+        &self,
+        graph: &ObjectGraph,
+    ) -> impl Iterator<Item = (ObjectGraphIndex, ObjectGraphIndex)> {
         let values = {
-            let mut values = BTreeSet::new();
+            let mut values = ahash::AHashMap::new();
 
-            for (_, value) in self.0.values() {
+            for (key, value) in self.0.values() {
                 log::trace!(
                     "[PyDictRaw::iter_by_alloc_asc] {:?} := {:?}",
                     value,
                     graph.node_weight(*value)
                 );
-                values.insert(*value);
+
+                values.insert(*value, *key);
             }
 
             values
@@ -87,30 +90,21 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
             .alloc_to_idx
             .iter()
             .filter_map(|(alloc, index)| {
+                let pair = values.get(index).map(|key| (*alloc, *index, *key));
+
                 log::trace!(
-                    "[PyDictRaw::iter_by_alloc_asc] Checking filter for value pair: {:?} ({:?})",
+                    "[PyDictRaw::iter_by_alloc_asc] Checking filter for value pair: {:?} -> Filter result? {}",
                     (index, alloc),
-                    graph.node_weight(*index)
-                );
-
-                let pair = values.contains(index).then(|| (*alloc, *index));
-
-                log::trace!(
-                    "[PyDictRaw::iter_by_alloc_asc] Filter result? {}",
-                    if pair.is_some() {
-                        "Retained"
-                    } else {
-                        "Discarded"
-                    }
+                    pair.as_ref().map(|_| "Retained").unwrap_or("Discarded")
                 );
 
                 pair
             })
             .collect();
 
-        allocs.sort_unstable_by(|(a, _), (b, _)| a.0.cmp(&b.0));
+        allocs.sort_unstable_by(|(a, _, _), (b, _, _)| a.0.cmp(&b.0));
 
-        allocs.into_iter().map(|(_, b)| b)
+        allocs.into_iter().map(|(_, value, key)| (key, value))
     }
 }
 
