@@ -6,7 +6,10 @@ use std::{
     rc::Rc,
 };
 
-use crate::interpreter::{runtime::eval::AstExecutor, HashKeyT, Runtime};
+use crate::{
+    interpreter::{runtime::eval::AstExecutor, HashKeyT, Runtime},
+    ObjectGraphIndex,
+};
 
 use super::PyObject;
 
@@ -18,22 +21,39 @@ use super::PyObject;
 pub struct ObjAllocId(pub usize);
 
 impl ObjAllocId {
-    pub(in crate::interpreter) fn setattr_static(&mut self, rt: &mut Runtime, key: impl Hash, value: ObjAllocId) {
+    pub(in crate::interpreter) fn setattr_static(
+        &mut self,
+        rt: &mut Runtime,
+        key: impl Hash,
+        value: ObjAllocId,
+    ) {
         let hash = rt.hash(key);
         self.set_attribute_direct(rt, hash, value, value);
     }
 
-    pub(in crate::interpreter) fn getattr_static(&self, rt: &Runtime, key: impl Hash) -> Option<ObjAllocId> {
+    pub(in crate::interpreter) fn getattr_static(
+        &self,
+        rt: &Runtime,
+        key: impl Hash,
+    ) -> Option<ObjAllocId> {
         let hash = rt.hash(key);
         self.get_attribute_direct(rt, hash, ObjAllocId(0))
     }
 
-    pub(in crate::interpreter) fn as_ref<T>(&self, rt: &Runtime, mut f: impl FnMut(&dyn PyObject) -> T) -> T {
+    pub(in crate::interpreter) fn as_ref<T>(
+        &self,
+        rt: &Runtime,
+        mut f: impl FnMut(&dyn PyObject) -> T,
+    ) -> T {
         let object = rt.get_object(self.alloc_id()).unwrap();
         f(&*object)
     }
 
-    pub(in crate::interpreter) fn as_mut<T>(&self, rt: &Runtime, mut f: impl FnMut(&mut dyn PyObject) -> T) -> T {
+    pub(in crate::interpreter) fn as_mut<T>(
+        &self,
+        rt: &Runtime,
+        mut f: impl FnMut(&mut dyn PyObject) -> T,
+    ) -> T {
         let object = rt.objects.get(self.alloc_id()).unwrap().clone();
         let object = &mut *object.borrow_mut();
         let object = Rc::get_mut(object).unwrap();
@@ -76,7 +96,7 @@ impl PyObject for ObjAllocId {
         rt.get_object(self.alloc_id()).unwrap().for_each(rt, f)
     }
 
-    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value {
+    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> ObjectGraphIndex {
         self.as_ref(rt, |obj| obj.into_value(rt, object_graph))
     }
 

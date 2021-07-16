@@ -12,10 +12,9 @@ use montyc_parser::ast::ImportDecl;
 
 pub use {object::PyDictRaw, runtime::Runtime};
 
-pub use object::alloc::ObjAllocId;
+pub use {object::alloc::ObjAllocId, runtime::UniqueNodeIndex};
 
-use crate::{ModuleObject};
-
+use crate::ModuleObject;
 
 /// A trait to be implemented by the owner of a runtime.
 pub trait HostGlue {

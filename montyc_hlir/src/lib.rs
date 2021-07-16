@@ -11,11 +11,12 @@
 //! to alleviate the problems working purely with an AST-based representation.
 #![warn(missing_docs)]
 
+pub mod code;
 mod grapher;
 pub mod interpreter;
 pub mod typing;
-pub mod code;
 
+use interpreter::UniqueNodeIndex;
 pub use interpreter::{HostGlue, ObjAllocId};
 
 use std::path::{Path, PathBuf};
@@ -34,7 +35,7 @@ pub use object_graph::{ObjectGraph, ObjectGraphIndex};
 /// They represent an object during compilation and keep track of
 /// properties such as the object's type or attributes.
 ///
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Object {
     type_id: TypeId,
 
@@ -72,7 +73,7 @@ impl ModuleObject {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum Value {
     Object(self::Object),
@@ -86,7 +87,7 @@ pub enum Value {
     Integer(i64),
 
     Dict {
-        object: self::Object,
+        object: ObjectGraphIndex,
         data: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
     },
 
@@ -94,7 +95,7 @@ pub enum Value {
         name: String,
         properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
         annotations: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-        defsite: Option<ObjectGraphIndex>,
+        defsite: Option<UniqueNodeIndex>,
         parent: Option<ObjectGraphIndex>,
     },
 

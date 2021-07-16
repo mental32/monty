@@ -35,6 +35,7 @@ pub enum AstNode {
     Subscript(models::Primary),
     Call(models::Primary),
     Ret(models::Return),
+    While(models::While),
     Pass,
 }
 

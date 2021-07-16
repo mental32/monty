@@ -4,7 +4,10 @@
 use std::{cell::RefCell, ops::Range, rc::Rc};
 
 use montyc_core::{MontyError, TypeError, TypeId};
-use montyc_hlir::{HostGlue, Value, typing::TypingContext};
+use montyc_hlir::{
+    typing::{PythonType, TypingContext},
+    HostGlue, ObjectGraph, Value,
+};
 use montyc_parser::{
     ast::{Atom, Expr, FunctionDef, Primary},
     spanned::Spanned,
@@ -54,6 +57,7 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
             AstNode::FuncDef(_) => todo!(),
             AstNode::Import(_) => todo!(),
             AstNode::If(_) => todo!(),
+            AstNode::While(_) => todo!(),
 
             AstNode::Assign(asn) => {
                 let name = asn.name.inner.as_name().unwrap();
@@ -104,20 +108,23 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
 
             AstNode::Name(name) => {
                 let sref = name.clone().unwrap_name();
-                let (type_id, rib_type) = match cx.ribs.borrow().get(sref.group()) {
-                    Some(i) => dbg!(i),
-                    None => {
-                        return Err(MontyError::TypeError {
+                let (type_id, rib_type) =
+                    cx.ribs
+                        .borrow()
+                        .get(sref.group())
+                        .ok_or_else(|| MontyError::TypeError {
                             module: cx.value_cx.mref,
-                            error: TypeError::UndefinedVariable { sref: cx.value_cx.gcx.spanref_to_str(sref).to_string() },
-                        })
-                    }
-                };
+                            error: TypeError::UndefinedVariable {
+                                sref: cx.value_cx.gcx.spanref_to_str(sref).to_string(),
+                            },
+                        })?;
 
                 if type_id == TypingContext::Unknown {
                     return Err(MontyError::TypeError {
                         module: cx.value_cx.mref,
-                        error: TypeError::UnknownType { sref: cx.value_cx.gcx.spanref_to_str(sref).to_string() },
+                        error: TypeError::UnknownType {
+                            sref: cx.value_cx.gcx.spanref_to_str(sref).to_string(),
+                        },
                     });
                 }
 
@@ -126,21 +133,95 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
                 Ok(Some(type_id))
             }
 
-            AstNode::BinOp(Expr::BinOp { left, op: _, right }) => {
+            AstNode::BinOp(Expr::BinOp { left, op, right }) => {
+                fn get_class_graph_pair(
+                    type_id: TypeId,
+                    cx: &TypeEvalContext,
+                ) -> (Value, Rc<ObjectGraph>) {
+                    cx.value_cx
+                        .gcx
+                        .value_store
+                        .borrow()
+                        .class_of(type_id)
+                        .map(|(_, a, b)| (a.clone(), b.clone()))
+                        .unwrap()
+                }
+
                 let left_type = left.typecheck(cx.clone())?.expect(
                     "Left-hand side of binary operation should always produce a typed value",
                 );
 
-                let value_store = cx.value_cx.gcx.value_store.borrow();
+                let (left_class, left_graph) = get_class_graph_pair(left_type, &cx);
 
-                let left_class = value_store.class_of(left_type);
-                log::trace!("[TypeEvalContext::typecheck] Getting class of type_id={:?} -> {:?}", left_type, left_class);
+                log::trace!(
+                    "[TypeEvalContext::typecheck] Getting class of type_id={:?} -> {:?}",
+                    left_type,
+                    left_class
+                );
 
-                let _right_type = right.typecheck(cx.clone())?.expect(
+                let right_type = right.typecheck(cx.clone())?.expect(
                     "Right-hand side of binary operation should always produce a typed value",
                 );
 
-                Ok(todo!("{:?}", left_class))
+                // let (right_class, right_graph) = get_class_graph_pair(right_type, &cx);
+
+                let dunder = match op.as_ref() {
+                    "eq" => "__eq__".to_string(),
+                    st => format!("__{}__", st),
+                };
+
+                let (dunder_index, dunder_value) = if let Value::Class { properties, .. } =
+                    left_class
+                {
+                    let rt_ref = cx.value_cx.gcx.const_runtime.borrow();
+                    let (_, attr) = properties.get(rt_ref.hash(dunder.clone())).unwrap(); // TODO: Handle case when `dunder` is not present.
+
+                    log::trace!("[TypeEvalContext::typecheck] Checking BinOp {:?} compatability on method {:?}", dunder, attr);
+                    let node = left_graph.node_weight(attr).unwrap();
+
+                    (attr, node)
+                } else {
+                    unreachable!("The `class_of` return value for the type_id of the left-hand side of a binary expression was not a class value!");
+                };
+
+                let func_t = if let func @ Value::Function { .. } = dunder_value {
+                    let ValueContext { mref, gcx, .. } = cx.value_cx;
+
+                    func.typecheck(ValueContext {
+                        mref: mref.clone(),
+                        gcx,
+                        value: func,
+                        value_idx: dunder_index,
+                        object_graph: left_graph.as_ref(),
+                        object_graph_index: dunder_index.index(),
+                    })?
+                } else {
+                    todo!("Binary operations on non-functions not yet supported");
+                };
+
+                let tcx = cx.value_cx.gcx.typing_context.borrow();
+                let func_t = tcx.contextualize(func_t).unwrap();
+
+                let (args, ret) =
+                    if let PythonType::Callable { args, ret } = func_t.as_python_type() {
+                        (args, ret)
+                    } else {
+                        unreachable!("Function Value's should have `Callable` types!");
+                    };
+
+                let args = match args.as_ref() {
+                    Some(args) => args.as_slice(),
+                    None => todo!("dunder takes no arguments where one was expected."),
+                };
+
+                match args {
+                    [] => unreachable!(),
+
+                    [arg1] if *arg1 == right_type => Ok(Some(ret.clone())),
+                    [_] => todo!("TypeError: not a compatible right-hand-side argument to binary expression."),
+
+                    _ => unimplemented!(),
+                }
             }
 
             AstNode::IfExpr(Expr::If {
@@ -200,7 +281,10 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
                         ..
                     } = cx.value_cx.value
                     {
-                        cx.value_cx.get_node_from_module_body(*defsite).unwrap()
+                        assert!(defsite.graph_index.is_none());
+                        cx.value_cx
+                            .get_node_from_module_body(defsite.node_index_within_graph)
+                            .unwrap()
                     } else {
                         unreachable!();
                     };

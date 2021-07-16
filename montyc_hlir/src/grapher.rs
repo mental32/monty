@@ -1,6 +1,10 @@
 use std::iter::Peekable;
 
-use montyc_parser::{AstNode, AstObject, AstVisitor, ast::{self, Statement}, spanned::Spanned};
+use montyc_parser::{
+    ast::{self, Statement},
+    spanned::Spanned,
+    AstNode, AstObject, AstVisitor,
+};
 
 use petgraph::graph::{DiGraph, NodeIndex};
 
@@ -115,33 +119,29 @@ macro_rules! node_grapher {
                         inner: ast::Statement::Pass,
                     },
                 );
-        
+
                 // Insert a universal "exit" node.
                 thing.body.push(Spanned {
                     span: 0..0,
                     inner: ast::Statement::Pass,
                 });
-        
-                thing.body.retain(|node| {
-                    !matches!(
-                        node.into_ast_node(),
-                        AstNode::Comment(_),
-                    )
-                });
-        
+
+                thing
+                    .body
+                    .retain(|node| !matches!(node.into_ast_node(), AstNode::Comment(_),));
+
                 let graph = AstNodeGraph::new();
                 let grapher = NodeGrapher {
                     graph,
                     last: None,
                     seq: thing.body.iter().peekable(),
                 };
-        
+
                 grapher.consume()
             }
         }
     };
 }
-
 
 node_grapher!(ast::FunctionDef);
 node_grapher!(ast::Module);

@@ -5,3 +5,6 @@ from typing import Any
 
 def extern(__obj: Any):
     return __obj
+
+def overload(__obj: Any):
+    return __obj

@@ -1,4 +1,4 @@
-from __monty import extern
+from .__monty import extern
 
 @extern
 class object:
@@ -46,6 +46,10 @@ class int:
         >>> int('0b100', base=0)
         4
     """
+
+    def __add__(self, x: int) -> int: ...
+    def __sub__(self, x: int) -> int: ...
+    def __eq__(self, x: int) -> bool: ...
 
 
 @extern

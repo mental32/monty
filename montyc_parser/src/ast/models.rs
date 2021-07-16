@@ -66,7 +66,7 @@ pub struct While {
 
 impl AstObject for While {
     fn into_ast_node(&self) -> AstNode {
-        todo!()
+        AstNode::While(self.clone())
     }
 
     fn span(&self) -> Option<Span> {

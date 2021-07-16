@@ -51,7 +51,6 @@ use structopt::StructOpt;
 //         .status()
 //         .map(|_| ())
 
-
 fn main() -> std::io::Result<()> {
     env_logger::init();
 
@@ -67,7 +66,7 @@ fn main() -> std::io::Result<()> {
     };
 
     if let Err(err) = gcx.include_module(input) {
-        panic!("{:?}", err);  // TODO: re-implement codespan error handling. 
+        panic!("{:?}", err); // TODO: re-implement codespan error handling.
     }
 
     if let CompilerOptions::Expand { .. } = opts {

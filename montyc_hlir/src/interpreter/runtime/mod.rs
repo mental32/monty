@@ -7,7 +7,7 @@ use std::{
 
 use montyc_core::{utils::SSAMap, ModuleRef};
 
-use petgraph::{EdgeDirection::Outgoing, graph::NodeIndex, visit::NodeIndexable};
+use petgraph::{graph::NodeIndex, visit::NodeIndexable, EdgeDirection::Outgoing};
 
 use crate::{
     interpreter::{
@@ -21,6 +21,8 @@ use super::{
     object::{self, class::ClassObj, RawObject},
     HostGlue, ObjAllocId, PyDictRaw, PyResult,
 };
+
+pub use eval::UniqueNodeIndex;
 
 #[derive(Debug, Default)]
 pub(in crate::interpreter) struct ScopeGraph(petgraph::graph::DiGraph<ObjAllocId, ()>);
@@ -47,6 +49,7 @@ impl ScopeGraph {
 
     #[inline]
     pub fn nest(&mut self, child: NodeIndex<u32>, parent: NodeIndex<u32>) {
+        assert_ne!(child, parent, "Can not nest scopes recursively.");
         self.0.add_edge(child, parent, ());
     }
 
@@ -115,7 +118,7 @@ pub struct Runtime {
     pub(in crate::interpreter) scope_graph: ScopeGraph,
 
     /// The scope index for the builtins module.
-    pub (in crate::interpreter) builtins_scope: NodeIndex,
+    pub(in crate::interpreter) builtins_scope: NodeIndex,
 
     /// A map for interned strings.
     strings: ahash::AHashMap<u64, ObjAllocId>,
@@ -295,7 +298,7 @@ impl Runtime {
     }
 
     #[inline]
-    #[allow(dead_code)]  // TODO: Remove when actually used.
+    #[allow(dead_code)] // TODO: Remove when actually used.
     pub(in crate::interpreter) fn try_as_int_value(&self, alloc_id: ObjAllocId) -> PyResult<i64> {
         let obj = self.objects.get(alloc_id).unwrap().clone();
         let obj = &*obj.borrow();
@@ -340,7 +343,8 @@ impl Runtime {
         let mut subgraphs = Default::default();
 
         gcx.with_module(mref, &mut |module| {
-            let (obj, graphs) = AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
+            let (obj, graphs) =
+                AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
 
             module_object = obj;
             subgraphs = graphs;

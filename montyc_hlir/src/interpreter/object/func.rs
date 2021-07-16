@@ -6,21 +6,25 @@ use petgraph::{graph::NodeIndex, visit::NodeIndexable};
 use crate::{
     grapher::NewType,
     interpreter::{
-        runtime::eval::{AstExecutor, StackFrame},
+        runtime::eval::{AstExecutor, StackFrame, UniqueNodeIndex},
         HashKeyT, Runtime,
     },
+    ObjectGraphIndex, Value,
 };
 
-use super::{ObjAllocId, PyDictRaw, PyObject, PyResult, RawObject};
+use super::{ObjAllocId, PyObject, PyResult, RawObject};
 
 pub(in crate::interpreter) type NativeFn =
     for<'rt> fn(&'rt AstExecutor, &[ObjAllocId]) -> PyResult<ObjAllocId>;
 
-#[allow(dead_code)]  // TODO: Remove once it is used.
+#[allow(dead_code)] // TODO: Remove once it is used.
 pub(in crate::interpreter) enum Callable {
     Native(NativeFn),
     BoxedDyn(Box<dyn Fn(&AstExecutor, &[ObjAllocId]) -> PyResult<ObjAllocId>>),
-    SourceDef(NodeIndex, NodeIndex),
+    SourceDef {
+        source_index: UniqueNodeIndex,
+        scope_index: NodeIndex,
+    },
     Object(ObjAllocId),
 }
 
@@ -34,7 +38,7 @@ impl std::fmt::Debug for Callable {
 pub(in crate::interpreter) struct Function {
     pub(in crate::interpreter) header: RefCell<RawObject>,
     pub(in crate::interpreter) inner: Callable,
-    pub(in crate::interpreter) defsite: Option<NodeIndex>,
+    pub(in crate::interpreter) defsite: Option<UniqueNodeIndex>,
 }
 
 impl PyObject for Function {
@@ -71,54 +75,84 @@ impl PyObject for Function {
         self.header.borrow().for_each(rt, f)
     }
 
-    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value {
-        let properties = self.header.borrow().into_value_dict(rt, object_graph);
-        let name = self
-            .get_attribute_direct(rt, rt.hash("__name__"), self.alloc_id())
-            .map(|obj| rt.try_as_str_value(obj))
-            .unwrap()
-            .unwrap();
-
-        let mut annotations: PyDictRaw<_> = Default::default();
-
-        let __annotations__ = self
-            .get_attribute_direct(rt, rt.hash("__annotations__"), self.alloc_id())
-            .unwrap();
-
-        __annotations__.properties_into_values(rt, object_graph, &mut annotations);
-
-        crate::Value::Function {
-            name,
-            annotations,
-            properties,
-            defsite: self.defsite,
-            parent: match self.inner {
-                Callable::SourceDef(_, scope) => object_graph
-                    .alloc_to_idx
-                    .get(&rt.scope_graph.parent_of(scope).unwrap())
-                    .or_else(|| panic!())
-                    .cloned(),
-
-                _ => None,
-            },
+    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> ObjectGraphIndex {
+        if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
+            return idx;
         }
+
+        object_graph.insert_node_traced(
+            self.alloc_id(),
+            |object_graph, _| {
+                let name = self
+                    .get_attribute_direct(rt, rt.hash("__name__"), self.alloc_id())
+                    .map(|obj| rt.try_as_str_value(obj))
+                    .unwrap()
+                    .unwrap();
+
+                Value::Function {
+                    name,
+                    annotations: Default::default(),
+                    properties: Default::default(),
+                    defsite: self.defsite,
+                    parent: match self.inner {
+                        Callable::SourceDef { scope_index, .. } => object_graph
+                            .alloc_to_idx
+                            .get(&rt.scope_graph.parent_of(scope_index).unwrap())
+                            .or_else(|| {
+                                rt.scope_graph
+                                    .parent_of(scope_index)
+                                    .unwrap()
+                                    .as_ref(rt, |v| panic!("{:?}", v))
+                            })
+                            .cloned(),
+
+                        _ => None,
+                    },
+                }
+            },
+            |object_graph, value| {
+                let p = self.header.borrow().into_value_dict(rt, object_graph);
+
+                let mut ann = Default::default();
+                self.get_attribute_direct(rt, rt.hash("__annotations__"), self.alloc_id())
+                    .unwrap()
+                    .properties_into_values(rt, object_graph, &mut ann);
+
+                let (properties, annotations) = if let Value::Function {
+                    properties,
+                    annotations,
+                    ..
+                } = value(object_graph)
+                {
+                    (properties, annotations)
+                } else {
+                    unreachable!()
+                };
+
+                *properties = p;
+                *annotations = ann;
+            },
+        )
     }
 
     fn call(&self, ex: &mut AstExecutor, args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
         match self.inner {
             Callable::Native(_) => todo!(),
             Callable::BoxedDyn(_) => todo!(),
-            Callable::SourceDef(idx, _) => {
-                let funcdef = &ex.graph.raw_nodes().get(idx.index()).unwrap().weight;
+            Callable::SourceDef {
+                source_index,
+                scope_index,
+            } => {
+                let funcdef = source_index.to_node(ex).unwrap();
                 let funcdef = match funcdef {
-                    AstNode::FuncDef(funcdef) => funcdef,
+                    AstNode::FuncDef(funcdef) => funcdef.clone(),
                     _ => unreachable!(),
                 };
 
                 let mut value = None;
 
                 ex.within_subgraph(
-                    idx,
+                    source_index.graph_index.unwrap(),
                     || NewType(funcdef.clone()).into(),
                     |ex, graph| {
                         if let Some(params) = &funcdef.args {
@@ -138,12 +172,12 @@ impl PyObject for Function {
                         let raw_nodes = graph.raw_nodes();
                         let mut node_index = graph.from_index(0);
 
-                        ex.eval_stack.push((idx, StackFrame::Function(self.alloc_id())));
+                        ex.eval_stack.push((scope_index, source_index, StackFrame::Function(self.alloc_id())));
 
                         while {
                             ex.eval_stack
                                 .last()
-                                .map(|(_, frame)| matches!(frame, &StackFrame::Function(fid) if fid == self.alloc_id()))
+                                .map(|(_, _, frame)| matches!(frame, &StackFrame::Function(fid) if fid == self.alloc_id()))
                                 .unwrap_or(false)
                         } {
                             let node = if node_index == NodeIndex::<u32>::end() {

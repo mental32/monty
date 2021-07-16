@@ -104,18 +104,25 @@ impl GlobalValueStore {
     }
 
     #[inline]
-    pub fn class_of<'a>(&'a self, type_id: TypeId) -> Option<(ValueId, &'a Value)> {
+    pub fn class_of<'a>(
+        &'a self,
+        type_id: TypeId,
+    ) -> Option<(ValueId, &'a Value, Rc<ObjectGraph>)> {
         let (value_id, value) = self
             .type_ids_to_class_values
             .get(&type_id)
             .and_then(|v| self.values.get(*v).map(|k| (*v, k)))?;
 
-        let value = self
+        let (graph, value) = self
             .object_graphs
             .get(value.graph_index)
-            .and_then(|graph| graph.node_weight(value.value_index))?;
+            .and_then(|graph| {
+                graph
+                    .node_weight(value.value_index)
+                    .map(|value| (Rc::clone(graph), value))
+            })?;
 
-        Some((value_id, value))
+        Some((value_id, value, graph))
     }
 
     #[inline]

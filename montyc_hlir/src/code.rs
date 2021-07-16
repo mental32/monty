@@ -19,7 +19,6 @@ pub enum Inst {
     Nop,
 }
 
-
 /// A basic block is a linear sequence of instructions with no branching.
 ///
 /// The block may have any number of predeccessors and successors and uses
@@ -34,7 +33,6 @@ pub struct BasicBlock {
     pub instructions: Vec<Inst>,
 }
 
-
 /// The `Layout` struct determines the layout of blocks and instructions in a function.
 #[derive(Debug, Default)]
 pub struct Layout(petgraph::graph::DiGraph<BasicBlock, usize>);
@@ -42,7 +40,9 @@ pub struct Layout(petgraph::graph::DiGraph<BasicBlock, usize>);
 impl Layout {
     /// Create a new empty layout.
     #[inline]
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Add a block to the layout.
     #[inline]
@@ -66,7 +66,6 @@ pub struct Function {
     /// The layout is a directed graph of basic blocks containing instructions.
     pub layout: Layout,
 }
-
 
 // def f(x: i32):
 //     if x > 0:

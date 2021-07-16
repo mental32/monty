@@ -1,18 +1,16 @@
-use std::{
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
 use ahash::AHashMap;
 
 use crate::{
     interpreter::{HashKeyT, Runtime},
-    ObjectGraph, ObjectGraphIndex,
+    ObjectGraph, ObjectGraphIndex, Value,
 };
 
 use super::{alloc::ObjAllocId, PyObject, RawObject};
 
 /// A Python dict-like object that stores its values by a pre-computed hash.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PyDictRaw<V>(pub AHashMap<HashKeyT, V>);
 
 #[derive(Debug)]
@@ -146,17 +144,32 @@ impl PyObject for PyDict {
         self.data.0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
     }
 
-    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> crate::Value {
-        let mut data: PyDictRaw<_> = Default::default();
+    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> ObjectGraphIndex {
+        if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
+            return idx;
+        }
 
-        self.properties_into_values(rt, object_graph, &mut data);
+        object_graph.insert_node_traced(
+            self.alloc_id(),
+            |_, _| Value::Dict {
+                object: Default::default(),
+                data: Default::default(),
+            },
+            |object_graph, v| {
+                let mut obj = self.header.into_value(rt, object_graph);
+                let mut dat = Default::default();
+                self.properties_into_values(rt, object_graph, &mut dat);
 
-        let object = match self.header.into_value(rt, object_graph) {
-            crate::Value::Object(obj) => obj,
-            _ => unreachable!(),
-        };
+                let (object, data) = if let Value::Dict { object, data } = v(object_graph) {
+                    (object, data)
+                } else {
+                    unreachable!();
+                };
 
-        crate::Value::Dict { object, data }
+                std::mem::swap(&mut obj, object);
+                std::mem::swap(&mut dat, data);
+            },
+        )
     }
 
     fn set_item(

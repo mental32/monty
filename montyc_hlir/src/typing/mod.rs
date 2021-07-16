@@ -159,6 +159,14 @@ impl<'tcx> LocalTypeId<'tcx> {
                 .unwrap_or(false)
         }
     }
+
+    /// Get the Python type associated with this type id.
+    #[inline]
+    pub fn as_python_type(&self) -> &PythonType {
+        // SAFETY: `TypingContext::contextualize` already checks if `self.type_id` is present within the map.
+        let type_desc = unsafe { self.context.inner.get_unchecked(self.type_id) }.unwrap();
+        &type_desc.kind
+    }
 }
 
 /// A global registar for types.
@@ -204,10 +212,7 @@ impl TypingContext {
     #[inline]
     pub fn callable(&mut self, args: Option<Vec<TypeId>>, ret: TypeId) -> TypeId {
         self.inner.insert(Type {
-            kind: PythonType::Callable {
-                args,
-                ret,
-            },
+            kind: PythonType::Callable { args, ret },
 
             layout: ObjectLayout {},
         })

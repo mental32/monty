@@ -1,20 +1,35 @@
-use std::{ops::{Deref, DerefMut}, rc::Rc};
+use std::{
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    usize,
+};
 
 use petgraph::graph::NodeIndex;
 
-use crate::{Value, grapher::AstNodeGraph, interpreter::{self, object::ObjAllocId}};
+use crate::{
+    grapher::AstNodeGraph,
+    interpreter::{self, object::ObjAllocId},
+    Value,
+};
 
+/// An index into the `ObjectGraph`.
 pub type ObjectGraphIndex = NodeIndex<u32>;
 
+/// A graph of objects in the program.
 #[derive(Debug, Default)]
 pub struct ObjectGraph {
-    graph: petgraph::graph::DiGraph<Value, ()>,
+    /// Subgraphs of the object graph, these are made up of smaller graphs of the bodies of class and function definitions.
     pub ast_subgraphs: ahash::AHashMap<NodeIndex, Rc<AstNodeGraph>>,
-    strings: ahash::AHashMap<u64, ObjectGraphIndex>,
+
+    pending_nodes: usize,
+
+    pub(crate) graph: petgraph::graph::DiGraph<Value, ()>,
+    pub(crate) strings: ahash::AHashMap<u64, ObjectGraphIndex>,
     pub(crate) alloc_to_idx: ahash::AHashMap<interpreter::object::ObjAllocId, ObjectGraphIndex>,
 }
 
 impl ObjectGraph {
+    /// Produce an iterator over all Object indecies in the graph from the oldest to the newest allocation.
     #[inline]
     pub fn iter_by_alloc_asc(&self) -> impl Iterator<Item = ObjectGraphIndex> {
         let mut allocs: Vec<_> = self.alloc_to_idx.iter().map(|(a, b)| (*a, *b)).collect();
@@ -24,6 +39,7 @@ impl ObjectGraph {
         allocs.into_iter().map(|(_, b)| b)
     }
 
+    /// Get the allocation id for a given object index.
     #[inline]
     pub fn alloc_id_of(&self, idx: ObjectGraphIndex) -> Option<ObjAllocId> {
         self.alloc_to_idx
@@ -31,37 +47,46 @@ impl ObjectGraph {
             .find_map(|(alloc, index)| (*index == idx).then(|| *alloc))
     }
 
-    #[inline]
-    pub fn add_string_node(&mut self, hash: u64, string: crate::Value) -> ObjectGraphIndex {
-        if let Some(idx) = self.strings.get(&hash) {
-            return idx.clone();
-        }
-
-        let idx = self.graph.add_node(string);
-
-        self.strings.insert(hash, idx);
-
-        idx
-    }
-
-    pub(crate) fn add_node_traced(
+    pub(crate) fn insert_node_traced(
         &mut self,
-        value: crate::Value,
-        obj: ObjAllocId,
+        alloc_id: ObjAllocId,
+        mut make_value: impl FnMut(&mut Self, ObjectGraphIndex) -> Value,
+        mut mutate_value: impl FnMut(&mut Self, &dyn Fn(&mut Self) -> &mut Value),
     ) -> ObjectGraphIndex {
-        log::trace!("[ObjectGraph::trace] Tracing value: {:?}", value);
-
-        if let Some(idx) = self.alloc_to_idx.get(&obj) {
-            log::trace!("[ObjectGraph::trace] Value already exists! {:?}", idx);
+        if let Some(idx) = self.alloc_to_idx.get(&alloc_id) {
+            log::trace!(
+                "[ObjectGraph::insert_node_traced] Value already exists! {:?}",
+                idx
+            );
             return *idx;
         }
 
-        let idx = self.graph.add_node(value);
-        self.alloc_to_idx.insert(obj, idx);
+        let current_nodes = self.graph.raw_nodes().len();
 
-        log::trace!("[ObjectGraph::trace] {:?} -> {:?}", obj, idx);
+        if self.pending_nodes <= self.graph.raw_nodes().len() {
+            self.pending_nodes = current_nodes;
+        } else {
+            self.pending_nodes += 1;
+        }
 
-        idx
+        let index = NodeIndex::new(self.pending_nodes);
+        self.alloc_to_idx.insert(alloc_id, index);
+
+        let value = make_value(self, index);
+
+        let real_index = self.graph.add_node(value);
+
+        log::trace!(
+            "[ObjectGraph::insert_node_traced] {:?} -> {:?}",
+            alloc_id,
+            real_index
+        );
+
+        assert_eq!(real_index, index, "Expected index did not match the pre-computed index, was something added to the graph whilst the Value was being created?");
+
+        mutate_value(self, &|s| s.graph.node_weight_mut(real_index).unwrap());
+
+        real_index
     }
 }
 

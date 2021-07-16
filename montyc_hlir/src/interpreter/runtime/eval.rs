@@ -1,4 +1,4 @@
-//! An executor that walks over a module and evaluates them/their side effects.
+//! An executor that walks over a module and ev graph_index: (), node_index_within_graph: ()  graph_index: (), node_index_within_graph: () aluates them/their side effects.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -59,6 +59,33 @@ impl TryIntoObject for SpanRef {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct UniqueNodeIndex {
+    pub graph_index: Option<NodeIndex>,
+    pub node_index_within_graph: NodeIndex,
+}
+
+impl UniqueNodeIndex {
+    pub(in crate::interpreter) fn to_node<'a>(&self, ex: &'a AstExecutor) -> Option<&'a AstNode> {
+        if let Some(subgraph) = self.graph_index {
+            ex.subgraphs
+                .get(&subgraph)
+                .and_then(|g| g.node_weight(self.node_index_within_graph))
+        } else {
+            ex.graph.node_weight(self.node_index_within_graph)
+        }
+    }
+}
+
+impl From<NodeIndex> for UniqueNodeIndex {
+    fn from(nid: NodeIndex) -> UniqueNodeIndex {
+        UniqueNodeIndex {
+            graph_index: None,
+            node_index_within_graph: nid,
+        }
+    }
+}
+
 /// AST based executor used to execute arbitrary AST blocks.
 pub(in crate::interpreter) struct AstExecutor<'global, 'module> {
     pub runtime: &'global mut super::Runtime,
@@ -70,7 +97,7 @@ pub(in crate::interpreter) struct AstExecutor<'global, 'module> {
     pub subgraphs: ahash::AHashMap<NodeIndex, Rc<AstNodeGraph>>,
 
     pub node_index: NodeIndex<u32>,
-    pub eval_stack: Vec<(NodeIndex<u32>, StackFrame)>,
+    pub eval_stack: Vec<(NodeIndex, UniqueNodeIndex, StackFrame)>,
 }
 
 impl<'global, 'module> AstExecutor<'global, 'module> {
@@ -123,7 +150,14 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
             subgraphs: Default::default(),
             ast_object: ast_object_id,
             node_index: module.body.from_index(0),
-            eval_stack: vec![(namespace, frame)],
+            eval_stack: vec![(
+                namespace,
+                UniqueNodeIndex {
+                    graph_index: None,
+                    node_index_within_graph: NodeIndex::end(),
+                },
+                frame,
+            )],
         }
     }
 
@@ -142,7 +176,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 
     #[inline]
     pub fn define(&mut self, name: SpanRef, value: ObjAllocId) -> PyResult<()> {
-        let (_, frame) = self.eval_stack.last().as_ref().unwrap();
+        let (_scope_index, _, frame) = self.eval_stack.last().as_ref().unwrap();
         let mut frame =
             patma!(*o => StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
@@ -163,13 +197,13 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 
     #[inline]
     pub fn lookup(&mut self, name: SpanRef) -> Option<ObjAllocId> {
-        let (_, frame) = self
+        let (_, _, frame) = self
             .eval_stack
             .last()
             .cloned()
             .expect("Must be running to perform lookups.");
 
-        let frame = patma!(o => StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
+        let frame = patma!(o => StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
         let name = self.host.spanref_to_str(name);
 
@@ -301,7 +335,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
     }
 
     #[inline]
-    fn new_class_object(&mut self, klass: &ClassDef) -> PyResult<ObjAllocId> {
+    fn new_class_object(&mut self, klass: &ClassDef) -> PyResult<(ObjAllocId, NodeIndex)> {
         let __class__ = self
             .runtime
             .builtins
@@ -309,17 +343,26 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
             .unwrap();
 
         let name = klass.name.inner.as_name().unwrap();
+        let (parent_scope_index, _parent_index, _) = *self.eval_stack.last().unwrap();
+        let mut child_scope_index = None;
+        let child_scope_index = &mut child_scope_index;
 
-        self.insert_new_object(__class__, move |ex, mut object, _| {
+        let obj = self.insert_new_object(__class__, |ex, mut object, alloc_id| {
             ex.set_attribute(&mut object, "__name__", name)?;
 
+            let scope = ex.runtime.scope_graph.insert(alloc_id);
+            child_scope_index.replace(scope);
+            ex.runtime.scope_graph.nest(scope, parent_scope_index);
+
             Ok(ClassObj { header: object })
-        })
+        })?;
+
+        Ok((obj, child_scope_index.unwrap()))
     }
 
     /// Create a new `function` object.
     #[inline]
-    fn function(&mut self, name: &str, node: NodeIndex, module: NodeIndex) -> PyResult<ObjAllocId> {
+    fn function(&mut self, name: &str, function_node: UniqueNodeIndex) -> PyResult<ObjAllocId> {
         let __class__ = self
             .runtime
             .builtins
@@ -329,14 +372,18 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
         self.insert_new_object(__class__, move |ex, mut object, alloc_id| {
             ex.set_attribute(&mut object, "__name__", name)?;
 
-            let funcdef = &ex.graph.raw_nodes().get(node.index()).unwrap().weight;
+            let (parent_scope_index, _parent_index, _) = *ex.eval_stack.last().unwrap();
+            let funcdef = function_node.to_node(ex).unwrap();
+
             let funcdef = match funcdef {
-                AstNode::FuncDef(fndef) => fndef,
+                AstNode::FuncDef(fndef) => fndef.clone(),
                 _ => unreachable!(),
             };
 
-            let idx = ex.runtime.scope_graph.insert(alloc_id);
-            ex.runtime.scope_graph.nest(idx, module);
+            let child_scope_index = ex.runtime.scope_graph.insert(alloc_id);
+            ex.runtime
+                .scope_graph
+                .nest(child_scope_index, parent_scope_index);
 
             let annotations = {
                 let mut annotations = ex.dict()?;
@@ -349,7 +396,9 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 
                             match ann.visit_with(ex)? {
                                 Some(obj) => annotations.set_item(&mut ex.runtime, arg, obj),
-                                None => todo!("NameError: argument annotation not found."),
+                                None => {
+                                    todo!("NameError: argument annotation not found. {:?}", ann)
+                                }
                             };
                         }
                     }
@@ -378,8 +427,11 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 
             let object = func::Function {
                 header: RefCell::new(object),
-                inner: func::Callable::SourceDef(node, idx),
-                defsite: Some(node),
+                inner: func::Callable::SourceDef {
+                    source_index: function_node,
+                    scope_index: child_scope_index,
+                },
+                defsite: Some(function_node),
             };
 
             Ok(object)
@@ -486,10 +538,10 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_classdef(&mut self, classdef: &ast::ClassDef) -> EvalResult {
-        let class_obj = self.new_class_object(classdef)?;
+        let (class_obj, class_scope_index) = self.new_class_object(classdef)?;
         let class_name = classdef.name.inner.as_name().unwrap();
 
-        let idx = self.graph
+        let node_index = self.graph
             .raw_nodes()
             .iter()
             .enumerate()
@@ -502,16 +554,18 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
             })
             .unwrap();
 
-        self.within_subgraph(idx, || NewType(classdef.clone()).into(), |ex, graph| {
+        let uniqe: UniqueNodeIndex = node_index.into();
+
+        self.within_subgraph(node_index, || NewType(classdef.clone()).into(), |ex, graph| {
             let raw_nodes = graph.raw_nodes();
             let mut node_index = graph.from_index(0);
 
-            ex.eval_stack.push((idx, StackFrame::Class(class_obj.alloc_id())));
+            ex.eval_stack.push((class_scope_index, uniqe, StackFrame::Class(class_obj.alloc_id())));
 
             while {
                 ex.eval_stack
                     .last()
-                    .map(|(_, frame)| matches!(frame, &StackFrame::Class(id) if id == class_obj.alloc_id()))
+                    .map(|(_, _, frame)| matches!(frame, &StackFrame::Class(id) if id == class_obj.alloc_id()))
                     .unwrap_or(false)
             } {
                 let node = if node_index == NodeIndex::<u32>::end() {
@@ -528,7 +582,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
                     .unwrap_or(NodeIndex::end());
             }
 
-            assert!(matches!(ex.eval_stack.pop(), Some((_, StackFrame::Class(id))) if id == class_obj.alloc_id()));
+            assert!(matches!(ex.eval_stack.pop(), Some((_, _, StackFrame::Class(id))) if id == class_obj.alloc_id()));
 
             Ok(())
         })?;
@@ -549,7 +603,20 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
             name
         );
 
-        let idx = self.graph
+        let (graph, graph_index) = if self.eval_stack.len() == 1 {
+            (self.graph, None::<NodeIndex>)
+        } else {
+            let (_, tos_index, _) = self.eval_stack.last().unwrap();
+            let graph = self
+                .subgraphs
+                .get(&tos_index.node_index_within_graph)
+                .unwrap()
+                .as_ref();
+
+            (graph, Some(tos_index.node_index_within_graph))
+        };
+
+        let node = graph
             .raw_nodes()
             .iter()
             .enumerate()
@@ -562,7 +629,13 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
             })
             .unwrap();
 
-        let func_obj = self.function(name, idx, self.eval_stack.last().unwrap().0)?;
+        let func_obj = self.function(
+            name,
+            UniqueNodeIndex {
+                graph_index,
+                node_index_within_graph: node,
+            },
+        )?;
 
         self.define(fndef.name.inner.as_name().unwrap(), func_obj)?;
 
@@ -593,7 +666,27 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
 
     fn visit_name(&mut self, name: &ast::Atom) -> EvalResult {
         let name = patma!(n => ast::Atom::Name(n) in name).unwrap();
-        return Ok(self.lookup(*name));
+
+        match self.lookup(*name) {
+            Some(result) => return Ok(Some(result)),
+            None => {
+                if let (_, _, StackFrame::Class(obj)) = self.eval_stack.last().unwrap() {
+                    let name = self.host.spanref_to_str(name.clone());
+                    let class_name = match obj.getattr_static(self.runtime, "__name__") {
+                        Some(class_name) => self.runtime.try_as_str_value(class_name)?,
+                        None => return Ok(None),
+                    };
+
+                    if name == class_name {
+                        Ok(Some(*obj))
+                    } else {
+                        Ok(None)
+                    }
+                } else {
+                    Ok(None)
+                }
+            }
+        }
     }
 
     fn visit_tuple(&mut self, int: &ast::Atom) -> EvalResult {
@@ -613,7 +706,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_return(&mut self, ret: &ast::Return) -> EvalResult {
-        let (_, frame) = self.eval_stack.last().unwrap();
+        let (_, _, frame) = self.eval_stack.last().unwrap();
 
         assert!(matches!(frame, StackFrame::Function(_)), "{:?}", frame);
 
