@@ -7,12 +7,10 @@
 - [Index](#index)
 - [Brief](#brief)
 - [Building the compiler](#building-the-compiler)
-- [Using the compiler](#using-the-compiler)
-- [Just some thoughts on how we can keep the dynamic feeling.](#just-some-thoughts-on-how-we-can-keep-the-dynamic-feeling)
-  - ["automatic unions"](#automatic-unions)
+- [What Monty can do to feel dynamic.](#what-monty-can-do-to-feel-dynamic)
+  - ["automatic unionization"](#automatic-unionization)
   - ["Type narrowing"](#type-narrowing)
-  - ["Deviated instance types"](#deviated-instance-types)
-  - [Compile time (or "comptime") execution](#compile-time-or-comptime-execution)
+  - [Staged computation of module-level code (aka "comptime"/"consteval")](#staged-computation-of-module-level-code-aka-comptimeconsteval)
 - [Related projects](#related-projects)
   - ["prior art"](#prior-art)
 
@@ -21,15 +19,8 @@
 Monty `(/ˈmɒntɪ/)` is an attempt to provide a completely organic alternative
 dialect of Python equipped with a stronger, safer, and smarter type system.
 
-At a high level monty can be closely compared with what TypeScript does for
-JavaScript. The core contrast between Monty and TypeScript however is
-that TS is a strict syntactical superset of JS, Monty is a strict syntactical
-subset of Python; meaning that TS adds backwards incompatible syntax to JS
-where Monty disallows existing Python syntax and semantics in a backwards
-compatible manner.
-
-Monty is intended to be compiled to native executable binaries or WASM via the
-use of [cranelift] (and maybe [llvm] if support for that ever lands.)
+It can be summed up simply as: type annotated, statically compiled, Python.
+With baked in tricks to make it feel as dynamic as Python.
 
 ## Building the compiler
 
@@ -37,37 +28,15 @@ You will need the a recent nightly version of rust (`1.53.0-nightly` or so) in o
 
 after that it's as simple as running `cargo build`
 
-## Using the compiler
+## What Monty can do to feel dynamic.
 
-It is **strongly** advised to use `clang` and enable the `mold` linker.
-I suggest you download and install both since they (especially mold) will
-improve the final steps of compile time performance.
+This section is a work in progress and it documents a few ideas
+that I'm exploring to see if I can remove the typical hassle of
+working with a strongly-typed, compiled language.
 
-Make sure to check the compilers help command with `--help` as it will be more
-up to date than this example.
+### "automatic unionization"
 
-The compiler aims to be easy to use, invoking the following command will produce
-a mostly statically linked binary named `./file` (or `./file.exe` if using windows)
-
-```
-./montyc ./path/to/file.py
-```
-
-you may also specify the path to the local C compiler via `--cc="path/to/cc"`
-and a linker via `--ld="path/to/ld"`
-
-## Just some thoughts on how we can keep the dynamic feeling.
-
-Apart from the regular semantics of interpreter Python, Monty will disallow
-parts of the language selectively (depending on how hard the feature is to
-translate to compiled code.)
-
-### "automatic unions"
-
-It's useful to be able to represent multiple types of values within one object.
-_cough cough_ polymorphism _cough cough_
-
-Variables, in Monty, may only have one type per scope.
+In Monty variables may only have one type per scope.
 you may not re-assign a value to a variable with a different type.
 
 ```py
@@ -76,18 +45,30 @@ def badly_typed():
     this = "foo"
 ```
 
-You may however have a union of types, which is represented like a tagged union
-in C or an enum in Rust. `typing.Union[T, ...]` is the Pythonic way to annotate
-a union explicitly but in Monty you may use the newer literal syntax `T | U` from
-[PEP604]:
+You may however have a union of types, which is internally represented like a tagged
+union in C or an enum in Rust.
+
+`typing.Union[T, ...]` is the traditional way to annotate a union explicitly but in
+Monty you may use the newer literal syntax `T | U` from [PEP604]:
 
 ```py
-def correctly_typed():
+def foo():
     this: int | str = 1
     this = "foo"
 ```
+```py
+def bar() -> int | bool:
+    if random.randrange(0, 2):
+        return 1
+    else:
+        return False
+```
+```py
+def baz(qux: str | list[str]) -> int | bool:
+    ...
+```
 
-But wait! say you have the following code:
+And it even works with inference:
 
 ```py
 def foo() -> int:
@@ -100,17 +81,8 @@ def baz(control: bool):
     x = foo() if control else bar()
 ```
 
-What's the type of `x` in the function `baz` now?
-
-Some might expect this to be a type error after all `foo` and `bar` return
-incompatible types and they try get associated with `x` but this isn't the case
-unless you explicitly annotate `x` to be one of `int` or `str`.
-
-What happens instead is that the compiler will "synthesize" (create) a union
-type for you so the type of `x` will be:
-
- * `int | str` or
- * `Union[int, str]`.
+Here the type of `x` in `baz` is inferred to be `Union[int, str]` depending on
+the value of `control`.
 
 ### "Type narrowing"
 
@@ -131,60 +103,7 @@ else:
     # exhaustive-ness checks will allow `x` to be treated as a list of strings here.
 ```
 
-### "Deviated instance types"
-
-Inspired from [this section of the RPython documentation][rpython-instances] Deviated Instance Types
-work very similarly. For example take the following class:
-
-```py
-class Thing:
-    attr1: int
-    attr2: list[str]
-```
-
-The memory layout of class `Thing` we'll call "Layout 1" will contain an integer and a list and by default
-that's all that was said about the class so that's all monty can do with it for now any other attribute access
-either getting or setting will invoke a type error to be reported to the user.
-
-Here's where the idea of "deviating" an "instance"s "type" comes in:
-
-```py
-THING = Thing()
-THING.attr3 = "blah blah"
-```
-
-This value would constant at runtime but lazily initialized at compile time but that's besides the point.
-
-`THING` is an instance of `Thing` meaning the layout of the constant is specified in the class definition.
-but we then try and set an attribute on the instance and at first glance it looks like an error but it actually
-lets us do very clever things with the way we model values and types with monty.
-
-The memory layout of `THING` is now "Layout 1, 0" (read as the first diverged layout from 1) and in rough
-C pseudo code will be structured something like:
-
-```c
-struct Thing_Layout_1 {
-    integer_type attr1;
-    list_str_type attr2; 
-}
-
-struct Thing_Layout_1_0 {
-    Thing_Layout_1 head;
-    string_type attr3;
-}
-```
-
-If `THING` were not to be a constant and instead a static module-level variable then you
-are also free to set and modify the value of `THING.attr3` ala
-
-```py
-thing = Thing()
-
-def whatever(blah: str, n: int):
-    thing.attr3 = blah * n
-```
-
-### Compile time (or "comptime") execution
+### Staged computation of module-level code (aka "comptime"/"consteval")
 
 The biggest difference between regular Python and Monty is how the module-level
 is evaluated.
