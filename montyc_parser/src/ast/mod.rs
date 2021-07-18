@@ -17,7 +17,7 @@ pub enum AstNode {
     Import(models::Import),
     ClassDef(models::ClassDef),
     FuncDef(models::FunctionDef),
-    If(ifstmt::If),
+    If(ifstmt::IfChain),
     Assign(models::Assign),
     Int(models::Atom),
     Str(models::Atom),

@@ -44,11 +44,16 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 defsite,
                 parent,
             } => {
-                cx.gcx.value_store.borrow_mut().insert(
+                let value_id = cx.gcx.value_store.borrow_mut().insert(
                     cx.value_idx,
                     cx.object_graph.alloc_id_of(cx.value_idx).unwrap(),
                     cx.object_graph_index,
                 );
+
+                cx.gcx
+                    .value_store
+                    .borrow_mut()
+                    .set_type_of(value_id, Some(TypingContext::UntypedFunc));
 
                 let defsite = match defsite {
                     None => return Ok(TypingContext::UntypedFunc),
@@ -56,14 +61,10 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 };
 
                 let node = defsite
-                    .graph_index
+                    .subgraph_index
                     .and_then(|subgraph| cx.object_graph.ast_subgraphs.get(&subgraph))
-                    .and_then(|subgraph| {
-                        subgraph
-                            .node_weight(defsite.node_index_within_graph)
-                            .cloned()
-                    })
-                    .or_else(|| cx.get_node_from_module_body(defsite.node_index_within_graph))
+                    .and_then(|subgraph| subgraph.node_weight(defsite.node_index).cloned())
+                    .or_else(|| cx.get_node_from_module_body(defsite.node_index))
                     .unwrap();
 
                 let funcdef = match node {
@@ -160,6 +161,11 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                     .borrow_mut()
                     .callable(arg_t, return_type);
 
+                cx.gcx
+                    .value_store
+                    .borrow_mut()
+                    .set_type_of(value_id, Some(func_type));
+
                 // Don't typecheck the bodies of ellipsis-stubbed functions as they are
                 // essentially either "extern" declarations or nops.
                 if funcdef.is_ellipsis_stubbed() || parent.is_none() {
@@ -185,6 +191,11 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                         ribs: Rc::clone(&ribs),
                     })?;
                 }
+
+                cx.gcx
+                    .value_store
+                    .borrow_mut()
+                    .set_type_of(value_id, Some(func_type));
 
                 Ok(func_type)
             }

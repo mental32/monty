@@ -14,7 +14,7 @@ pub struct If {
 
 impl AstObject for If {
     fn into_ast_node(&self) -> AstNode {
-        AstNode::If(self.clone())
+        unimplemented!()
     }
 
     fn span(&self) -> Option<Span> {
@@ -41,7 +41,7 @@ pub struct IfChain {
 
 impl AstObject for IfChain {
     fn into_ast_node(&self) -> AstNode {
-        unreachable!()
+        AstNode::If(self.clone())
     }
 
     fn span(&self) -> Option<Span> {

@@ -152,7 +152,7 @@ impl PyObject for Function {
                 let mut value = None;
 
                 ex.within_subgraph(
-                    source_index.graph_index.unwrap(),
+                    source_index.subgraph_index.unwrap(),
                     || NewType(funcdef.clone()).into(),
                     |ex, graph| {
                         if let Some(params) = &funcdef.args {

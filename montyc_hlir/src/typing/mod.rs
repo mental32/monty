@@ -142,7 +142,8 @@ pub struct Type {
 /// A `TypeId` with a bound reference to a `TypingContext`.
 #[derive(Debug)]
 pub struct LocalTypeId<'tcx> {
-    type_id: TypeId,
+    /// The `TypeId` of the type.
+    pub type_id: TypeId,
     context: &'tcx TypingContext,
 }
 

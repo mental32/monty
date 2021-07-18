@@ -34,6 +34,10 @@ pub enum CompilerOptions {
 
     /// Compile the provided input.
     Build {
+        /// The path to the entry function, for instance `main` in a `__main__.py` would be `__main__:main` (and is the default.)
+        #[structopt(short, long, default_value = "__main__:main")]
+        entry: String,
+
         /// The path to a monty compatible stdlib.
         #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
         libstd: PathBuf,

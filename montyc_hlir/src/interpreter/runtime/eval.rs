@@ -1,4 +1,4 @@
-//! An executor that walks over a module and ev graph_index: (), node_index_within_graph: ()  graph_index: (), node_index_within_graph: () aluates them/their side effects.
+//! An executor that walks over a module and ev subgraph_index: (), node_index: ()  subgraph_index: (), node_index: () aluates them/their side effects.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -10,13 +10,10 @@ use montyc_parser::{
 
 use petgraph::{graph::NodeIndex, visit::NodeIndexable};
 
-use crate::{
-    grapher::{AstNodeGraph, NewType},
-    interpreter::{
+use crate::{ModuleObject, grapher::{AstNodeGraph, NewType}, interpreter::{
         object::{class::ClassObj, dict, int::IntObj, string::StrObj, PyObject, RawObject},
         HashKeyT, HostGlue, ObjAllocId, PyDictRaw, PyResult,
-    },
-};
+    }};
 
 use super::object::func;
 
@@ -61,18 +58,18 @@ impl TryIntoObject for SpanRef {
 
 #[derive(Debug, Clone, Copy)]
 pub struct UniqueNodeIndex {
-    pub graph_index: Option<NodeIndex>,
-    pub node_index_within_graph: NodeIndex,
+    pub subgraph_index: Option<NodeIndex>,
+    pub node_index: NodeIndex,
 }
 
 impl UniqueNodeIndex {
     pub(in crate::interpreter) fn to_node<'a>(&self, ex: &'a AstExecutor) -> Option<&'a AstNode> {
-        if let Some(subgraph) = self.graph_index {
+        if let Some(subgraph) = self.subgraph_index {
             ex.subgraphs
                 .get(&subgraph)
-                .and_then(|g| g.node_weight(self.node_index_within_graph))
+                .and_then(|g| g.node_weight(self.node_index))
         } else {
-            ex.graph.node_weight(self.node_index_within_graph)
+            ex.graph.node_weight(self.node_index)
         }
     }
 }
@@ -80,8 +77,8 @@ impl UniqueNodeIndex {
 impl From<NodeIndex> for UniqueNodeIndex {
     fn from(nid: NodeIndex) -> UniqueNodeIndex {
         UniqueNodeIndex {
-            graph_index: None,
-            node_index_within_graph: nid,
+            subgraph_index: None,
+            node_index: nid,
         }
     }
 }
@@ -105,7 +102,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
     #[inline]
     pub fn new_with_module(
         runtime: &'global mut super::Runtime,
-        module: &'module crate::ModuleObject,
+        module: &'module ModuleObject,
         host: &'global dyn HostGlue,
     ) -> Self {
         let graph = &module.body;
@@ -153,8 +150,8 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
             eval_stack: vec![(
                 namespace,
                 UniqueNodeIndex {
-                    graph_index: None,
-                    node_index_within_graph: NodeIndex::end(),
+                    subgraph_index: None,
+                    node_index: NodeIndex::end(),
                 },
                 frame,
             )],
@@ -603,17 +600,17 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
             name
         );
 
-        let (graph, graph_index) = if self.eval_stack.len() == 1 {
+        let (graph, subgraph_index) = if self.eval_stack.len() == 1 {
             (self.graph, None::<NodeIndex>)
         } else {
             let (_, tos_index, _) = self.eval_stack.last().unwrap();
             let graph = self
                 .subgraphs
-                .get(&tos_index.node_index_within_graph)
+                .get(&tos_index.node_index)
                 .unwrap()
                 .as_ref();
 
-            (graph, Some(tos_index.node_index_within_graph))
+            (graph, Some(tos_index.node_index))
         };
 
         let node = graph
@@ -632,8 +629,8 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
         let func_obj = self.function(
             name,
             UniqueNodeIndex {
-                graph_index,
-                node_index_within_graph: node,
+                subgraph_index,
+                node_index: node,
             },
         )?;
 

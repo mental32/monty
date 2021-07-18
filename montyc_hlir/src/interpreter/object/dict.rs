@@ -88,15 +88,7 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
             .alloc_to_idx
             .iter()
             .filter_map(|(alloc, index)| {
-                let pair = values.get(index).map(|key| (*alloc, *index, *key));
-
-                log::trace!(
-                    "[PyDictRaw::iter_by_alloc_asc] Checking filter for value pair: {:?} -> Filter result? {}",
-                    (index, alloc),
-                    pair.as_ref().map(|_| "Retained").unwrap_or("Discarded")
-                );
-
-                pair
+                values.get(index).map(|key| (*alloc, *index, *key))
             })
             .collect();
 

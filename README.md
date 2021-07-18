@@ -24,7 +24,7 @@ With baked in tricks to make it feel as dynamic as Python.
 
 ## Building the compiler
 
-You will need the a recent nightly version of rust (`1.53.0-nightly` or so) in order to build.
+You will need the a recent nightly version of rust (`1.53.0` or so) in order to build.
 
 after that it's as simple as running `cargo build`
 
@@ -154,3 +154,4 @@ would be rejected normally are perfectly fine such as: `exec`, `eval`,
 
 [rpython-instances]: https://rpython.readthedocs.io/en/latest/translation.html#user-defined-classes-and-instances
 [type-narrowing]: https://www.python.org/dev/peps/pep-0647/#id3
+ 

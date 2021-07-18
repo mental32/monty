@@ -14,20 +14,17 @@
 pub mod code;
 mod grapher;
 pub mod interpreter;
+pub mod module_object;
+mod object_graph;
 pub mod typing;
 
-use interpreter::UniqueNodeIndex;
-pub use interpreter::{HostGlue, ObjAllocId};
-
-use std::path::{Path, PathBuf};
-
 use montyc_core::{ModuleRef, TypeId};
-use montyc_parser::ast;
 
 use crate::interpreter::PyDictRaw;
+use interpreter::UniqueNodeIndex;
 
-mod object_graph;
-
+pub use interpreter::{HostGlue, ObjAllocId};
+pub use module_object::*;
 pub use object_graph::{ObjectGraph, ObjectGraphIndex};
 
 /// HLIR objects are dynamic/reflective representations of objects that we can typecheck and compile.
@@ -40,37 +37,6 @@ pub struct Object {
     type_id: TypeId,
 
     properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-}
-
-/// A module object is a representation of a Python module.
-#[derive(Debug, Clone)]
-#[allow(missing_docs)]
-pub struct ModuleObject {
-    pub path: PathBuf,
-    pub body: grapher::AstNodeGraph,
-    pub ast: ast::Module,
-    pub mref: ModuleRef,
-}
-
-impl ModuleObject {
-    /// Create a new ModuleObject from a path and AST and module reference.
-    #[inline]
-    pub fn new(path: PathBuf, ast: ast::Module, mref: ModuleRef) -> Self {
-        let body = grapher::NewType(ast.clone()).into();
-
-        Self {
-            path,
-            body,
-            ast,
-            mref,
-        }
-    }
-
-    /// The path to the module.
-    #[inline]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -113,15 +79,19 @@ impl Value {
     /// If `self` is a `Dict` then `iter()` will return an iterator over the hash, keys, and values of the dictionary.
     ///
     pub fn iter(&self) -> impl Iterator<Item = (&u64, &(ObjectGraphIndex, ObjectGraphIndex))> + '_ {
+        self.properties().iter()
+    }
+
+    pub fn properties(&self) -> &PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
         match self {
             Value::Dict {
                 data: properties, ..
             }
             | Value::Module { properties, .. }
             | Value::Function { properties, .. }
-            | Value::Class { properties, .. } => properties.iter(),
+            | Value::Class { properties, .. } => properties,
 
-            Value::Object(obj) => obj.properties.iter(),
+            Value::Object(obj) => &obj.properties,
 
             Value::String(_) => todo!(),
             Value::Integer(_) => todo!(),

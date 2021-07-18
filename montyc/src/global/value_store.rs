@@ -89,6 +89,20 @@ impl GlobalValueStore {
     }
 
     #[inline]
+    pub fn with<T>(&self, value_id: ValueId, mut f: impl FnMut(&Value) -> T) -> T {
+        let value = self.values.get(value_id).unwrap();
+        let graph = self.object_graphs.get(value.graph_index).unwrap();
+        let value = graph.node_weight(value.value_index).unwrap();
+
+        f(value)
+    }
+
+    #[inline]
+    pub fn get_module_value(&self, mref: ModuleRef) -> ValueId {
+        self.module_ref_to_value_id.get(&mref).unwrap().clone()
+    }
+
+    #[inline]
     pub fn insert_object_graph(&mut self, graph: ObjectGraph) -> (Rc<ObjectGraph>, usize) {
         self.object_graphs.push(Rc::new(graph));
 
@@ -96,6 +110,12 @@ impl GlobalValueStore {
         let graph = self.object_graphs.get(index).unwrap().clone();
 
         (graph, index)
+    }
+
+    #[inline]
+    pub fn get_graph_of(&self, value_id: ValueId) -> Rc<ObjectGraph> {
+        let graph_index = self.values.get(value_id).unwrap().graph_index;
+        self.object_graphs.get(graph_index).cloned().unwrap()
     }
 
     #[inline]
@@ -139,6 +159,8 @@ impl GlobalValueStore {
 
     #[inline]
     pub fn set_type_of(&mut self, value_id: ValueId, type_id: Option<TypeId>) {
+        log::trace!("[GlobalValueStore::set_type_of] {:?} :- {:?}", value_id, type_id);
+
         self.values
             .get_mut(value_id)
             .map(|value| value.type_id = type_id);

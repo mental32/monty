@@ -83,6 +83,11 @@ pub enum TypeError {
         // op: InfixOp,
     },
 
+    #[error("The value was expected to be a function but it was not.")]
+    NotAFunction {
+        span: SpanRef,
+    },
+
     #[error("Unsupported feature")]
     Unsupported { span: SpanRef, message: String },
 }

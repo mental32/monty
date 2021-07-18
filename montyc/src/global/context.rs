@@ -6,10 +6,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef};
+use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef, TypeError};
 use montyc_hlir::{
     interpreter::{self, HostGlue},
-    typing::TypingContext,
+    typing::{PythonType, TypingContext},
     Value,
 };
 use montyc_parser::{ast, SpanInterner};
@@ -290,7 +290,7 @@ impl GlobalContext {
             gcx.static_names.len()
         );
 
-        let _ = gcx.include_module(opts.libstd().join("builtins.py"));
+        let _ = gcx.include_module(opts.libstd().join("builtins.py"), "builtins");
 
         gcx
     }
@@ -299,6 +299,7 @@ impl GlobalContext {
     fn load_module_with<T>(
         &mut self,
         path: impl AsRef<Path>,
+        module_name: impl AsRef<str>,
         f: impl Fn(&mut Self, ModuleRef) -> T,
     ) -> io::Result<T> {
         let path = path.as_ref();
@@ -342,7 +343,12 @@ impl GlobalContext {
             mref,
         );
 
-        let module = montyc_hlir::ModuleObject::new(path.to_path_buf(), module, mref);
+        let module = montyc_hlir::ModuleObject::new(
+            path.to_path_buf(),
+            module,
+            mref,
+            module_name.as_ref().to_string(),
+        );
 
         let _ = self.module_sources.insert(mref, source);
         let _ = self.modules.try_set_value(mref, module).unwrap();
@@ -356,8 +362,12 @@ impl GlobalContext {
     /// before returning.
     ///
     #[inline]
-    pub fn include_module(&mut self, path: impl AsRef<Path>) -> MontyResult<ModuleRef> {
-        self.load_module_with(path, |gcx, mref| -> MontyResult<ModuleRef> {
+    pub fn include_module(
+        &mut self,
+        path: impl AsRef<Path>,
+        name: impl AsRef<str>,
+    ) -> MontyResult<ModuleRef> {
+        self.load_module_with(path, name, |gcx, mref| -> MontyResult<ModuleRef> {
             let (module_index, object_graph) =
                 gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
 
@@ -526,6 +536,136 @@ impl GlobalContext {
         }
 
         Ok(Vec::from_iter(modules))
+    }
+
+    #[inline]
+    pub(crate) fn resolve_fancy_path_to_modules(&self, path: impl AsRef<str>) -> Vec<ModuleRef> {
+        let path = path.as_ref();
+
+        let mut candidates: Vec<_> = self.modules.iter().map(|(mref, _)| mref).collect();
+        let mut drain_bucket = Vec::with_capacity(candidates.len()); // Hack: drain_filter is still feature gated.
+
+        let segments: Vec<_> = path.split(":").collect();
+        let mut prefix = {
+            let mut prefix = String::with_capacity(path.len());
+
+            prefix.push_str(segments.first().unwrap());
+
+            for mref in candidates.drain(..) {
+                if let Some(module) = self.modules.get(mref.clone()) {
+                    if module.borrow().name.starts_with(&prefix) {
+                        drain_bucket.push(mref);
+                    }
+                }
+            }
+
+            std::mem::swap(&mut candidates, &mut drain_bucket);
+
+            prefix
+        };
+
+        // All segments except the last one are module names.
+        for segment in segments
+            .as_slice()
+            .get(1..segments.len().saturating_sub(1))
+            .unwrap()
+        {
+            for mref in candidates.drain(..) {
+                if let Some(module) = self.modules.get(mref.clone()) {
+                    if module.borrow().name.starts_with(&prefix) {
+                        drain_bucket.push(mref);
+                    }
+                }
+            }
+
+            std::mem::swap(&mut candidates, &mut drain_bucket);
+
+            prefix.push_str(*segment);
+        }
+
+        candidates
+    }
+
+    /// From a given `entry` path, recursively lower all used functions into HLIR code.
+    #[inline]
+    pub fn lower_functions_to_ir_starting_from(
+        &mut self,
+        entry_path: String,
+    ) -> MontyResult<Vec<()>> {
+        if !entry_path.contains(":") {
+            panic!("entry path must speciful at least one module.");
+        }
+
+        let store = self.value_store.borrow();
+        let (module_value_id, mref) = match self
+            .resolve_fancy_path_to_modules(entry_path.as_str())
+            .as_slice()
+        {
+            [] => todo!("could not find a module matching the path {:?}", entry_path),
+            [mref] => (store.get_module_value(mref.clone()), mref.clone()),
+            [_, ..] => todo!("ambiguity in resolving module."),
+        };
+
+        let entry_function = entry_path.split(":").last().unwrap();
+        let module_object_graph = store.get_graph_of(module_value_id);
+
+        let module_ast_graph = self
+            .modules
+            .get(mref.clone())
+            .unwrap()
+            .borrow()
+            .body
+            .clone();
+
+        let entry_function_value_index = store.with(module_value_id, |module| {
+            let entry_function_hash = self.const_runtime.borrow().hash(entry_function);
+            let module_globals = module.properties();
+
+            let (_, entry_function_index) = module_globals.get(entry_function_hash).unwrap();
+
+            entry_function_index
+        });
+
+        let entry_function_alloc_id = module_object_graph
+            .alloc_id_of(entry_function_value_index)
+            .unwrap();
+
+        let entry_function_value = module_object_graph
+            .node_weight(entry_function_value_index)
+            .unwrap();
+
+        let entry_function_ast_index = if let Value::Function { defsite, .. } = entry_function_value {
+            let defsite = defsite.expect("Function must be defined in a source file.");
+
+            assert!(defsite.subgraph_index.is_none());
+
+            defsite.node_index
+        } else {
+            return Err(MontyError::TypeError {
+                module: mref.clone(),
+                error: TypeError::NotAFunction { span: todo!() },
+            });
+        };
+
+        let entry_function_value_id = store.get_value_from_alloc(entry_function_alloc_id).unwrap();
+
+        let tcx = self.typing_context.borrow();
+        let type_id = store.type_of(entry_function_value_id).unwrap();
+        let type_id = tcx.contextualize(type_id).unwrap();
+
+        match type_id.as_python_type() {
+            PythonType::Callable { args, ret } => match (args, ret.clone()) {
+                (Some(_), _) => todo!("main function can not accept arguments."),
+                (None, TypingContext::Int) | (None, TypingContext::None) => (),
+                (None, _) => todo!("main must return either None or int."),
+            },
+
+            _ => unimplemented!(),
+        }
+
+        let funcdef_node = module_ast_graph.node_weight(entry_function_ast_index).unwrap();
+
+        todo!("{:#?}", type_id.as_python_type());
     }
 }
 

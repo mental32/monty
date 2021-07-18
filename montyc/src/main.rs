@@ -65,24 +65,31 @@ fn main() -> std::io::Result<()> {
         | CompilerOptions::Build { libstd, input, .. } => (libstd, input),
     };
 
-    if let Err(err) = gcx.include_module(input) {
+    if let Err(err) = gcx.include_module(input, "__main__") {
         panic!("{:?}", err); // TODO: re-implement codespan error handling.
     }
 
-    if let CompilerOptions::Expand { .. } = opts {
+    if let CompilerOptions::Expand { .. } = opts {  // Note: Might remove this.
         todo!();
     }
 
     if let CompilerOptions::Build {
         output: _,
-        show_ir: _,
+        show_ir,
         cc: _,
         ld: _,
         cranelift_settings: _,
+        entry,
         ..
     } = opts
     {
-        todo!();
+        let functions = gcx.lower_functions_to_ir_starting_from(entry);
+
+        if let Some(path) = show_ir.as_ref() {
+            todo!("show_ir");
+        } else {
+            todo!("submit lowered functions to cranelift and produce a binary.");
+        }
     }
 
     Ok(())
