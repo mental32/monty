@@ -35,7 +35,7 @@ pub(crate) mod fndef_to_hlir {
         AstObject, AstVisitor,
     };
 
-    use crate::{prelude::GlobalContext, ribs::Ribs};
+    use crate::{def_stack::DefStack, prelude::GlobalContext};
 
     use super::Lower;
 
@@ -49,7 +49,7 @@ pub(crate) mod fndef_to_hlir {
         pub(crate) value_alloc_id: ObjAllocId,
         pub(crate) ast_index: UniqueNodeIndex,
         pub(crate) type_id: TypeId,
-        pub(crate) ribs: Ribs,
+        pub(crate) def_stack: DefStack,
     }
 
     type I<'a> = (FunctionContext, &'a mut GlobalContext);
@@ -304,7 +304,7 @@ pub(crate) mod fndef_to_hlir {
 
             Ok(Some(self.use_var(
                 name.group(),
-                self.context.ribs.get(name.group()).unwrap().0,
+                self.context.def_stack.get(name.group()).unwrap().0,
             )))
         }
 

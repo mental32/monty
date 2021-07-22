@@ -681,7 +681,7 @@ impl GlobalContext {
             .node_weight(entry_function_ast_index)
             .unwrap()
         {
-            let ribs = {
+            let def_stack = {
                 self.value_store
                     .borrow_mut()
                     .function_rib_stack(entry_function_value_id)
@@ -693,7 +693,7 @@ impl GlobalContext {
                 value_index: entry_function_value_index,
                 value_alloc_id: entry_function_alloc_id,
                 type_id,
-                ribs,
+                def_stack,
                 ast_index: UniqueNodeIndex {
                     subgraph_index: None,
                     node_index: entry_function_ast_index,

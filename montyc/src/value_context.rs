@@ -6,8 +6,8 @@ use montyc_parser::AstNode;
 use petgraph::graph::NodeIndex;
 
 use crate::{
+    def_stack::{DefKind, DefScope, DefStack},
     prelude::GlobalContext,
-    ribs::{RibData, RibType, Ribs},
     type_eval::TypeEvalContext,
     typechk::Typecheck,
 };
@@ -76,7 +76,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 };
 
                 let funcdef_args = funcdef.args.as_ref();
-                let mut ribs = Rc::new(RefCell::new({
+                let mut def_stack = Rc::new(RefCell::new({
                     if dbg!(cx.mref) != ModuleRef(1) {
                         let module_value_id = cx
                             .gcx
@@ -91,9 +91,9 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                             .get_rib_data_of(module_value_id)
                             .unwrap();
 
-                        Ribs::new(Some(dbg!(builtin_rib)), Some(RibType::Builtins))
+                        DefStack::new(Some(dbg!(builtin_rib)), Some(DefKind::Builtins))
                     } else {
-                        Ribs::new(None, None)
+                        DefStack::new(None, None)
                     }
                 }));
 
@@ -193,15 +193,15 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                     let module = store.get_module_value(cx.mref);
                     let module_rib = store.get_rib_data_of(module).unwrap();
 
-                    ribs.borrow_mut().extend(module_rib.into_iter());
-                    ribs.borrow_mut().extend(params.into_iter());
+                    def_stack.borrow_mut().extend(module_rib.into_iter());
+                    def_stack.borrow_mut().extend(params.into_iter());
                 }
 
                 for node in funcdef.body.iter() {
                     node.typecheck(TypeEvalContext {
                         value_cx: &cx,
                         expected_return_value: return_type,
-                        ribs: Rc::clone(&ribs),
+                        def_stack: Rc::clone(&def_stack),
                     })?;
                 }
 
@@ -211,7 +211,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
 
                 match store.function_rib_stack(value_id) {
                     Ok(_) => unreachable!(),
-                    Err(slot) => slot.replace(Rc::make_mut(&mut ribs).clone().into_inner()),
+                    Err(slot) => slot.replace(Rc::make_mut(&mut def_stack).clone().into_inner()),
                 };
 
                 Ok(func_type)
@@ -255,7 +255,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 store.set_type_of(class_value_id, Some(type_id));
                 std::mem::drop(store);
 
-                let mut rib = RibData::default();
+                let mut rib = DefScope::default();
 
                 for (key_idx, value_idx) in properties.iter_by_alloc_asc(cx.object_graph) {
                     let value = cx.object_graph.node_weight(value_idx).unwrap();

@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use montyc_core::{utils::SSAMap, ModuleRef, TypeId, ValueId};
 use montyc_hlir::{typing::TypingContext, ObjAllocId, ObjectGraph, ObjectGraphIndex, Value};
 
-use crate::ribs::{RibData, Ribs};
+use crate::def_stack::{DefScope, DefStack};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 struct UniqueValueIndex {
@@ -21,8 +21,8 @@ enum StoredValue {
         /// The module it belongs to.
         mref: ModuleRef,
 
-        /// Module RibData.
-        ribs: Option<Ribs>,
+        /// Module DefScope.
+        def_stack: Option<DefStack>,
 
         /// Used to index the Object graph to access the raw value.
         index: UniqueValueIndex,
@@ -38,8 +38,8 @@ enum StoredValue {
         /// The module reference.
         mref: ModuleRef,
 
-        /// Module RibData.
-        rib: RibData,
+        /// Module DefScope.
+        rib: DefScope,
 
         /// Used to index the Object graph to access the raw value.
         index: UniqueValueIndex,
@@ -55,8 +55,8 @@ enum StoredValue {
         /// Used to index the Object graph to access the raw value.
         value_index: UniqueValueIndex,
 
-        /// An optional slot used to associate RibData with a value.
-        value_rib: Option<RibData>,
+        /// An optional slot used to associate DefScope with a value.
+        value_rib: Option<DefScope>,
     },
 }
 
@@ -107,7 +107,7 @@ impl GlobalValueStore {
         value_index: ObjectGraphIndex,
         graph_id: usize,
         mref: ModuleRef,
-        ribs: Option<Ribs>,
+        def_stack: Option<DefStack>,
         type_id: Option<TypeId>,
     ) -> ValueId {
         let alloc_id = self.object_graphs[graph_id]
@@ -116,7 +116,7 @@ impl GlobalValueStore {
 
         let value_id = self.values.insert(StoredValue::Function {
             mref,
-            ribs,
+            def_stack,
             alloc_id,
             type_id,
             index: UniqueValueIndex {
@@ -290,13 +290,16 @@ impl GlobalValueStore {
     }
 
     #[inline]
-    pub fn function_rib_stack(&mut self, value_id: ValueId) -> Result<Ribs, &mut Option<Ribs>> {
+    pub fn function_rib_stack(
+        &mut self,
+        value_id: ValueId,
+    ) -> Result<DefStack, &mut Option<DefStack>> {
         let value = self.values.get_mut(value_id).unwrap();
 
-        if let StoredValue::Function { ribs, .. } = value {
-            match ribs {
-                Some(ribs) => Ok(ribs.clone()),
-                None => Err(ribs),
+        if let StoredValue::Function { def_stack, .. } = value {
+            match def_stack {
+                Some(def_stack) => Ok(def_stack.clone()),
+                None => Err(def_stack),
             }
         } else {
             unimplemented!("not a funciton.");
@@ -304,7 +307,7 @@ impl GlobalValueStore {
     }
 
     #[inline]
-    pub fn set_rib_data_of(&mut self, value_id: ValueId, mut rib: Option<RibData>) {
+    pub fn set_rib_data_of(&mut self, value_id: ValueId, mut rib: Option<DefScope>) {
         log::trace!(
             "[GlobalValueStore::set_rib_data_of] {:?} rib={:?}",
             value_id,
@@ -323,7 +326,7 @@ impl GlobalValueStore {
     }
 
     #[inline]
-    pub fn get_rib_data_of(&self, value_id: ValueId) -> Option<RibData> {
+    pub fn get_rib_data_of(&self, value_id: ValueId) -> Option<DefScope> {
         let value = self.values.get(value_id)?;
 
         match value {

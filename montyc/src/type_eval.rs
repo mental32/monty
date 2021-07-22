@@ -15,7 +15,7 @@ use montyc_parser::{
 };
 
 use crate::typechk::Typecheck;
-use crate::{ribs::Ribs, value_context::ValueContext};
+use crate::{def_stack::DefStack, value_context::ValueContext};
 
 fn get_class_graph_pair(
     type_id: TypeId,
@@ -45,7 +45,7 @@ fn get_class_graph_pair(
 pub(crate) struct TypeEvalContext<'gcx, 'this> {
     pub value_cx: &'this ValueContext<'this, 'gcx>,
     pub expected_return_value: TypeId,
-    pub ribs: Rc<RefCell<Ribs>>,
+    pub def_stack: Rc<RefCell<DefStack>>,
 }
 
 impl<'gcx, 'this, A> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>> for Spanned<A>
@@ -137,7 +137,7 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
                     value_type
                 );
 
-                cx.ribs.borrow_mut().add(name.group(), value_type);
+                cx.def_stack.borrow_mut().add(name.group(), value_type);
 
                 Ok(None)
             }
@@ -159,14 +159,13 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
 
             AstNode::Name(name) => {
                 let sref = name.clone().unwrap_name();
-                let (type_id, rib_type) =
-                    dbg!(cx.ribs.borrow()).get(sref.group()).ok_or_else(|| {
-                        MontyError::TypeError {
-                            module: cx.value_cx.mref,
-                            error: TypeError::UndefinedVariable {
-                                sref: cx.value_cx.gcx.spanref_to_str(sref).to_string(),
-                            },
-                        }
+                let (type_id, rib_type) = dbg!(cx.def_stack.borrow())
+                    .get(sref.group())
+                    .ok_or_else(|| MontyError::TypeError {
+                        module: cx.value_cx.mref,
+                        error: TypeError::UndefinedVariable {
+                            sref: cx.value_cx.gcx.spanref_to_str(sref).to_string(),
+                        },
                     })?;
 
                 if type_id == TypingContext::Unknown {

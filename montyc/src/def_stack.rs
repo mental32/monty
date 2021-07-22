@@ -1,23 +1,23 @@
 use ahash::AHashMap;
 use montyc_core::TypeId;
 
-pub type RibData = AHashMap<u32, TypeId>;
+pub type DefScope = AHashMap<u32, TypeId>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RibType {
+pub enum DefKind {
     Builtins,
     Global,
     Local,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Ribs(Vec<(RibType, RibData)>);
+pub(crate) struct DefStack(Vec<(DefKind, DefScope)>);
 
-impl Ribs {
+impl DefStack {
     #[inline]
-    pub fn new(initial: Option<RibData>, kind: Option<RibType>) -> Self {
+    pub fn new(initial: Option<DefScope>, kind: Option<DefKind>) -> Self {
         let initial = initial
-            .map(|r| vec![(kind.unwrap_or(RibType::Global), r)])
+            .map(|r| vec![(kind.unwrap_or(DefKind::Global), r)])
             .unwrap_or_default();
 
         Self(initial)
@@ -26,12 +26,12 @@ impl Ribs {
     /// Associate a name's span group with a type.
     #[inline]
     pub fn add(&mut self, key: u32, value: TypeId) {
-        log::trace!("[Ribs::add] adding unqiue key={:?} as {:?}", key, value);
+        log::trace!("[DefStack::add] adding unqiue key={:?} as {:?}", key, value);
 
         self.0.push({
             let mut rib = AHashMap::new();
             rib.insert(key, value);
-            (RibType::Local, rib)
+            (DefKind::Local, rib)
         });
     }
 
@@ -39,14 +39,14 @@ impl Ribs {
     #[inline]
     pub fn extend(&mut self, it: impl Iterator<Item = (u32, TypeId)>) {
         let rib: AHashMap<_, _> = it.collect();
-        log::trace!("[Ribs::add] extending rib={:?}", rib);
+        log::trace!("[DefStack::add] extending rib={:?}", rib);
 
-        self.0.push((RibType::Local, rib));
+        self.0.push((DefKind::Local, rib));
     }
 
     /// Get the type associated with a name's span group.
     #[inline]
-    pub fn get(&self, key: u32) -> Option<(TypeId, RibType)> {
+    pub fn get(&self, key: u32) -> Option<(TypeId, DefKind)> {
         self.0
             .iter()
             .rev()

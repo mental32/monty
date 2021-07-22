@@ -1,8 +1,8 @@
 #![deny(warnings)]
 
+pub(crate) mod def_stack;
 pub(crate) mod lower;
 pub(crate) mod opts;
-pub(crate) mod ribs;
 pub(crate) mod type_eval;
 pub(crate) mod typechk;
 pub(crate) mod value_context;
