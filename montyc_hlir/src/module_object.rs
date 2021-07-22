@@ -1,10 +1,14 @@
-use std::{path::{Path, PathBuf}, rc::Rc};
+//! Module objects.
+
+use std::{
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use montyc_core::ModuleRef;
 use montyc_parser::ast;
 
 use crate::grapher;
-
 
 /// A module object is a representation of a Python module.
 #[derive(Debug, Clone)]

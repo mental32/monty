@@ -84,6 +84,7 @@ pub enum SSAValueDef {
 }
 
 impl SSAValueDef {
+    /// return the `(block_id, inst_number)` pair from the value def if it's an instruction.
     pub fn inst(&self) -> (BlockId, usize) {
         match self {
             Self::Inst(block, inst) => (*block, *inst),
@@ -91,6 +92,7 @@ impl SSAValueDef {
         }
     }
 
+    /// return the `(block_id, param_number)` pair from the value def if it's an parameter.
     pub fn param(&self) -> (BlockId, usize) {
         match self {
             Self::Param(block, inst) => (*block, *inst),

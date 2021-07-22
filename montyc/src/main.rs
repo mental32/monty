@@ -69,7 +69,8 @@ fn main() -> std::io::Result<()> {
         panic!("{:?}", err); // TODO: re-implement codespan error handling.
     }
 
-    if let CompilerOptions::Expand { .. } = opts {  // Note: Might remove this.
+    if let CompilerOptions::Expand { .. } = opts {
+        // Note: Might remove this.
         todo!();
     }
 

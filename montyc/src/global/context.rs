@@ -17,7 +17,6 @@ use montyc_parser::{ast, AstNode, SpanInterner};
 use crate::{
     lower::{fndef_to_hlir::FunctionContext, Lower},
     prelude::*,
-    ribs::{RibType, Ribs},
     typechk::Typecheck,
     value_context::ValueContext,
 };
@@ -156,6 +155,7 @@ pub struct ImportPath {
 
 impl ImportPath {
     #[inline]
+    #[allow(dead_code)]
     pub fn new(base: PathBuf) -> Self {
         Self {
             base: base.clone(),
@@ -164,6 +164,7 @@ impl ImportPath {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn resolve_import_to_path(
         qualname: Vec<&str>,
         paths: impl Iterator<Item = PathBuf>,
@@ -189,6 +190,7 @@ impl ImportPath {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn advance(&mut self, expected: impl AsRef<str>) -> Option<PathBuf> {
         let expected = expected.as_ref();
 
@@ -392,7 +394,7 @@ impl GlobalContext {
                 _ => unreachable!(),
             };
 
-            let module_alloc_id = object_graph.alloc_id_of(module_index).unwrap();
+            let _module_alloc_id = object_graph.alloc_id_of(module_index).unwrap();
             let module_value_id = gcx
                 .value_store
                 .borrow_mut()
@@ -649,7 +651,7 @@ impl GlobalContext {
         } else {
             return Err(MontyError::TypeError {
                 module: mref.clone(),
-                error: TypeError::NotAFunction { span: todo!() },
+                error: TypeError::NotAFunction,
             });
         };
 

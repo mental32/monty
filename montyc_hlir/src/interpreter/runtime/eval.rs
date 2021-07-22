@@ -50,9 +50,15 @@ impl TryIntoObject for SpanRef {
     }
 }
 
+/// An node index with its subgraph index (or none if in the module graph.)
 #[derive(Debug, Clone, Copy)]
 pub struct UniqueNodeIndex {
+    /// Subgraphs are the bodies of classes and functions and are generated lazilly.
+    ///
+    /// If the subgraph index is None then the node index is an index in the module body graph.
     pub subgraph_index: Option<NodeIndex>,
+
+    /// The index into the graph specified above.
     pub node_index: NodeIndex,
 }
 

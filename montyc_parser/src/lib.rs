@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![deny(warnings)]
 
 use std::{fmt::Debug, rc::Rc};
 

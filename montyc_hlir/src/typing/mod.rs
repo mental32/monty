@@ -1,3 +1,5 @@
+//! Typing-related and management of types logic here.
+
 #![allow(non_upper_case_globals)]
 
 use montyc_core::{utils::SSAMap, SpanRef, TypeId};

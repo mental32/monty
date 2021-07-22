@@ -1,11 +1,11 @@
-#![warn(warnings)]
+#![deny(warnings)]
 
+pub(crate) mod lower;
 pub(crate) mod opts;
 pub(crate) mod ribs;
-pub(crate) mod typechk;
 pub(crate) mod type_eval;
+pub(crate) mod typechk;
 pub(crate) mod value_context;
-pub(crate) mod lower;
 
 pub mod prelude {
     use super::*;

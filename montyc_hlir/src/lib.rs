@@ -10,12 +10,14 @@
 //! HLIR was designed to be constructable from any AST and is made
 //! to alleviate the problems working purely with an AST-based representation.
 #![warn(missing_docs)]
+#![deny(warnings)]
+
+mod grapher;
+mod object_graph;
 
 pub mod code;
-mod grapher;
 pub mod interpreter;
 pub mod module_object;
-mod object_graph;
 pub mod typing;
 
 use montyc_core::{ModuleRef, TypeId};
@@ -82,6 +84,7 @@ impl Value {
         self.properties().iter()
     }
 
+    /// Get the properties dict of the value.
     pub fn properties(&self) -> &PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
         match self {
             Value::Dict {

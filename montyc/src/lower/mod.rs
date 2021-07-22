@@ -31,7 +31,7 @@ pub(crate) mod fndef_to_hlir {
         ObjAllocId, ObjectGraph, ObjectGraphIndex, Value,
     };
     use montyc_parser::{
-        ast::{Assign, Atom, Expr, InfixOp, Primary, Return, While},
+        ast::{Assign, Atom, Expr, Primary, Return, While},
         AstObject, AstVisitor,
     };
 
@@ -408,15 +408,14 @@ pub(crate) mod fndef_to_hlir {
             let true_block = self.function.layout.add();
 
             self.jump_if_truthy(test_value, true_block);
-
             self.current_block.replace(true_block);
 
-            let true_value = body.inner.visit_with(self)?.unwrap();
+            let _true_value = body.inner.visit_with(self)?.unwrap();
 
             self.current_block.replace(test_block);
+            let _ = self.fallthrough_to_new_block();
 
-            let (_, false_block) = self.fallthrough_to_new_block();
-            let false_value = body.inner.visit_with(self)?.unwrap();
+            let false_value = orelse.inner.visit_with(self)?.unwrap();
 
             let (_, phi) = self.fallthrough_to_new_block();
 

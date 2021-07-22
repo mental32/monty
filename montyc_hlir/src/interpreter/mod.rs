@@ -1,3 +1,5 @@
+//! An AST-based interpreter runtime for const evaluation.
+
 mod exception;
 pub(crate) mod object;
 mod runtime;

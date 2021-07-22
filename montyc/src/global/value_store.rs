@@ -84,17 +84,14 @@ impl GlobalValueStore {
             return *value_id;
         }
 
-        let object_graph = self.object_graphs[graph_id].clone();
-        let stored_value = match object_graph.node_weight(value_index).unwrap() {
-            value => StoredValue::AnyValue {
-                value_alloc_id,
-                value_type_id: None,
-                value_index: UniqueValueIndex {
-                    graph_id,
-                    value_index,
-                },
-                value_rib: None,
+        let stored_value = StoredValue::AnyValue {
+            value_alloc_id,
+            value_type_id: None,
+            value_index: UniqueValueIndex {
+                graph_id,
+                value_index,
             },
+            value_rib: None,
         };
 
         let value_id = self.values.insert(stored_value);
@@ -141,7 +138,7 @@ impl GlobalValueStore {
             return *value_id;
         }
 
-        let (value, mref) = object_graph
+        let (_value, mref) = object_graph
             .node_weight(value_index)
             .and_then(|value| match value {
                 Value::Module { mref, .. } => Some((value, mref.clone())),
