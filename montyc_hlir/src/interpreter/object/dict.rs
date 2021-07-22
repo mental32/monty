@@ -87,9 +87,7 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
         let mut allocs: Vec<_> = graph
             .alloc_to_idx
             .iter()
-            .filter_map(|(alloc, index)| {
-                values.get(index).map(|key| (*alloc, *index, *key))
-            })
+            .filter_map(|(alloc, index)| values.get(index).map(|key| (*alloc, *index, *key)))
             .collect();
 
         allocs.sort_unstable_by(|(a, _, _), (b, _, _)| a.0.cmp(&b.0));

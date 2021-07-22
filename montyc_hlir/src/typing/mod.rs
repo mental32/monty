@@ -88,7 +88,7 @@ builtins!(
 );
 
 /// A native Python type.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum PythonType {
     /// Special type indicating that a function never returns.

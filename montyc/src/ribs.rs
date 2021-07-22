@@ -10,7 +10,7 @@ pub enum RibType {
     Local,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Ribs(Vec<(RibType, RibData)>);
 
 impl Ribs {
@@ -26,6 +26,8 @@ impl Ribs {
     /// Associate a name's span group with a type.
     #[inline]
     pub fn add(&mut self, key: u32, value: TypeId) {
+        log::trace!("[Ribs::add] adding unqiue key={:?} as {:?}", key, value);
+
         self.0.push({
             let mut rib = AHashMap::new();
             rib.insert(key, value);
@@ -36,7 +38,10 @@ impl Ribs {
     /// Extend by adding multiple entries into one level.
     #[inline]
     pub fn extend(&mut self, it: impl Iterator<Item = (u32, TypeId)>) {
-        self.0.push((RibType::Local, it.collect()));
+        let rib: AHashMap<_, _> = it.collect();
+        log::trace!("[Ribs::add] extending rib={:?}", rib);
+
+        self.0.push((RibType::Local, rib));
     }
 
     /// Get the type associated with a name's span group.

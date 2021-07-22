@@ -14,17 +14,18 @@ use montyc_parser::{
     AstNode, AstObject,
 };
 
-use crate::{global::value_context::ValueContext, ribs::Ribs};
+use crate::typechk::Typecheck;
+use crate::{ribs::Ribs, value_context::ValueContext};
 
-use super::Typecheck;
+fn get_class_graph_pair(
+    type_id: TypeId,
+    cx: &TypeEvalContext,
+) -> ((Rc<ObjectGraph>, usize), Value) {
+    let store = cx.value_cx.gcx.value_store.borrow();
 
-fn get_class_graph_pair(type_id: TypeId, cx: &TypeEvalContext) -> (Value, Rc<ObjectGraph>) {
-    cx.value_cx
-        .gcx
-        .value_store
-        .borrow()
+    store
         .class_of(type_id)
-        .map(|(_, a, b)| (a.clone(), b.clone()))
+        .map(|(value_id, a, _)| (store.get_graph_of(value_id), a.clone()))
         .ok_or_else(|| {
             format!(
                 "No class associated with type {:?}",
@@ -79,7 +80,10 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
             AstNode::FuncDef(_) => todo!(),
             AstNode::Import(_) => todo!(),
 
-            AstNode::If(IfChain { branches, orelse }) => {
+            AstNode::If(IfChain {
+                branches,
+                orelse: _,
+            }) => {
                 for Spanned { inner, .. } in branches {
                     let test_t = inner
                         .test
@@ -156,15 +160,14 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
             AstNode::Name(name) => {
                 let sref = name.clone().unwrap_name();
                 let (type_id, rib_type) =
-                    cx.ribs
-                        .borrow()
-                        .get(sref.group())
-                        .ok_or_else(|| MontyError::TypeError {
+                    dbg!(cx.ribs.borrow()).get(sref.group()).ok_or_else(|| {
+                        MontyError::TypeError {
                             module: cx.value_cx.mref,
                             error: TypeError::UndefinedVariable {
                                 sref: cx.value_cx.gcx.spanref_to_str(sref).to_string(),
                             },
-                        })?;
+                        }
+                    })?;
 
                 if type_id == TypingContext::Unknown {
                     return Err(MontyError::TypeError {
@@ -185,7 +188,8 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
                     "Left-hand side of binary operation should always produce a typed value",
                 );
 
-                let (left_class, left_graph) = get_class_graph_pair(left_type, &cx);
+                let ((left_graph, left_graph_index), left_class) =
+                    get_class_graph_pair(left_type, &cx);
 
                 log::trace!(
                     "[TypeEvalContext::typecheck] Getting class of type_id={:?} -> {:?}",
@@ -227,7 +231,7 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
                         value: func,
                         value_idx: dunder_index,
                         object_graph: left_graph.as_ref(),
-                        object_graph_index: dunder_index.index(),
+                        object_graph_index: left_graph_index,
                     })?
                 } else {
                     todo!("Binary operations on non-functions not yet supported");
@@ -326,10 +330,10 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
                         }
 
                         _ => {
-                            let (value_class, class_graph) =
+                            let ((class_graph, _), value_class) =
                                 get_class_graph_pair(value_type.type_id, &cx);
 
-                            let (dunder_index, dunder_value) = if let Value::Class {
+                            let (_dunder_index, _dunder_value) = if let Value::Class {
                                 properties,
                                 ..
                             } = value_class
@@ -386,8 +390,6 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
 
                 //     _ => unimplemented!(),
                 // }
-
-                Ok(None)
             }
 
             AstNode::Call(Primary::Call { func, args }) => {

@@ -1,39 +1,69 @@
 use std::rc::Rc;
 
 use ahash::AHashMap;
-use montyc_core::{utils::SSAMap, ModuleRef, TypeId};
-use montyc_hlir::{ObjAllocId, ObjectGraph, ObjectGraphIndex, Value};
+use montyc_core::{utils::SSAMap, ModuleRef, TypeId, ValueId};
+use montyc_hlir::{typing::TypingContext, ObjAllocId, ObjectGraph, ObjectGraphIndex, Value};
 
-use crate::ribs::RibData;
+use crate::ribs::{RibData, Ribs};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
-pub struct ValueId(usize);
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+struct UniqueValueIndex {
+    // Which ObjectGraph does this value belong to?
+    graph_id: usize,
 
-impl From<ValueId> for usize {
-    fn from(ValueId(n): ValueId) -> Self {
-        n
-    }
-}
-
-impl From<usize> for ValueId {
-    fn from(n: usize) -> Self {
-        Self(n)
-    }
+    /// Where in the ObjectGraph is this value found.
+    value_index: ObjectGraphIndex,
 }
 
 #[derive(Debug)]
-struct WrappedValue {
-    alloc_id: ObjAllocId,
-    value_index: ObjectGraphIndex,
-    graph_index: usize,
-    type_id: Option<TypeId>,
-    rib: Option<RibData>,
+enum StoredValue {
+    Function {
+        /// The module it belongs to.
+        mref: ModuleRef,
+
+        /// Module RibData.
+        ribs: Option<Ribs>,
+
+        /// Used to index the Object graph to access the raw value.
+        index: UniqueValueIndex,
+
+        /// The Alloc ID of the function.
+        alloc_id: ObjAllocId,
+
+        /// A slot used to intern the inferred TypeId of the value.
+        type_id: Option<TypeId>,
+    },
+
+    Module {
+        /// The module reference.
+        mref: ModuleRef,
+
+        /// Module RibData.
+        rib: RibData,
+
+        /// Used to index the Object graph to access the raw value.
+        index: UniqueValueIndex,
+    },
+
+    AnyValue {
+        /// The Alloc ID of the object.
+        value_alloc_id: ObjAllocId,
+
+        /// A slot used to intern the inferred TypeId of the value.
+        value_type_id: Option<TypeId>,
+
+        /// Used to index the Object graph to access the raw value.
+        value_index: UniqueValueIndex,
+
+        /// An optional slot used to associate RibData with a value.
+        value_rib: Option<RibData>,
+    },
 }
 
 /// A structure used to track and cache the results of `montyc_hlir::Value` typecheck/inference/whatever.
 #[derive(Default, Debug)]
-pub struct GlobalValueStore {
-    values: SSAMap<ValueId, WrappedValue>,
+pub(crate) struct GlobalValueStore {
+    values: SSAMap<ValueId, StoredValue>,
 
     alloc_id_to_value_id: AHashMap<ObjAllocId, ValueId>,
     type_ids_to_class_values: AHashMap<TypeId, ValueId>,
@@ -47,43 +77,89 @@ impl GlobalValueStore {
     pub fn insert(
         &mut self,
         value_index: ObjectGraphIndex,
-        alloc_id: ObjAllocId,
-        graph_index: usize,
+        value_alloc_id: ObjAllocId,
+        graph_id: usize,
     ) -> ValueId {
-        if let Some(value_id) = self.alloc_id_to_value_id.get(&alloc_id) {
+        if let Some(value_id) = self.alloc_id_to_value_id.get(&value_alloc_id) {
             return *value_id;
         }
 
-        let value_id = self.values.insert(WrappedValue {
-            alloc_id,
-            value_index,
-            graph_index,
-            type_id: Default::default(),
-            rib: None,
-        });
+        let object_graph = self.object_graphs[graph_id].clone();
+        let stored_value = match object_graph.node_weight(value_index).unwrap() {
+            value => StoredValue::AnyValue {
+                value_alloc_id,
+                value_type_id: None,
+                value_index: UniqueValueIndex {
+                    graph_id,
+                    value_index,
+                },
+                value_rib: None,
+            },
+        };
 
-        self.alloc_id_to_value_id.insert(alloc_id, value_id);
+        let value_id = self.values.insert(stored_value);
+
+        self.alloc_id_to_value_id.insert(value_alloc_id, value_id);
 
         value_id
     }
 
     #[inline]
-    pub fn insert_module(
+    pub fn insert_function(
         &mut self,
         value_index: ObjectGraphIndex,
-        alloc_id: ObjAllocId,
-        graph_index: usize,
+        graph_id: usize,
+        mref: ModuleRef,
+        ribs: Option<Ribs>,
+        type_id: Option<TypeId>,
     ) -> ValueId {
-        let mref = if let Value::Module { mref, .. } = self.object_graphs[graph_index]
+        let alloc_id = self.object_graphs[graph_id]
+            .alloc_id_of(value_index)
+            .unwrap();
+
+        let value_id = self.values.insert(StoredValue::Function {
+            mref,
+            ribs,
+            alloc_id,
+            type_id,
+            index: UniqueValueIndex {
+                graph_id,
+                value_index,
+            },
+        });
+
+        self.alloc_id_to_value_id.insert(alloc_id, value_id);
+        value_id
+    }
+
+    #[inline]
+    pub fn insert_module(&mut self, value_index: ObjectGraphIndex, graph_id: usize) -> ValueId {
+        let object_graph = self.object_graphs[graph_id].clone();
+        let alloc_id = object_graph.alloc_id_of(value_index).unwrap();
+
+        if let Some(value_id) = self.alloc_id_to_value_id.get(&alloc_id) {
+            return *value_id;
+        }
+
+        let (value, mref) = object_graph
             .node_weight(value_index)
-            .unwrap()
-        {
-            *mref
-        } else {
-            panic!("Value is not a module");
+            .and_then(|value| match value {
+                Value::Module { mref, .. } => Some((value, mref.clone())),
+                _ => None,
+            })
+            .expect("not a module value.");
+
+        let stored_value = StoredValue::Module {
+            mref,
+            rib: Default::default(),
+            index: UniqueValueIndex {
+                graph_id,
+                value_index,
+            },
         };
 
-        let value_id = self.insert(value_index, alloc_id, graph_index);
+        let value_id = self.values.insert(stored_value);
+
         self.module_ref_to_value_id.insert(mref, value_id);
         value_id
     }
@@ -91,10 +167,21 @@ impl GlobalValueStore {
     #[inline]
     pub fn with<T>(&self, value_id: ValueId, mut f: impl FnMut(&Value) -> T) -> T {
         let value = self.values.get(value_id).unwrap();
-        let graph = self.object_graphs.get(value.graph_index).unwrap();
-        let value = graph.node_weight(value.value_index).unwrap();
 
-        f(value)
+        match value {
+            StoredValue::Module {
+                index: value_index, ..
+            }
+            | StoredValue::Function {
+                index: value_index, ..
+            }
+            | StoredValue::AnyValue { value_index, .. } => {
+                let graph = self.object_graphs.get(value_index.graph_id).unwrap();
+                let value = graph.node_weight(value_index.value_index).unwrap();
+
+                f(value)
+            }
+        }
     }
 
     #[inline]
@@ -109,13 +196,28 @@ impl GlobalValueStore {
         let index = self.object_graphs.len().saturating_sub(1);
         let graph = self.object_graphs.get(index).unwrap().clone();
 
-        (graph, index)
+        (graph, dbg!(index))
     }
 
     #[inline]
-    pub fn get_graph_of(&self, value_id: ValueId) -> Rc<ObjectGraph> {
-        let graph_index = self.values.get(value_id).unwrap().graph_index;
-        self.object_graphs.get(graph_index).cloned().unwrap()
+    pub fn get_graph_of(&self, value_id: ValueId) -> (Rc<ObjectGraph>, usize) {
+        let value = self.values.get(value_id).unwrap();
+
+        match value {
+            StoredValue::Module {
+                index: value_index, ..
+            }
+            | StoredValue::Function {
+                index: value_index, ..
+            }
+            | StoredValue::AnyValue { value_index, .. } => (
+                self.object_graphs
+                    .get(value_index.graph_id)
+                    .cloned()
+                    .unwrap(),
+                value_index.graph_id,
+            ),
+        }
     }
 
     #[inline]
@@ -133,59 +235,107 @@ impl GlobalValueStore {
             .get(&type_id)
             .and_then(|v| self.values.get(*v).map(|k| (*v, k)))?;
 
-        let (graph, value) = self
-            .object_graphs
-            .get(value.graph_index)
-            .and_then(|graph| {
-                graph
-                    .node_weight(value.value_index)
-                    .map(|value| (Rc::clone(graph), value))
-            })?;
+        let (graph_id, value_index) = match value {
+            StoredValue::Module { .. } => return self.class_of(TypingContext::Module),
+            StoredValue::Function { .. } => return None,
+            StoredValue::AnyValue { value_index, .. } => {
+                (value_index.graph_id, value_index.value_index)
+            }
+        };
+
+        let (graph, value) = self.object_graphs.get(graph_id).and_then(|graph| {
+            graph
+                .node_weight(value_index)
+                .map(|value| (Rc::clone(graph), value))
+        })?;
 
         Some((value_id, value, graph))
     }
 
     #[inline]
     pub fn set_class_of(&mut self, type_id: TypeId, value_id: ValueId) {
+        log::trace!(
+            "[GlobalValueStore::set_class_of] {:?} is now the class of {:?}",
+            value_id,
+            type_id
+        );
+
         self.type_ids_to_class_values.insert(type_id, value_id);
     }
 
     #[inline]
     pub fn type_of(&self, value_id: ValueId) -> Option<TypeId> {
-        self.values
-            .get(value_id)
-            .and_then(|value| value.type_id.clone())
+        self.values.get(value_id).and_then(|value| match value {
+            StoredValue::Module { .. } => Some(TypingContext::Module),
+            StoredValue::Function { type_id, .. } => type_id.clone(),
+            StoredValue::AnyValue { value_type_id, .. } => value_type_id.clone(),
+        })
     }
 
     #[inline]
-    pub fn set_type_of(&mut self, value_id: ValueId, type_id: Option<TypeId>) {
-        log::trace!("[GlobalValueStore::set_type_of] {:?} :- {:?}", value_id, type_id);
+    pub fn set_type_of(&mut self, value_id: ValueId, mut type_id: Option<TypeId>) {
+        log::trace!(
+            "[GlobalValueStore::set_type_of] {:?} :- {:?}",
+            value_id,
+            type_id
+        );
 
-        self.values
-            .get_mut(value_id)
-            .map(|value| value.type_id = type_id);
+        self.values.get_mut(value_id).map(|value| match value {
+            StoredValue::Function {
+                type_id: value_type_id,
+                ..
+            }
+            | StoredValue::AnyValue { value_type_id, .. } => {
+                std::mem::swap(value_type_id, &mut type_id)
+            }
+            StoredValue::Module { .. } => unimplemented!(),
+        });
     }
 
     #[inline]
-    pub fn set_rib_data_of(&mut self, module_ref: ModuleRef, rib: Option<RibData>) {
-        let value_id = self
-            .module_ref_to_value_id
-            .get(&module_ref)
-            .cloned()
-            .unwrap();
-        self.values.get_mut(value_id).map(|value| value.rib = rib);
+    pub fn function_rib_stack(&mut self, value_id: ValueId) -> Result<Ribs, &mut Option<Ribs>> {
+        let value = self.values.get_mut(value_id).unwrap();
+
+        if let StoredValue::Function { ribs, .. } = value {
+            match ribs {
+                Some(ribs) => Ok(ribs.clone()),
+                None => Err(ribs),
+            }
+        } else {
+            unimplemented!("not a funciton.");
+        }
     }
 
     #[inline]
-    pub fn get_rib_data_of(&self, module_ref: ModuleRef) -> Option<RibData> {
-        let value_id = self
-            .module_ref_to_value_id
-            .get(&module_ref)
-            .cloned()
-            .unwrap();
+    pub fn set_rib_data_of(&mut self, value_id: ValueId, mut rib: Option<RibData>) {
+        log::trace!(
+            "[GlobalValueStore::set_rib_data_of] {:?} rib={:?}",
+            value_id,
+            rib
+        );
 
-        self.values
-            .get(value_id)
-            .and_then(|value| value.rib.clone())
+        let value = self.values.get_mut(value_id).unwrap();
+
+        match value {
+            StoredValue::Function { .. } => unimplemented!(),
+            StoredValue::AnyValue { value_rib, .. } => std::mem::swap(value_rib, &mut rib),
+            StoredValue::Module { rib: value_rib, .. } => {
+                std::mem::swap(value_rib, rib.as_mut().unwrap())
+            }
+        }
+    }
+
+    #[inline]
+    pub fn get_rib_data_of(&self, value_id: ValueId) -> Option<RibData> {
+        let value = self.values.get(value_id)?;
+
+        match value {
+            StoredValue::Function { .. } => unimplemented!(
+                "attempted to access rib data of function, use `function_rib_stack` instead."
+            ),
+
+            StoredValue::AnyValue { value_rib, .. } => value_rib.clone(),
+            StoredValue::Module { rib, .. } => Some(rib.clone()),
+        }
     }
 }

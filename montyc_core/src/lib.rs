@@ -79,4 +79,32 @@ pub mod types {
     }
 }
 
-pub use {error::*, module::*, span::*, types::*};
+pub mod value {
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+    pub struct ValueId(usize);
+
+    impl From<ValueId> for usize {
+        fn from(ValueId(n): ValueId) -> Self {
+            n
+        }
+    }
+
+    impl From<usize> for ValueId {
+        fn from(n: usize) -> Self {
+            Self(n)
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! patma {
+    ($n:expr => $( $pattern:pat )|+ $( if ($guard: expr) )? $(,)? in $e:expr) => {
+        match $e {
+            $( $pattern )|+ $( if $guard )? => Some($n),
+            #[allow(warnings)]
+            _ => None,
+        }
+    };
+}
+
+pub use {error::*, module::*, span::*, types::*, value::*};

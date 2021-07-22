@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use montyc_core::SpanRef;
+use montyc_core::{patma, SpanRef};
 use montyc_parser::{
     ast::{self, ClassDef},
     AstNode, AstObject, AstVisitor,
@@ -10,10 +10,14 @@ use montyc_parser::{
 
 use petgraph::{graph::NodeIndex, visit::NodeIndexable};
 
-use crate::{ModuleObject, grapher::{AstNodeGraph, NewType}, interpreter::{
+use crate::{
+    grapher::{AstNodeGraph, NewType},
+    interpreter::{
         object::{class::ClassObj, dict, int::IntObj, string::StrObj, PyObject, RawObject},
         HashKeyT, HostGlue, ObjAllocId, PyDictRaw, PyResult,
-    }};
+    },
+    ModuleObject,
+};
 
 use super::object::func;
 
@@ -22,16 +26,6 @@ pub(in crate::interpreter) enum StackFrame {
     Module(ObjAllocId),
     Function(ObjAllocId),
     Class(ObjAllocId),
-}
-
-macro_rules! patma {
-    ($n:expr => $( $pattern:pat )|+ $( if ($guard: expr) )? $(,)? in $e:expr) => {
-        match $e {
-            $( $pattern )|+ $( if $guard )? => Some($n),
-            #[allow(warnings)]
-            _ => None,
-        }
-    };
 }
 
 pub(in crate::interpreter) trait TryIntoObject {
@@ -604,11 +598,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
             (self.graph, None::<NodeIndex>)
         } else {
             let (_, tos_index, _) = self.eval_stack.last().unwrap();
-            let graph = self
-                .subgraphs
-                .get(&tos_index.node_index)
-                .unwrap()
-                .as_ref();
+            let graph = self.subgraphs.get(&tos_index.node_index).unwrap().as_ref();
 
             (graph, Some(tos_index.node_index))
         };

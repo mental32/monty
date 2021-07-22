@@ -1,5 +1,3 @@
-pub(crate) mod tyeval;
-
 use montyc_core::MontyResult;
 
 /// A generic type checking trait.

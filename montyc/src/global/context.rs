@@ -8,13 +8,19 @@ use std::{
 
 use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef, TypeError};
 use montyc_hlir::{
-    interpreter::{self, HostGlue},
+    interpreter::{self, HostGlue, UniqueNodeIndex},
     typing::{PythonType, TypingContext},
     Value,
 };
-use montyc_parser::{ast, SpanInterner};
+use montyc_parser::{ast, AstNode, SpanInterner};
 
-use crate::{global::value_context::ValueContext, prelude::*, typechk::Typecheck};
+use crate::{
+    lower::{fndef_to_hlir::FunctionContext, Lower},
+    prelude::*,
+    ribs::{RibType, Ribs},
+    typechk::Typecheck,
+    value_context::ValueContext,
+};
 
 use super::value_store::GlobalValueStore;
 
@@ -387,11 +393,10 @@ impl GlobalContext {
             };
 
             let module_alloc_id = object_graph.alloc_id_of(module_index).unwrap();
-            let _ = gcx.value_store.borrow_mut().insert_module(
-                module_index,
-                module_alloc_id,
-                object_graph_index,
-            );
+            let module_value_id = gcx
+                .value_store
+                .borrow_mut()
+                .insert_module(module_index, object_graph_index);
 
             let mut rib = {
                 let parent = object_graph.node_weight(module_index).unwrap();
@@ -414,7 +419,7 @@ impl GlobalContext {
 
             gcx.value_store
                 .borrow_mut()
-                .set_rib_data_of(mref, Some(rib.clone()));
+                .set_rib_data_of(module_value_id, Some(rib.clone()));
 
             for (key_idx, value_idx) in properties.iter_by_alloc_asc(object_graph) {
                 let value = object_graph.node_weight(value_idx).unwrap();
@@ -425,7 +430,7 @@ impl GlobalContext {
                     value,
                     value_idx,
                     object_graph,
-                    object_graph_index,
+                    object_graph_index: dbg!(object_graph_index),
                 })?;
 
                 if let Some(key) = object_graph
@@ -438,7 +443,7 @@ impl GlobalContext {
                     rib.insert(key.group(), value_type);
                     gcx.value_store
                         .borrow_mut()
-                        .set_rib_data_of(mref, Some(rib.clone()));
+                        .set_rib_data_of(module_value_id, Some(rib.clone()));
                 }
             }
 
@@ -591,7 +596,7 @@ impl GlobalContext {
     pub fn lower_functions_to_ir_starting_from(
         &mut self,
         entry_path: String,
-    ) -> MontyResult<Vec<()>> {
+    ) -> MontyResult<Vec<montyc_hlir::code::Function>> {
         if !entry_path.contains(":") {
             panic!("entry path must speciful at least one module.");
         }
@@ -607,7 +612,7 @@ impl GlobalContext {
         };
 
         let entry_function = entry_path.split(":").last().unwrap();
-        let module_object_graph = store.get_graph_of(module_value_id);
+        let (module_object_graph, _) = store.get_graph_of(module_value_id);
 
         let module_ast_graph = self
             .modules
@@ -634,7 +639,8 @@ impl GlobalContext {
             .node_weight(entry_function_value_index)
             .unwrap();
 
-        let entry_function_ast_index = if let Value::Function { defsite, .. } = entry_function_value {
+        let entry_function_ast_index = if let Value::Function { defsite, .. } = entry_function_value
+        {
             let defsite = defsite.expect("Function must be defined in a source file.");
 
             assert!(defsite.subgraph_index.is_none());
@@ -651,21 +657,51 @@ impl GlobalContext {
 
         let tcx = self.typing_context.borrow();
         let type_id = store.type_of(entry_function_value_id).unwrap();
-        let type_id = tcx.contextualize(type_id).unwrap();
 
-        match type_id.as_python_type() {
-            PythonType::Callable { args, ret } => match (args, ret.clone()) {
-                (Some(_), _) => todo!("main function can not accept arguments."),
-                (None, TypingContext::Int) | (None, TypingContext::None) => (),
-                (None, _) => todo!("main must return either None or int."),
-            },
+        {
+            let local_type_id = tcx.contextualize(type_id).unwrap();
 
-            _ => unimplemented!(),
+            match local_type_id.as_python_type() {
+                PythonType::Callable { args, ret } => match (args, ret.clone()) {
+                    (Some(_), _) => todo!("main function can not accept arguments."),
+                    (None, TypingContext::Int) | (None, TypingContext::None) => (),
+                    (None, _) => todo!("main must return either None or int."),
+                },
+
+                _ => unimplemented!(),
+            }
         }
 
-        let funcdef_node = module_ast_graph.node_weight(entry_function_ast_index).unwrap();
+        std::mem::drop(tcx);
+        std::mem::drop(store);
 
-        todo!("{:#?}", type_id.as_python_type());
+        if let AstNode::FuncDef(fndef) = module_ast_graph
+            .node_weight(entry_function_ast_index)
+            .unwrap()
+        {
+            let ribs = {
+                self.value_store
+                    .borrow_mut()
+                    .function_rib_stack(entry_function_value_id)
+                    .unwrap()
+            };
+
+            let cx = FunctionContext {
+                object_graph: module_object_graph,
+                value_index: entry_function_value_index,
+                value_alloc_id: entry_function_alloc_id,
+                type_id,
+                ribs,
+                ast_index: UniqueNodeIndex {
+                    subgraph_index: None,
+                    node_index: entry_function_ast_index,
+                },
+            };
+
+            fndef.lower((cx, self))
+        } else {
+            unreachable!();
+        }
     }
 }
 

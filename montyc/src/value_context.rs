@@ -1,14 +1,15 @@
 use std::{cell::RefCell, rc::Rc};
 
 use montyc_core::{ModuleRef, MontyError, MontyResult, TypeError, TypeId};
-use montyc_hlir::{typing::TypingContext, ObjectGraph, ObjectGraphIndex, Value};
+use montyc_hlir::{typing::TypingContext, HostGlue, ObjectGraph, ObjectGraphIndex, Value};
 use montyc_parser::AstNode;
 use petgraph::graph::NodeIndex;
 
 use crate::{
     prelude::GlobalContext,
-    ribs::{RibType, Ribs},
-    typechk::{tyeval::TypeEvalContext, Typecheck},
+    ribs::{RibData, RibType, Ribs},
+    type_eval::TypeEvalContext,
+    typechk::Typecheck,
 };
 
 #[derive(Debug)]
@@ -44,10 +45,12 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 defsite,
                 parent,
             } => {
-                let value_id = cx.gcx.value_store.borrow_mut().insert(
+                let value_id = cx.gcx.value_store.borrow_mut().insert_function(
                     cx.value_idx,
-                    cx.object_graph.alloc_id_of(cx.value_idx).unwrap(),
                     cx.object_graph_index,
+                    cx.mref,
+                    None,
+                    None,
                 );
 
                 cx.gcx
@@ -73,16 +76,22 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 };
 
                 let funcdef_args = funcdef.args.as_ref();
-                let ribs = Rc::new(RefCell::new({
-                    if cx.mref != ModuleRef(1) {
+                let mut ribs = Rc::new(RefCell::new({
+                    if dbg!(cx.mref) != ModuleRef(1) {
+                        let module_value_id = cx
+                            .gcx
+                            .value_store
+                            .borrow_mut()
+                            .get_module_value(ModuleRef(1));
+
                         let builtin_rib = cx
                             .gcx
                             .value_store
                             .borrow_mut()
-                            .get_rib_data_of(ModuleRef(1))
+                            .get_rib_data_of(module_value_id)
                             .unwrap();
 
-                        Ribs::new(Some(builtin_rib), Some(RibType::Builtins))
+                        Ribs::new(Some(dbg!(builtin_rib)), Some(RibType::Builtins))
                     } else {
                         Ribs::new(None, None)
                     }
@@ -132,14 +141,21 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                             });
                         }
 
-                        if let Some(kind) = kind.as_ref() {
-                            let kind = kind
-                                .typecheck(TypeEvalContext {
-                                    value_cx: &cx,
-                                    expected_return_value: return_type,
-                                    ribs: Rc::clone(&ribs),
-                                })?
+                        if let Some(_) = kind.as_ref() {
+                            let arg_name = cx.gcx.spanref_to_str(arg.clone());
+                            let (_, kind_value) = annotations
+                                .get(cx.gcx.const_runtime.borrow().hash(arg_name))
                                 .unwrap();
+
+                            let kind_alloc_id = cx.object_graph.alloc_id_of(kind_value).unwrap();
+                            let kind_value_id = cx
+                                .gcx
+                                .value_store
+                                .borrow()
+                                .get_value_from_alloc(kind_alloc_id)
+                                .unwrap();
+
+                            let kind = cx.gcx.value_store.borrow().type_of(kind_value_id).unwrap();
 
                             params.push((arg.group(), kind))
                         }
@@ -173,12 +189,9 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 }
 
                 {
-                    let module_rib = cx
-                        .gcx
-                        .value_store
-                        .borrow_mut()
-                        .get_rib_data_of(cx.mref)
-                        .unwrap();
+                    let store = cx.gcx.value_store.borrow_mut();
+                    let module = store.get_module_value(cx.mref);
+                    let module_rib = store.get_rib_data_of(module).unwrap();
 
                     ribs.borrow_mut().extend(module_rib.into_iter());
                     ribs.borrow_mut().extend(params.into_iter());
@@ -192,18 +205,19 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                     })?;
                 }
 
-                cx.gcx
-                    .value_store
-                    .borrow_mut()
-                    .set_type_of(value_id, Some(func_type));
+                let mut store = cx.gcx.value_store.borrow_mut();
+
+                store.set_type_of(value_id, Some(func_type));
+
+                match store.function_rib_stack(value_id) {
+                    Ok(_) => unreachable!(),
+                    Err(slot) => slot.replace(Rc::make_mut(&mut ribs).clone().into_inner()),
+                };
 
                 Ok(func_type)
             }
 
-            montyc_hlir::Value::Class {
-                name,
-                properties: _,
-            } => {
+            montyc_hlir::Value::Class { name, properties } => {
                 log::trace!(
                     "[Value::typecheck(ValueContext)] Typechecking Value::Class {{ name: {:?} }}",
                     name
@@ -212,7 +226,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 let mut store = cx.gcx.value_store.borrow_mut();
 
                 let alloc_id = cx.object_graph.alloc_id_of(cx.value_idx).unwrap();
-                let value_id = store.insert(cx.value_idx, alloc_id, cx.object_graph_index);
+                let class_value_id = store.insert(cx.value_idx, alloc_id, cx.object_graph_index);
                 let type_id = {
                     if cx.mref == ModuleRef(1) {
                         // builtins
@@ -227,20 +241,53 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                             name => todo!("custom builtin class is not supported yet {:?}", name),
                         };
 
-                        log::trace!("[Value::typecheck(ValueContext)] Setting value = {:?} as class of type = {:?}", value_id, type_id);
+                        log::trace!("[Value::typecheck(ValueContext)] Setting value = {:?} as class of type = {:?}", class_value_id, type_id);
 
-                        store.set_class_of(type_id, value_id);
+                        store.set_class_of(type_id, class_value_id);
 
-                        Some(type_id)
+                        type_id
                     } else {
                         // any other module.
                         todo!();
                     }
                 };
 
-                store.set_type_of(value_id, type_id);
+                store.set_type_of(class_value_id, Some(type_id));
+                std::mem::drop(store);
 
-                Ok(store.type_of(value_id).unwrap())
+                let mut rib = RibData::default();
+
+                for (key_idx, value_idx) in properties.iter_by_alloc_asc(cx.object_graph) {
+                    let value = cx.object_graph.node_weight(value_idx).unwrap();
+
+                    let value_type = value.typecheck(ValueContext {
+                        mref: cx.mref,
+                        gcx: cx.gcx,
+                        value,
+                        value_idx,
+                        object_graph: cx.object_graph,
+                        object_graph_index: cx.object_graph_index,
+                    })?;
+
+                    if let Some(key) =
+                        cx.object_graph
+                            .node_weight(key_idx)
+                            .map(|weight| match weight {
+                                Value::String(st) => {
+                                    montyc_hlir::HostGlue::name_to_spanref(cx.gcx, st)
+                                }
+                                _ => unreachable!(),
+                            })
+                    {
+                        rib.insert(key.group(), value_type);
+                        cx.gcx
+                            .value_store
+                            .borrow_mut()
+                            .set_rib_data_of(class_value_id, Some(rib.clone()));
+                    }
+                }
+
+                Ok(type_id)
             }
 
             Value::Dict { object: _, data: _ } => todo!(),
