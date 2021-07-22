@@ -4,6 +4,7 @@ use logos::Logos;
 use montyc_core::SpanRef;
 
 #[derive(Debug, Logos, PartialEq, Copy, Clone)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 pub enum PyToken {
     #[error]
     Invalid,
@@ -181,6 +182,20 @@ pub enum PyToken {
     #[regex(r"-?\d+", |lex| lex.slice().parse())]
     #[regex(r"-?0[xX][0-9a-fA-F]+", |lex| lex.slice().parse())]
     Digits(i64),
+
+    #[regex(r"#[^\n]*")]
+    Comment,
+
+    // -- String regex's (thank god I managed to nerdsnipe Quirl to do this for me.)
+    #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'((\\.)|[^'\\\r\n])*'"#)]
+    #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'''((\\.)|[^\\']|'((\\.)|[^\\'])|''((\\.)|[^\\']))*'''"#)]
+    #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"((\\.)|[^"\\\r\n])*""#)]
+    #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"""((\\.)|[^\\"]|"((\\.)|[^\\"])|""((\\.)|[^\\"]))*""""#)]
+    StringLiteral,
+
+    #[regex(r#"([bB]|[rR][bB]|[bB][rR])'((\\\p{ASCII})|[\p{ASCII}&&[^'\\\r\n]])*'"#)]
+    #[regex(r#"([bB]|[rR][bB]|[bB][rR])'''((\\\p{ASCII})|[\p{ASCII}&&[^\\']]|'((\\\p{ASCII})|[\p{ASCII}&&[^\\']])|''((\\\p{ASCII})|[\p{ASCII}&&[^\\']]))*'''"#)]
+    ByteLiteral,
 
     // -- SpanRef tokens
     #[regex("[a-zA-Z_][_a-zA-Z0-9]*")]
