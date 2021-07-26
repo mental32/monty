@@ -175,7 +175,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
     pub fn define(&mut self, name: SpanRef, value: ObjAllocId) -> PyResult<()> {
         let (_scope_index, _, frame) = self.eval_stack.last().as_ref().unwrap();
         let mut frame =
-            patma!(*o => StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
+            patma!(*o, StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
         let st_name = self.host.spanref_to_str(name);
         let (name, hash) = self.string(st_name)?;
@@ -200,7 +200,7 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
             .cloned()
             .expect("Must be running to perform lookups.");
 
-        let frame = patma!(o => StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
+        let frame = patma!(o, StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
         let name = self.host.spanref_to_str(name);
 
@@ -471,7 +471,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_int(&mut self, int: &ast::Atom) -> EvalResult {
-        let int = patma!(n => ast::Atom::Int(n) in int).unwrap().clone();
+        let int = patma!(n, ast::Atom::Int(n) in int).unwrap().clone();
 
         self.integer(int).map(Some)
     }
@@ -646,7 +646,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_str(&mut self, st: &ast::Atom) -> EvalResult {
-        let st = patma!(s => ast::Atom::Str(s) in st).unwrap().clone();
+        let st = patma!(s, ast::Atom::Str(s) in st).unwrap().clone();
         let st = self.host.spanref_to_str(st);
         let (string, _) = self.string(st)?;
         self.advance_next_node();
@@ -658,7 +658,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_name(&mut self, name: &ast::Atom) -> EvalResult {
-        let name = patma!(n => ast::Atom::Name(n) in name).unwrap();
+        let name = patma!(n, ast::Atom::Name(n) in name).unwrap();
 
         match self.lookup(*name) {
             Some(result) => return Ok(Some(result)),
@@ -734,8 +734,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
     }
 
     fn visit_call(&mut self, call: &ast::Primary) -> EvalResult {
-        let (func, args) =
-            patma!((func, args) => ast::Primary::Call { func, args } in call).unwrap();
+        let (func, args) = patma!((func, args), ast::Primary::Call { func, args } in call).unwrap();
         let func_name = func.inner.as_name();
 
         let func = func.inner.visit_with(self)?.unwrap();
@@ -750,7 +749,7 @@ impl<'global, 'module> AstVisitor<EvalResult> for AstExecutor<'global, 'module> 
         let result = func.call(self, params.as_slice())?;
 
         self.graph.node_weight(self.node_index)
-            .and_then(|weight| patma!(f.inner.as_name() => AstNode::Call(ast::Primary::Call { func: f, .. }) in weight))
+            .and_then(|weight| patma!(f.inner.as_name(), AstNode::Call(ast::Primary::Call { func: f, .. }) in weight))
             .and_then(|f_name| f_name.zip(func_name))
             .and_then(|(l, r)| (l.distinct() == r.distinct()).then(|| self.advance_next_node()));
 

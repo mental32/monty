@@ -179,7 +179,7 @@ pub(crate) mod fndef_to_hlir {
             match &name.inner {
                 Primary::Atomic(name) => {
                     let name_ref =
-                        patma!(name_ref => Some(name_ref) in name.inner.as_name()).unwrap();
+                        patma!(name_ref, Some(name_ref) in name.inner.as_name()).unwrap();
 
                     let _ = self.local_variables.insert(name_ref.group());
 
@@ -270,7 +270,7 @@ pub(crate) mod fndef_to_hlir {
             }
 
             let (lhs, op, rhs) =
-                patma!((left, op, right) => Expr::BinOp { left, op, right } in expr).unwrap();
+                patma!((left, op, right), Expr::BinOp { left, op, right } in expr).unwrap();
 
             // let store = self.gcx.value_store.borrow();
 
@@ -300,7 +300,7 @@ pub(crate) mod fndef_to_hlir {
         }
 
         fn visit_name(&mut self, node: &Atom) -> HResult {
-            let name = patma!(name => Atom::Name(name) in node).unwrap();
+            let name = patma!(name, Atom::Name(name) in node).unwrap();
 
             Ok(Some(self.use_var(
                 name.group(),
@@ -309,7 +309,7 @@ pub(crate) mod fndef_to_hlir {
         }
 
         fn visit_int(&mut self, int: &Atom) -> HResult {
-            let n = patma!(*i => Atom::Int(i) in int).unwrap();
+            let n = patma!(*i, Atom::Int(i) in int).unwrap();
             log::trace!("[FunctionBuilder::visit_int] Atom::Int({:?})", n);
 
             Ok(Some(self.int_const(n)))
@@ -360,8 +360,7 @@ pub(crate) mod fndef_to_hlir {
         }
 
         fn visit_call(&mut self, call: &Primary) -> HResult {
-            let (func, args) =
-                patma!((func, args) => Primary::Call { func, args } in call).unwrap();
+            let (func, args) = patma!((func, args), Primary::Call { func, args } in call).unwrap();
 
             let callable = func.visit_with(self)?.unwrap();
             let args = match args {
@@ -400,7 +399,7 @@ pub(crate) mod fndef_to_hlir {
 
         fn visit_ternary(&mut self, ternary: &Expr) -> HResult {
             let (test, body, orelse) =
-                patma!((test, body, orelse) => Expr::If { test, body, orelse } in ternary).unwrap();
+                patma!((test, body, orelse), Expr::If { test, body, orelse } in ternary).unwrap();
 
             let (_, test_block) = self.fallthrough_to_new_block();
 
@@ -436,7 +435,7 @@ pub(crate) mod fndef_to_hlir {
 
         fn visit_subscript(&mut self, subscr: &Primary) -> HResult {
             let (_value, _index) =
-                patma!((value, index) => Primary::Subscript { value, index } in subscr).unwrap();
+                patma!((value, index), Primary::Subscript { value, index } in subscr).unwrap();
 
             todo!("{:#?}", subscr);
         }

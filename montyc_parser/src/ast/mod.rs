@@ -237,6 +237,10 @@ pub trait AstVisitor<T = ()> {
     fn visit_subscript(&mut self, call: &Primary) -> T {
         self.visit_any(call)
     }
+
+    fn visit_module(&mut self, module: &Module) -> T {
+        self.visit_any(module)
+    }
 }
 
 pub use models::*;

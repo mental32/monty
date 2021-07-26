@@ -66,17 +66,6 @@ pub enum CompilerOptions {
         #[structopt(multiple = true, short = "C", long = "codegen")]
         cranelift_settings: Vec<String>,
     },
-
-    /// Only run the compile time evaluator and display the program post-evalutaion.
-    Expand {
-        /// The path to a monty compatible stdlib.
-        #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
-        libstd: PathBuf,
-
-        /// The input file to compile.
-        #[structopt(parse(from_os_str))]
-        input: PathBuf,
-    },
 }
 
 impl CompilerOptions {
@@ -134,9 +123,9 @@ impl CompilerOptions {
 
     pub fn libstd(&self) -> PathBuf {
         match self {
-            CompilerOptions::Check { libstd, .. }
-            | CompilerOptions::Build { libstd, .. }
-            | CompilerOptions::Expand { libstd, .. } => libstd.clone(),
+            CompilerOptions::Check { libstd, .. } | CompilerOptions::Build { libstd, .. } => {
+                libstd.clone()
+            }
         }
     }
 
@@ -145,8 +134,7 @@ impl CompilerOptions {
 
         let (libstd, input) = match &mut self {
             CompilerOptions::Check { libstd, input }
-            | CompilerOptions::Build { libstd, input, .. }
-            | CompilerOptions::Expand { libstd, input } => (libstd, input),
+            | CompilerOptions::Build { libstd, input, .. } => (libstd, input),
         };
 
         match Self::check_if_path_exists(&libstd, "the standard library") {

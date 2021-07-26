@@ -60,18 +60,13 @@ fn main() -> std::io::Result<()> {
     let mut gcx = GlobalContext::initialize(&opts2);
 
     let (_, input) = match &opts {
-        CompilerOptions::Check { libstd, input }
-        | CompilerOptions::Expand { libstd, input }
-        | CompilerOptions::Build { libstd, input, .. } => (libstd, input),
+        CompilerOptions::Check { libstd, input } | CompilerOptions::Build { libstd, input, .. } => {
+            (libstd, input)
+        }
     };
 
     if let Err(err) = gcx.include_module(input, "__main__") {
         panic!("{:?}", err); // TODO: re-implement codespan error handling.
-    }
-
-    if let CompilerOptions::Expand { .. } = opts {
-        // Note: Might remove this.
-        todo!();
     }
 
     if let CompilerOptions::Build {

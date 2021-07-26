@@ -98,7 +98,7 @@ pub mod value {
 
 #[macro_export]
 macro_rules! patma {
-    ($n:expr => $( $pattern:pat )|+ $( if ($guard: expr) )? $(,)? in $e:expr) => {
+    ($n:expr, $( $pattern:pat )|+ $( if ($guard: expr) )? $(,)? in $e:expr) => {
         match $e {
             $( $pattern )|+ $( if $guard )? => Some($n),
             #[allow(warnings)]

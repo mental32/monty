@@ -201,6 +201,27 @@ pub struct Module {
     pub body: Vec<Spanned<Statement>>,
 }
 
+impl AstObject for Module {
+    fn into_ast_node(&self) -> AstNode {
+        todo!()
+    }
+
+    fn span(&self) -> Option<Span> {
+        todo!()
+    }
+
+    fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
+        todo!()
+    }
+
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_module(self)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StringRef(pub SpanRef);
 
