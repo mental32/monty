@@ -433,6 +433,13 @@ pub(crate) mod fndef_to_hlir {
 
             Ok(Some(param))
         }
+
+        fn visit_subscript(&mut self, subscr: &Primary) -> HResult {
+            let (_value, _index) =
+                patma!((value, index) => Primary::Subscript { value, index } in subscr).unwrap();
+
+            todo!("{:#?}", subscr);
+        }
     }
 
     impl<'a> Lower<I<'a>, HLIRFunc> for ASTFunc {
@@ -453,7 +460,7 @@ pub(crate) mod fndef_to_hlir {
                 node.visit_with(&mut fn_builder)?;
             }
 
-            todo!("{:#?}", fn_builder);
+            Ok(fn_builder.function)
         }
     }
 }

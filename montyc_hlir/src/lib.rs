@@ -16,6 +16,7 @@ mod grapher;
 mod object_graph;
 
 pub mod code;
+pub mod flatcode;
 pub mod interpreter;
 pub mod module_object;
 pub mod typing;

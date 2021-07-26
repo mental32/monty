@@ -1,5 +1,6 @@
 from .__monty import extern
 
+
 @extern
 class object:
     """The base class of the class hierarchy.
@@ -7,6 +8,7 @@ class object:
     When called, it accepts no arguments and returns a new featureless
     instance that has no instance attributes and cannot be given any.
     """
+
 
 @extern
 class type:
@@ -29,28 +31,18 @@ class bool:
 
 @extern
 class int:
-    """
-    int([x]) -> integer
-    int(x, base=10) -> integer
+    def __add__(self, x: int) -> int:
+        ...
 
-    Convert a number or string to an integer, or return 0 if no arguments
-    are given.  If x is a number, return x.__int__().  For floating point
-    numbers, this truncates towards zero.
+    def __sub__(self, x: int) -> int:
+        ...
 
-    If x is not a number or if base is given, then x must be a string,
-    bytes, or bytearray instance representing an integer literal in the
-    given base.  The literal can be preceded by '+' or '-' and be surrounded
-    by whitespace.  The base defaults to 10.  Valid bases are 0 and 2-36.
-    Base 0 means to interpret the base from the string as an integer literal.
+    def __eq__(self, x: int) -> bool:
+        ...
 
-        >>> int('0b100', base=0)
-        4
-    """
+    def __ne__(self, x: int) -> bool:
+        ...
 
-    def __add__(self, x: int) -> int: ...
-    def __sub__(self, x: int) -> int: ...
-    def __eq__(self, x: int) -> bool: ...
-    def __ne__(self, x: int) -> bool: ...
 
 @extern
 class float:
@@ -79,7 +71,10 @@ class str:
 
 
 @extern
-def id(__obj: object) -> int: ...
+def id(__obj: object) -> int:
+    ...
+
 
 @extern
-def isinstance(__obj: object, __class_or_tuple: type) -> bool: ...
+def isinstance(__obj: object, __class_or_tuple: type) -> bool:
+    ...

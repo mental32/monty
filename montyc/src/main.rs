@@ -84,7 +84,10 @@ fn main() -> std::io::Result<()> {
         ..
     } = opts
     {
-        let _functions = gcx.lower_functions_to_ir_starting_from(entry);
+        let functions = gcx.lower_functions_to_ir_starting_from(entry).unwrap();
+
+        eprintln!("{:#?}", functions);
+        return Ok(());
 
         if let Some(_path) = show_ir.as_ref() {
             todo!("show_ir");

@@ -35,10 +35,10 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
     }
 }
 
-impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::Value {
+impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
     fn typecheck(&self, cx: ValueContext) -> MontyResult<TypeId> {
         match self {
-            montyc_hlir::Value::Function {
+            Value::Function {
                 name: _,
                 properties: _,
                 annotations,
@@ -217,7 +217,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for montyc_hlir::
                 Ok(func_type)
             }
 
-            montyc_hlir::Value::Class { name, properties } => {
+            Value::Class { name, properties } => {
                 log::trace!(
                     "[Value::typecheck(ValueContext)] Typechecking Value::Class {{ name: {:?} }}",
                     name

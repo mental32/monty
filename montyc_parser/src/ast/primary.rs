@@ -56,7 +56,7 @@ impl AstObject for Primary {
     {
         match self {
             Primary::Atomic(atom) => atom.visit_with(visitor),
-            Primary::Subscript { value: _, index: _ } => todo!(),
+            Primary::Subscript { .. } => visitor.visit_subscript(self),
             Primary::Call { .. } => visitor.visit_call(self),
             Primary::Attribute { left: _, attr: _ } => todo!(),
             Primary::Await(_) => todo!(),
