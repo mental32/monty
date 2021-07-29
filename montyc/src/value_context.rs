@@ -77,7 +77,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
 
                 let funcdef_args = funcdef.args.as_ref();
                 let mut def_stack = Rc::new(RefCell::new({
-                    if dbg!(cx.mref) != ModuleRef(1) {
+                    if cx.mref != ModuleRef(1) {
                         let module_value_id = cx
                             .gcx
                             .value_store
@@ -91,7 +91,7 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
                             .get_rib_data_of(module_value_id)
                             .unwrap();
 
-                        DefStack::new(Some(dbg!(builtin_rib)), Some(DefKind::Builtins))
+                        DefStack::new(Some(builtin_rib), Some(DefKind::Builtins))
                     } else {
                         DefStack::new(None, None)
                     }

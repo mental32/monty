@@ -8,11 +8,12 @@ use std::{
 
 use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef, TypeError};
 use montyc_hlir::{
+    flatcode::FlatCode,
     interpreter::{self, HostGlue, UniqueNodeIndex},
     typing::{PythonType, TypingContext},
     Value,
 };
-use montyc_parser::{ast, AstNode, SpanInterner};
+use montyc_parser::{ast, AstNode, AstObject, SpanInterner};
 
 use crate::{
     lower::{fndef_to_hlir::FunctionContext, Lower},
@@ -375,7 +376,14 @@ impl GlobalContext {
         path: impl AsRef<Path>,
         name: impl AsRef<str>,
     ) -> MontyResult<ModuleRef> {
+        #[allow(unreachable_code)]
         self.load_module_with(path, name, |gcx, mref| -> MontyResult<ModuleRef> {
+            let module = gcx.modules.get(mref).unwrap().borrow();
+            let mut flat = FlatCode::new();
+            module.ast.visit_with(&mut flat);
+
+            eprintln!("\n{}\n", flat);
+
             let (module_index, object_graph) =
                 gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
 
@@ -432,7 +440,7 @@ impl GlobalContext {
                     value,
                     value_idx,
                     object_graph,
-                    object_graph_index: dbg!(object_graph_index),
+                    object_graph_index,
                 })?;
 
                 if let Some(key) = object_graph

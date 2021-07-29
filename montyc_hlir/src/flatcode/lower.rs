@@ -1,174 +1,31 @@
-//! A post-processed, flattened, AST, with extra semantics sprinkled in.
-#![allow(warnings)]
+use montyc_core::patma;
 
-use montyc_core::{patma, SpanRef};
 use montyc_parser::{
-    ast::{
-        Assign, Atom, ClassDef, Expr, FunctionDef, IfChain, Import, InfixOp, Primary, Return,
-        UnaryOp, While,
-    },
+    ast::{Assign, ClassDef, FunctionDef, IfChain, Primary, Return, While},
+    ast::{Atom, Expr, Import},
     AstNode, AstObject, AstVisitor,
 };
 
-const INVALID_VALUE: usize = std::usize::MAX;
+use super::{
+    raw_inst::{Const, Dunder, RawInst},
+    FlatCode, INVALID_VALUE,
+};
 
-#[derive(Debug, Clone)]
-enum Dunder {
-    Unary(UnaryOp),
-    Infix(InfixOp),
-    Comment,
-}
+fn visit_const(this: &mut FlatCode, node: &Atom) -> usize {
+    let const_v = match node {
+        Atom::None => Const::None,
+        Atom::Ellipsis => Const::Ellipsis,
+        Atom::Int(n) => Const::Int(*n),
+        Atom::Str(s) => Const::String(*s),
+        Atom::Bool(b) => Const::Bool(*b),
+        Atom::Float(f) => Const::Float(*f),
+        _ => unreachable!(),
+    };
 
-#[derive(Debug, Clone)]
-enum Const {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(SpanRef),
-    None,
-    Ellipsis,
-}
-
-#[derive(Debug, Clone)]
-enum RawInst<ValueRef = usize, StringRef = SpanRef> {
-    /// Define a function like: `def {name}({params}) -> {returns}`
-    Defn {
-        name: StringRef,
-        params: Vec<(StringRef, Option<ValueRef>)>,
-        returns: Option<ValueRef>,
-    },
-
-    Class {
-        name: StringRef,
-    },
-
-    /// Call a callable-like value with like `callable(arguments)`.
-    Call {
-        callable: ValueRef,
-        arguments: Vec<ValueRef>,
-    },
-
-    /// A named variable assignment like `a = ...`
-    SetVar {
-        variable: StringRef,
-        value: ValueRef,
-    },
-
-    /// A named variable lookup.
-    UseVar {
-        variable: StringRef,
-    },
-
-    GetAttribute {
-        object: ValueRef,
-        name: StringRef,
-    },
-
-    GetDunder {
-        object: ValueRef,
-        dunder: Dunder,
-    },
-
-    SetAttribute {
-        object: ValueRef,
-        name: StringRef,
-        value: ValueRef,
-    },
-
-    SetDunder {
-        object: ValueRef,
-        dunder: Dunder,
-        value: ValueRef,
-    },
-
-    GetItem {
-        object: ValueRef,
-        index: ValueRef,
-    },
-
-    SetItem {
-        object: ValueRef,
-        index: ValueRef,
-        value: ValueRef,
-    },
-
-    Import(StringRef),
-
-    Const(Const),
-
-    Nop,
-
-    Undefined,
-
-    /// if `test` is a truthy value jump to `truthy` instr otherwise jump to `falsey`.
-    If {
-        test: ValueRef,
-        truthy: Option<ValueRef>,
-        falsey: Option<ValueRef>,
-    },
-
-    /// An unconditional branch to a value ref.
-    Br {
-        to: ValueRef,
-    },
-
-    PhiJump {
-        recv: ValueRef,
-        value: ValueRef,
-    },
-
-    PhiRecv,
-
-    /// return from the current call frame with the specified return `value`.
-    Return {
-        value: ValueRef,
-    },
-}
-
-/// An (instruction -> value) pair.
-#[derive(Debug, Clone)]
-struct FlatInst<ValueRef = usize, StringRef = SpanRef> {
-    op: RawInst<ValueRef, StringRef>,
-    value: ValueRef,
-}
-
-#[derive(Debug)]
-pub struct FlatCode {
-    sequence_index: usize,
-    sequences: Vec<Vec<FlatInst>>,
-}
-
-impl FlatCode {
-    pub fn new() -> Self {
-        Self {
-            sequence_index: 0,
-            sequences: vec![vec![]],
-        }
-    }
-}
-
-impl FlatCode {
-    fn inst(&mut self, raw_inst: RawInst) -> usize {
-        match self.sequences.get_mut(self.sequence_index) {
-            Some(seq) => {
-                seq.push(FlatInst {
-                    op: raw_inst,
-                    value: seq.len(),
-                });
-
-                seq.len().saturating_sub(1)
-            }
-
-            None => unreachable!(),
-        }
-    }
+    this.inst(RawInst::Const(const_v))
 }
 
 impl AstVisitor<usize> for FlatCode {
-    fn visit_any(&mut self, o: &dyn AstObject) -> usize {
-        todo!("{:#?}", o.into_ast_node());
-    }
-
     fn visit_module(&mut self, module: &montyc_parser::ast::Module) -> usize {
         for stmt in &module.body {
             stmt.visit_with(self);
@@ -177,27 +34,44 @@ impl AstVisitor<usize> for FlatCode {
         INVALID_VALUE
     }
 
+    fn visit_any(&mut self, o: &dyn AstObject) -> usize {
+        todo!("{:#?}", o.into_ast_node());
+    }
+
     fn visit_expr(&mut self, expr: &Expr) -> usize {
         expr.visit_with(self)
     }
 
-    fn visit_int(&mut self, int: &Atom) -> usize {
-        let n = patma!(*n, Atom::Int(n) in int).unwrap();
-        self.inst(RawInst::Const(Const::Int(n)))
+    // -- const shims
+
+    fn visit_int(&mut self, node: &Atom) -> usize {
+        visit_const(self, node)
     }
 
     fn visit_float(&mut self, node: &Atom) -> usize {
-        let n = patma!(*n, Atom::Float(n) in node).unwrap();
-        self.inst(RawInst::Const(Const::Float(n)))
+        visit_const(self, node)
     }
 
     fn visit_str(&mut self, node: &Atom) -> usize {
-        let n = patma!(*n, Atom::Str(n) in node).unwrap();
-        self.inst(RawInst::Const(Const::String(n)))
+        visit_const(self, node)
     }
 
     fn visit_none(&mut self, node: &Atom) -> usize {
-        self.inst(RawInst::Const(Const::None))
+        visit_const(self, node)
+    }
+
+    fn visit_ellipsis(&mut self, node: &Atom) -> usize {
+        visit_const(self, node)
+    }
+
+    fn visit_bool(&mut self, node: &Atom) -> usize {
+        visit_const(self, node)
+    }
+
+    // -- other visitors
+
+    fn visit_pass(&mut self) -> usize {
+        self.inst(RawInst::Nop)
     }
 
     fn visit_name(&mut self, node: &Atom) -> usize {
@@ -206,16 +80,10 @@ impl AstVisitor<usize> for FlatCode {
     }
 
     fn visit_tuple(&mut self, node: &Atom) -> usize {
-        self.visit_any(node)
-    }
+        let inner = patma!(name.clone(), Atom::Tuple(name) in node).unwrap();
+        let inner: Vec<_> = inner.iter().map(|elem| elem.visit_with(self)).collect();
 
-    fn visit_ellipsis(&mut self, node: &Atom) -> usize {
-        self.inst(RawInst::Undefined)
-    }
-
-    fn visit_bool(&mut self, node: &Atom) -> usize {
-        let v = patma!(*v, Atom::Bool(v) in node).unwrap();
-        self.inst(RawInst::Const(Const::Bool(v)))
+        self.inst(RawInst::Tuple(inner.into_boxed_slice()))
     }
 
     fn visit_import(&mut self, import: &Import) -> usize {
@@ -229,14 +97,12 @@ impl AstVisitor<usize> for FlatCode {
                         value,
                     });
                 }
-
-                INVALID_VALUE
             }
 
             Import::From {
                 module,
                 names,
-                level,
+                level: _,
             } => {
                 let name = module.inner.as_name().unwrap();
                 let module = self.inst(RawInst::Import(name));
@@ -253,10 +119,10 @@ impl AstVisitor<usize> for FlatCode {
                         value: attr,
                     });
                 }
-
-                INVALID_VALUE
             }
         }
+
+        INVALID_VALUE
     }
 
     fn visit_classdef(&mut self, classdef: &ClassDef) -> usize {
@@ -273,7 +139,7 @@ impl AstVisitor<usize> for FlatCode {
 
                 self.inst(RawInst::SetDunder {
                     object: class,
-                    dunder: Dunder::Comment,
+                    dunder: Dunder::DocComment,
                     value: string,
                 });
 
@@ -306,35 +172,44 @@ impl AstVisitor<usize> for FlatCode {
                 }
             }
         }
+
         class
     }
 
     fn visit_funcdef(&mut self, fndef: &FunctionDef) -> usize {
         let params = match (&fndef.reciever, &fndef.args) {
             (None, None) => vec![],
-            (None, Some(args)) => args
-                .iter()
-                .map(|(arg, ann)| (*arg, ann.as_ref().map(|ann| ann.visit_with(self))))
-                .collect(),
-
             (Some(recv), None) => vec![(recv.inner.as_name().unwrap(), None)],
-            (Some(recv), Some(args)) => {
-                let mut params = vec![(recv.inner.as_name().unwrap(), None)];
 
-                params.extend(
-                    args.iter()
-                        .map(|(arg, ann)| (*arg, ann.as_ref().map(|ann| ann.visit_with(self)))),
-                );
-                params
+            (recv, Some(params)) => {
+                let mut parameters = Vec::with_capacity(params.len() + 1);
+
+                if let Some(reciever) = recv {
+                    parameters.push((reciever.inner.as_name().unwrap(), None));
+                }
+
+                for (name, annotation) in params.iter() {
+                    let ann = annotation.as_ref().map(|ann| ann.visit_with(self));
+                    parameters.push((name.clone(), ann));
+                }
+
+                parameters
             }
         };
 
         let returns = fndef.returns.as_ref().map(|r| r.visit_with(self));
 
+        let sequence_id = self.with_new_sequence(|this| {
+            for node in fndef.body.iter() {
+                node.visit_with(this);
+            }
+        });
+
         self.inst(RawInst::Defn {
             name: fndef.name.inner.as_name().unwrap(),
             params,
             returns,
+            sequence_id,
         })
     }
 
@@ -354,15 +229,13 @@ impl AstVisitor<usize> for FlatCode {
 
         let true_const = self.inst(RawInst::Const(Const::Bool(true)));
 
-        let or_else_branch = ifch.orelse.as_ref().map(
-            (|x| {
-                self.inst(RawInst::If {
-                    test: true_const,
-                    truthy: Some(INVALID_VALUE),
-                    falsey: None,
-                })
-            }),
-        );
+        let or_else_branch = ifch.orelse.as_ref().map(|_| {
+            self.inst(RawInst::If {
+                test: true_const,
+                truthy: Some(INVALID_VALUE),
+                falsey: None,
+            })
+        });
 
         let body_indices: Vec<_> = ifch
             .branches
@@ -374,36 +247,14 @@ impl AstVisitor<usize> for FlatCode {
                     node.visit_with(self);
                 }
 
-                self.inst(RawInst::If {
-                    test: true_const,
-                    truthy: Some(INVALID_VALUE),
-                    falsey: Some(INVALID_VALUE),
-                });
+                let backedge = self.inst(RawInst::Br { to: INVALID_VALUE });
 
-                body_entry
+                (body_entry, backedge)
             })
             .collect();
 
-        {
-            let seq = self.sequences.get_mut(self.sequence_index).unwrap();
-
-            for (branch, body) in branch_indices.iter().zip(body_indices.iter()) {
-                let inst = seq.get_mut(*branch).unwrap();
-                if let RawInst::If {
-                    test,
-                    truthy,
-                    falsey,
-                } = &mut inst.op
-                {
-                    truthy.replace(*body);
-                } else {
-                    unreachable!();
-                }
-            }
-        }
-
         if let Some(or_else_branch) = or_else_branch {
-            let or_else_start = self.inst(RawInst::Nop);
+            self.inst(RawInst::Nop);
 
             for node in ifch.orelse.as_ref().unwrap() {
                 node.visit_with(self);
@@ -415,23 +266,38 @@ impl AstVisitor<usize> for FlatCode {
                 .unwrap()
                 .get_mut(or_else_branch)
                 .unwrap();
-            if let RawInst::If {
-                test,
-                truthy,
-                falsey,
-            } = &mut inst.op
-            {
+            if let RawInst::If { truthy, .. } = &mut inst.op {
                 truthy.replace(or_else_branch);
             } else {
                 unreachable!();
             }
         }
 
-        INVALID_VALUE
-    }
+        let after_if_ch = self.inst(RawInst::Nop);
 
-    fn visit_pass(&mut self) -> usize {
-        self.inst(RawInst::Nop)
+        {
+            let seq = self.sequences.get_mut(self.sequence_index).unwrap();
+
+            for (branch, (body, body_tail)) in branch_indices.iter().zip(body_indices.iter()) {
+                let inst = seq.get_mut(*branch).unwrap();
+
+                if let RawInst::If { truthy, .. } = &mut inst.op {
+                    truthy.replace(*body);
+                } else {
+                    unreachable!();
+                }
+
+                let inst = seq.get_mut(*body_tail).unwrap();
+
+                if let RawInst::Br { to } = &mut inst.op {
+                    (*to) = after_if_ch;
+                } else {
+                    unreachable!();
+                }
+            }
+        }
+
+        INVALID_VALUE
     }
 
     fn visit_assign(&mut self, asn: &Assign) -> usize {
@@ -446,6 +312,7 @@ impl AstVisitor<usize> for FlatCode {
             Primary::Await(_) | Primary::Call { .. } => unreachable!(),
 
             Primary::Subscript { .. } => todo!(),
+
             Primary::Attribute { left, attr } => {
                 let name = patma!(name, Atom::Name(name) in attr.inner).unwrap();
 
@@ -487,7 +354,7 @@ impl AstVisitor<usize> for FlatCode {
         self.inst(RawInst::Br { to: start });
         let or_else = self.inst(RawInst::Nop);
 
-        let mut seq = self.sequences.get_mut(self.sequence_index).unwrap();
+        let seq = self.sequences.get_mut(self.sequence_index).unwrap();
 
         seq[jump].op = RawInst::If {
             test,
@@ -536,31 +403,50 @@ impl AstVisitor<usize> for FlatCode {
         let (test, body, orelse) =
             patma!((test, body, orelse), Expr::If {test, body, orelse} in ternary).unwrap();
 
+        // generate the ternary test
         let test = test.visit_with(self);
+        // emit a dummy nop that will be overwritten later with an If.
         let test_jump = self.inst(RawInst::Nop);
 
         let true_value = body.visit_with(self);
         let after_value_jump_true = self.inst(RawInst::Br { to: INVALID_VALUE });
 
+        // dummy nop used as a jump target by the jump after the test.
         let false_header = self.inst(RawInst::Nop);
+
         let false_value = orelse.visit_with(self);
         let after_value_jump_false = self.inst(RawInst::Br { to: INVALID_VALUE });
 
+        // At this point the sequence layout is:
+        //
+        //                                                                  +-----------------------------------+
+        //                                                                 /                                     \
+        //   <test> -> <test_jump> -[true]-> <true_value> -> <true_jump> -/   +-> <false_value> -> <false_jump> -+-> PhiRecv(φ)
+        //                         \                                         /
+        //                          ---------------[false]------------------/
+        //
+        // Now we emit a "PhiRecv" which is like an LLVM `phi` instruction
+        // but is only used as a jump target for "PhiJump" instructions.
+        //
         let phi_recv = self.inst(RawInst::PhiRecv);
 
-        let mut seq = self.sequences.get_mut(self.sequence_index).unwrap();
+        // Time to patch the dummy instructions / jump targets.
+        let seq = self.sequences.get_mut(self.sequence_index).unwrap();
 
+        // The test branch nop's into the true code but branches into the false code.
         seq[test_jump].op = RawInst::If {
             test,
             truthy: None,
             falsey: Some(false_header),
         };
 
+        // forward the true value into the reciever.
         seq[after_value_jump_true].op = RawInst::PhiJump {
             recv: phi_recv,
             value: true_value,
         };
 
+        // forward the false value into the reciever.
         seq[after_value_jump_false].op = RawInst::PhiJump {
             recv: phi_recv,
             value: false_value,

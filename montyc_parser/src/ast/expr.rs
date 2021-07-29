@@ -12,6 +12,17 @@ pub enum UnaryOp {
     Sub,
 }
 
+impl AsRef<str> for UnaryOp {
+    fn as_ref(&self) -> &str {
+        match self {
+            UnaryOp::Invert => "invert",
+            UnaryOp::Not => unimplemented!(),
+            UnaryOp::Add => "pos",
+            UnaryOp::Sub => "neg",
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum InfixOp {
     Add,

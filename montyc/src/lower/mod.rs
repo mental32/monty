@@ -249,7 +249,7 @@ pub(crate) mod fndef_to_hlir {
                 if let Value::Class { properties, .. } = class_value {
                     let rt_ref = cx.gcx.const_runtime.borrow();
 
-                    let dunder = dbg!(properties).get(dbg!(rt_ref.hash(dbg!(dunder.clone())))).and_then(|(_, attr)| {
+                    let dunder = properties.get(rt_ref.hash(dunder.clone())).and_then(|(_, attr)| {
                         log::trace!(
                             "[TypeEvalContext::typecheck] Checking BinOp {:?} compatability on method {:?}",
                             dunder,
@@ -275,18 +275,12 @@ pub(crate) mod fndef_to_hlir {
             // let store = self.gcx.value_store.borrow();
 
             let lhs = lhs.visit_with(self)?.unwrap();
-            let (lhs_class, lhs_dunder_method) = dbg!(try_get_class_dunder(
-                self,
-                format!("__{}__", op.as_ref()),
-                lhs
-            ));
+            let (lhs_class, lhs_dunder_method) =
+                try_get_class_dunder(self, format!("__{}__", op.as_ref()), lhs);
 
             let rhs = rhs.visit_with(self)?.unwrap();
-            let (rhs_class, rhs_dunder_method) = dbg!(try_get_class_dunder(
-                self,
-                format!("__r{}__", op.as_ref()),
-                rhs
-            ));
+            let (rhs_class, rhs_dunder_method) =
+                try_get_class_dunder(self, format!("__r{}__", op.as_ref()), rhs);
 
             let ((dunder_method, _), args) = lhs_dunder_method
                 .zip(Some(lhs_class))

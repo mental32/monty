@@ -193,7 +193,7 @@ impl GlobalValueStore {
         let index = self.object_graphs.len().saturating_sub(1);
         let graph = self.object_graphs.get(index).unwrap().clone();
 
-        (graph, dbg!(index))
+        (graph, index)
     }
 
     #[inline]

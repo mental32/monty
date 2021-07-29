@@ -159,13 +159,14 @@ impl<'gcx, 'this> Typecheck<TypeEvalContext<'gcx, 'this>, Option<TypeId>>
 
             AstNode::Name(name) => {
                 let sref = name.clone().unwrap_name();
-                let (type_id, rib_type) = dbg!(cx.def_stack.borrow())
-                    .get(sref.group())
-                    .ok_or_else(|| MontyError::TypeError {
-                        module: cx.value_cx.mref,
-                        error: TypeError::UndefinedVariable {
-                            sref: cx.value_cx.gcx.spanref_to_str(sref).to_string(),
-                        },
+                let (type_id, rib_type) =
+                    cx.def_stack.borrow().get(sref.group()).ok_or_else(|| {
+                        MontyError::TypeError {
+                            module: cx.value_cx.mref,
+                            error: TypeError::UndefinedVariable {
+                                sref: cx.value_cx.gcx.spanref_to_str(sref).to_string(),
+                            },
+                        }
                     })?;
 
                 if type_id == TypingContext::Unknown {
