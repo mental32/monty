@@ -40,7 +40,7 @@ impl Display for Const {
             Const::Bool(b) => write!(f, "{}", b),
             Const::String(s) => write!(f, "{:?}", s),
             Const::None => write!(f, "None"),
-            Const::Ellipsis => write!(f, "..."),
+            Const::Ellipsis => write!(f, "<ellipsis: ...>"),
         }
     }
 }

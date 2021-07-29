@@ -177,6 +177,13 @@ impl AstVisitor<usize> for FlatCode {
     }
 
     fn visit_funcdef(&mut self, fndef: &FunctionDef) -> usize {
+        let decorators: Vec<_> = fndef
+            .decorator_list
+            .iter()
+            .rev()
+            .map(|dec| dec.visit_with(self))
+            .collect();
+
         let params = match (&fndef.reciever, &fndef.args) {
             (None, None) => vec![],
             (Some(recv), None) => vec![(recv.inner.as_name().unwrap(), None)],
@@ -205,12 +212,21 @@ impl AstVisitor<usize> for FlatCode {
             }
         });
 
-        self.inst(RawInst::Defn {
+        let mut func = self.inst(RawInst::Defn {
             name: fndef.name.inner.as_name().unwrap(),
             params,
             returns,
             sequence_id,
-        })
+        });
+
+        for dec in decorators {
+            func = self.inst(RawInst::Call {
+                callable: dec,
+                arguments: vec![func],
+            });
+        }
+
+        func
     }
 
     fn visit_ifstmt(&mut self, ifch: &IfChain) -> usize {
