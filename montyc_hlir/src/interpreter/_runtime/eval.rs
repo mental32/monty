@@ -21,35 +21,6 @@ use crate::{
 
 use super::object::func;
 
-#[derive(Debug, Clone, Copy)]
-pub(in crate::interpreter) enum StackFrame {
-    Module(ObjAllocId),
-    Function(ObjAllocId),
-    Class(ObjAllocId),
-}
-
-pub(in crate::interpreter) trait TryIntoObject {
-    fn try_into_object(&self, ex: &mut AstExecutor) -> PyResult<ObjAllocId>;
-}
-
-impl TryIntoObject for ObjAllocId {
-    fn try_into_object(&self, _: &mut AstExecutor) -> PyResult<ObjAllocId> {
-        Ok(*self)
-    }
-}
-
-impl TryIntoObject for &str {
-    fn try_into_object(&self, ex: &mut AstExecutor) -> PyResult<ObjAllocId> {
-        ex.string(self).map(|st| st.0)
-    }
-}
-
-impl TryIntoObject for SpanRef {
-    fn try_into_object(&self, ex: &mut AstExecutor) -> PyResult<ObjAllocId> {
-        ex.host.spanref_to_str(*self).try_into_object(ex)
-    }
-}
-
 /// An node index with its subgraph index (or none if in the module graph.)
 #[derive(Debug, Clone, Copy)]
 pub struct UniqueNodeIndex {
@@ -249,61 +220,6 @@ impl<'global, 'module> AstExecutor<'global, 'module> {
 }
 
 impl<'global, 'module> AstExecutor<'global, 'module> {
-    #[inline]
-    fn insert_new_object<F, O>(&mut self, __class__: ObjAllocId, f: F) -> PyResult<ObjAllocId>
-    where
-        F: FnOnce(&mut Self, RawObject, ObjAllocId) -> PyResult<O>,
-        O: PyObject,
-    {
-        let object_alloc_id = self.runtime.objects.reserve();
-
-        let raw_object = RawObject {
-            alloc_id: object_alloc_id,
-            __dict__: Default::default(),
-            __class__,
-        };
-
-        let object = f(self, raw_object, object_alloc_id)?;
-        let object = Box::new(object) as Box<dyn PyObject>;
-
-        let _ = self
-            .runtime
-            .objects
-            .try_set_value(object_alloc_id, Rc::new(RefCell::new(object.into())));
-
-        Ok(object_alloc_id)
-    }
-
-    /// Create a new string object.
-    #[inline]
-    pub fn string(&mut self, initial: impl AsRef<str>) -> PyResult<(ObjAllocId, HashKeyT)> {
-        let __class__ = self
-            .runtime
-            .builtins
-            .getattr_static(self.runtime, "str")
-            .unwrap();
-
-        let initial = initial.as_ref().to_owned();
-        let st_hash = self.runtime.hash(initial.clone());
-
-        if let Some(cached) = self.runtime.strings.get(&st_hash) {
-            return Ok((*cached, st_hash));
-        }
-
-        let obj = self.insert_new_object(__class__, move |this, object, object_alloc_id| {
-            this.runtime.strings.insert(st_hash, object_alloc_id);
-
-            let string = StrObj {
-                header: object,
-                value: initial,
-            };
-
-            Ok(string)
-        })?;
-
-        Ok((obj, st_hash))
-    }
-
     /// Create a new integer object.
     #[inline]
     pub fn integer(&mut self, value: i64) -> PyResult<ObjAllocId> {

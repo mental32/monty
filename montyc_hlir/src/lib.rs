@@ -13,7 +13,6 @@
 #![deny(warnings)]
 
 mod grapher;
-mod object_graph;
 
 pub mod code;
 pub mod flatcode;
@@ -24,11 +23,10 @@ pub mod typing;
 use montyc_core::{ModuleRef, TypeId};
 
 use crate::interpreter::PyDictRaw;
-use interpreter::UniqueNodeIndex;
 
+pub use interpreter::runtime::object_graph::{ObjectGraph, ObjectGraphIndex};
 pub use interpreter::{HostGlue, ObjAllocId};
 pub use module_object::*;
-pub use object_graph::{ObjectGraph, ObjectGraphIndex};
 
 /// HLIR objects are dynamic/reflective representations of objects that we can typecheck and compile.
 ///
@@ -64,8 +62,8 @@ pub enum Value {
         name: String,
         properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
         annotations: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-        defsite: Option<UniqueNodeIndex>,
-        parent: Option<ObjectGraphIndex>,
+        // defsite: Option<UniqueNodeIndex>,
+        // parent: Option<ObjectGraphIndex>,
     },
 
     Class {

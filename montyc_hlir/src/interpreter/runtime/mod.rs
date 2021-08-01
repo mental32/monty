@@ -1,109 +1,39 @@
+pub mod ceval;
+pub mod object_graph;
+pub mod scope_graph;
+
 use std::{
     cell::RefCell,
     hash::{BuildHasher, Hasher},
-    ops::{Deref, DerefMut},
     rc::Rc,
 };
 
 use montyc_core::{utils::SSAMap, ModuleRef};
+use montyc_parser::AstObject;
 
-use petgraph::{graph::NodeIndex, visit::NodeIndexable, EdgeDirection::Outgoing};
-
-use crate::{
-    interpreter::{
-        object::{int::IntObj, string::StrObj, PyObject},
-        runtime::eval::AstExecutor,
-    },
-    ObjectGraph, ObjectGraphIndex,
-};
+use self::scope_graph::{ScopeGraph, ScopeIndex};
 
 use super::{
-    object::{self, class::ClassObj, RawObject},
-    HostGlue, ObjAllocId, PyDictRaw, PyResult,
+    object::{
+        alloc::ObjAllocId, class::ClassObj, int::IntObj, string::StrObj, PyObject, RawObject,
+    },
+    PyResult,
+};
+use crate::{
+    flatcode::FlatCode, interpreter::runtime::ceval::ConstEvalContext, HostGlue, ModuleObject,
+    ObjectGraph, ObjectGraphIndex, Value,
 };
 
-pub use eval::UniqueNodeIndex;
-
-#[derive(Debug, Default)]
-pub(in crate::interpreter) struct ScopeGraph(petgraph::graph::DiGraph<ObjAllocId, ()>);
-
-impl DerefMut for ScopeGraph {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl Deref for ScopeGraph {
-    type Target = petgraph::graph::DiGraph<ObjAllocId, ()>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ScopeGraph {
-    #[inline]
-    pub fn insert(&mut self, node: ObjAllocId) -> NodeIndex<u32> {
-        self.0.add_node(node)
-    }
-
-    #[inline]
-    pub fn nest(&mut self, child: NodeIndex<u32>, parent: NodeIndex<u32>) {
-        assert_ne!(child, parent, "Can not nest scopes recursively.");
-        self.0.add_edge(child, parent, ());
-    }
-
-    #[inline]
-    pub(in crate::interpreter) fn parent_of(&self, idx: NodeIndex<u32>) -> Option<ObjAllocId> {
-        self.0
-            .neighbors_directed(idx, Outgoing)
-            .next()
-            .and_then(|idx| self.0.node_weight(idx))
-            .cloned()
-    }
-
-    #[inline]
-    pub fn search(
-        &self,
-        start: ObjAllocId,
-        f: impl Fn(ObjAllocId) -> Option<ObjAllocId>,
-    ) -> Option<ObjAllocId> {
-        let nodes = self.0.raw_nodes();
-        let index = {
-            nodes
-                .iter()
-                .enumerate()
-                .find(|(_, node)| node.weight == start)?
-                .0
-        };
-
-        let mut node = nodes[index].weight;
-        let mut index = self.0.from_index(index);
-
-        loop {
-            if let node @ Some(_) = f(node) {
-                break node;
-            }
-
-            let parent = self
-                .0
-                .neighbors_directed(index, petgraph::EdgeDirection::Outgoing)
-                .next()?;
-
-            index = parent;
-            node = nodes[index.index()].weight;
-        }
-    }
-}
+pub(in crate::interpreter) type SharedMutAnyObject = Rc<RefCell<Rc<dyn PyObject>>>;
 
 /// An interpreter runtime capable of executing some Python.
 #[derive(Debug)]
 pub struct Runtime {
     /// A budget that gets spent everytime the runtime executes some code.
-    op_ticks: u64,
+    op_ticks: usize,
 
     /// A map that contains every object.
-    pub(super) objects: SSAMap<ObjAllocId, Rc<RefCell<Rc<dyn PyObject>>>>,
+    pub(super) objects: SSAMap<ObjAllocId, SharedMutAnyObject>,
 
     /// per-Runtime state that allows producing multiple hashers with the same seed.
     hash_state: ahash::RandomState,
@@ -118,7 +48,10 @@ pub struct Runtime {
     pub(in crate::interpreter) scope_graph: ScopeGraph,
 
     /// The scope index for the builtins module.
-    pub(in crate::interpreter) builtins_scope: NodeIndex,
+    pub(in crate::interpreter) builtins_scope: ScopeIndex,
+
+    /// A single output object graph is maintained in the runtime.
+    pub object_graph: ObjectGraph,
 
     /// A map for interned strings.
     strings: ahash::AHashMap<u64, ObjAllocId>,
@@ -132,7 +65,7 @@ impl Runtime {
     /// for proper evaluation.
     ///
     #[inline]
-    pub fn new(op_ticks: u64) -> Self {
+    pub fn new(op_ticks: usize) -> Self {
         let mut objects = SSAMap::new();
         let mut builtins = objects.reserve();
 
@@ -140,21 +73,22 @@ impl Runtime {
             op_ticks,
             builtins,
             objects,
+            object_graph: Default::default(),
             modules: Default::default(),
             hash_state: ahash::RandomState::new(),
             scope_graph: Default::default(),
-            builtins_scope: NodeIndex::end(),
+            builtins_scope: ScopeIndex::default(),
             strings: Default::default(),
         };
 
         // class type(Self): ...
-        let type_class = this.define_new_static_class(&[]);
+        let type_class = this.define_new_static_class("type", &[]);
 
         // class object(type): ...
-        let object_class = this.define_new_static_class(&[type_class]);
+        let object_class = this.define_new_static_class("object", &[type_class]);
 
         // class ModuleType(object): ...
-        let module_class = this.define_new_static_class(&[object_class]);
+        let module_class = this.define_new_static_class("module", &[object_class]);
 
         // __builtins__ = ModuleType()
         this.objects
@@ -172,22 +106,22 @@ impl Runtime {
         builtins.setattr_static(&mut this, "_object_type_", object_class);
 
         // class str(object): ...
-        let str_class = this.define_new_static_class(&[object_class]);
+        let str_class = this.define_new_static_class("str", &[object_class]);
 
         builtins.setattr_static(&mut this, "str", str_class);
 
         // class int(object): ...
-        let int_class = this.define_new_static_class(&[object_class]);
+        let int_class = this.define_new_static_class("int", &[object_class]);
 
         builtins.setattr_static(&mut this, "int", int_class);
 
         // class dict(object): ...
-        let dict_class = this.define_new_static_class(&[object_class]);
+        let dict_class = this.define_new_static_class("dict", &[object_class]);
 
         builtins.setattr_static(&mut this, "dict", dict_class);
 
         // class function(object): ...
-        let func_class = this.define_new_static_class(&[object_class]);
+        let func_class = this.define_new_static_class("func", &[object_class]);
 
         builtins.setattr_static(&mut this, "_function_type_", func_class);
 
@@ -229,7 +163,7 @@ impl Runtime {
         }
     }
 
-    fn define_new_static_class(&mut self, bases: &[ObjAllocId]) -> ObjAllocId {
+    fn define_new_static_class(&mut self, name: impl ToString, bases: &[ObjAllocId]) -> ObjAllocId {
         let class_alloc_id = self.objects.reserve();
         let base_class_id = bases.get(0).cloned().unwrap_or(class_alloc_id);
 
@@ -241,6 +175,7 @@ impl Runtime {
 
         let class_object = ClassObj {
             header: class_object,
+            name: name.to_string(),
         };
 
         let class_object = Rc::new(RefCell::new(Rc::new(class_object) as Rc<dyn PyObject>));
@@ -330,45 +265,45 @@ impl Runtime {
         &'global mut self,
         mref: ModuleRef,
         gcx: &'global dyn HostGlue,
-    ) -> PyResult<(ObjectGraphIndex, ObjectGraph)> {
-        let mut module_object = super::object::alloc::ObjAllocId(usize::MAX);
-        let mut object_graph: crate::ObjectGraph = Default::default();
+    ) -> PyResult<ObjectGraphIndex> {
+        let mut module_object = self.objects.reserve();
 
-        let module_index = object_graph.add_node(crate::Value::Module {
-            mref,
-            properties: Default::default(),
-        });
+        let module_index = self.object_graph.insert_node_traced(
+            module_object,
+            |_, _| Value::Module {
+                mref,
+                properties: Default::default(),
+            },
+            |_, _| (),
+        );
 
-        let mut properties: PyDictRaw<_> = Default::default();
-        let mut subgraphs = Default::default();
+        let mut eval = |module: &ModuleObject| {
+            let mut code = FlatCode::new();
+            module.ast.visit_with(&mut code);
 
-        gcx.with_module(mref, &mut |module| {
-            let (obj, graphs) =
-                AstExecutor::new_with_module(self, module, gcx).run_until_complete()?;
+            let cx = ConstEvalContext::new(self, gcx, &code, module_object);
 
-            module_object = obj;
-            subgraphs = graphs;
-
-            object_graph
+            self.object_graph
                 .alloc_to_idx
-                .insert(module_object.alloc_id(), module_index);
+                .insert(module_object, module_index);
 
-            module_object.properties_into_values(self, &mut object_graph, &mut properties);
+            let mut properties = Default::default();
+
+            module_object.properties_into_values(&mut self.object_graph, &mut properties);
+
+            if let Some(Value::Module {
+                properties: blank_properties,
+                ..
+            }) = self.object_graph.node_weight_mut(module_index)
+            {
+                std::mem::swap(blank_properties, &mut properties);
+            }
 
             Ok(())
-        })?;
-
-        object_graph.ast_subgraphs = subgraphs;
-
-        let module_properties = match object_graph.node_weight_mut(module_index).unwrap() {
-            crate::Value::Module { properties, .. } => properties,
-            _ => unreachable!(),
         };
 
-        std::mem::swap(module_properties, &mut properties);
+        gcx.with_module(mref, &mut eval);
 
-        Ok((module_index, object_graph))
+        Ok(module_index)
     }
 }
-
-pub(super) mod eval;

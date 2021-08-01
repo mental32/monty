@@ -7,8 +7,8 @@ use std::{
 };
 
 use crate::{
-    interpreter::{runtime::eval::AstExecutor, HashKeyT, Runtime},
-    ObjectGraphIndex,
+    interpreter::{runtime::ceval::ConstEvalContext, HashKeyT, Runtime},
+    ObjectGraph, ObjectGraphIndex,
 };
 
 use super::PyObject;
@@ -90,14 +90,14 @@ impl PyObject for ObjAllocId {
 
     fn for_each(
         &self,
-        rt: &Runtime,
-        f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
+        object_graph: &mut ObjectGraph,
+        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
-        rt.get_object(self.alloc_id()).unwrap().for_each(rt, f)
+        unimplemented!("use rt.for_each(self, f)");
     }
 
-    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> ObjectGraphIndex {
-        self.as_ref(rt, |obj| obj.into_value(rt, object_graph))
+    fn into_value(&self, _: &mut ObjectGraph) -> ObjectGraphIndex {
+        unimplemented!("use rt.into_value(self)");
     }
 
     fn set_item(
@@ -119,7 +119,7 @@ impl PyObject for ObjAllocId {
 
     fn call(
         &self,
-        ex: &mut AstExecutor,
+        ex: &mut ConstEvalContext,
         args: &[ObjAllocId],
     ) -> crate::interpreter::PyResult<ObjAllocId> {
         ex.runtime

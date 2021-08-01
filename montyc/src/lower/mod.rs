@@ -26,7 +26,6 @@ pub(crate) mod fndef_to_hlir {
     use montyc_core::{patma, MontyResult, TypeId, ValueId};
     use montyc_hlir::{
         code::{BlockId, Inst, SSAValueData, SSAValueDef, SSAValueId},
-        interpreter::UniqueNodeIndex,
         typing::{PythonType, TypingContext},
         ObjAllocId, ObjectGraph, ObjectGraphIndex, Value,
     };

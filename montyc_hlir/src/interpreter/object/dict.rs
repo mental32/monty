@@ -128,13 +128,13 @@ impl PyObject for PyDict {
 
     fn for_each(
         &self,
-        rt: &Runtime,
-        f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
+        rt: &mut ObjectGraph,
+        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
         self.data.0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
     }
 
-    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> ObjectGraphIndex {
+    fn into_value(&self, object_graph: &mut ObjectGraph) -> ObjectGraphIndex {
         if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
             return idx;
         }
@@ -146,9 +146,9 @@ impl PyObject for PyDict {
                 data: Default::default(),
             },
             |object_graph, v| {
-                let mut obj = self.header.into_value(rt, object_graph);
+                let mut obj = self.header.into_value(object_graph);
                 let mut dat = Default::default();
-                self.properties_into_values(rt, object_graph, &mut dat);
+                self.properties_into_values(object_graph, &mut dat);
 
                 let (object, data) = if let Value::Dict { object, data } = v(object_graph) {
                     (object, data)

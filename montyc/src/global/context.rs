@@ -6,17 +6,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef, TypeError};
+use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef};
 use montyc_hlir::{
     flatcode::FlatCode,
-    interpreter::{self, HostGlue, UniqueNodeIndex},
-    typing::{PythonType, TypingContext},
+    interpreter::{self, HostGlue},
+    typing::TypingContext,
     Value,
 };
-use montyc_parser::{ast, AstNode, AstObject, SpanInterner};
+use montyc_parser::{ast, AstObject, SpanInterner};
 
 use crate::{
-    lower::{fndef_to_hlir::FunctionContext, Lower},
+    // lower::{fndef_to_hlir::FunctionContext, Lower},
     prelude::*,
     typechk::Typecheck,
     value_context::ValueContext,
@@ -288,7 +288,7 @@ impl GlobalContext {
         for raw_name in MAGICAL_NAMES.iter().cloned() {
             let name_ref = gcx
                 .spanner
-                .name_to_spanref::<0>(raw_name) // INVARIANT: ModuleRef(0) is reserved.
+                .str_to_spanref::<0>(raw_name) // INVARIANT: ModuleRef(0) is reserved.
                 .expect("Span interner was already mutably borrowed!");
 
             gcx.static_names.insert(name_ref, raw_name);
@@ -384,15 +384,9 @@ impl GlobalContext {
 
             eprintln!("\n{}\n", flat);
 
-            let (module_index, object_graph) =
-                gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
+            let module_index = gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
 
-            let (object_graph, object_graph_index) = gcx
-                .value_store
-                .borrow_mut()
-                .insert_object_graph(object_graph);
-
-            let object_graph = &*object_graph;
+            let object_graph = &gcx.const_runtime.borrow().object_graph;
 
             let (mref, properties) = match object_graph
                 .node_weight(module_index)
@@ -406,7 +400,7 @@ impl GlobalContext {
             let module_value_id = gcx
                 .value_store
                 .borrow_mut()
-                .insert_module(module_index, object_graph_index);
+                .insert_module(module_index, &object_graph);
 
             let mut rib = {
                 let parent = object_graph.node_weight(module_index).unwrap();
@@ -416,7 +410,7 @@ impl GlobalContext {
                     let key = object_graph
                         .node_weight(*key)
                         .map(|weight| match weight {
-                            Value::String(st) => montyc_hlir::HostGlue::name_to_spanref(gcx, st),
+                            Value::String(st) => montyc_hlir::HostGlue::str_to_spanref(gcx, &st),
                             _ => unreachable!(),
                         })
                         .unwrap();
@@ -431,7 +425,7 @@ impl GlobalContext {
                 .borrow_mut()
                 .set_rib_data_of(module_value_id, Some(rib.clone()));
 
-            for (key_idx, value_idx) in properties.iter_by_alloc_asc(object_graph) {
+            for (key_idx, value_idx) in properties.iter_by_alloc_asc(&object_graph) {
                 let value = object_graph.node_weight(value_idx).unwrap();
 
                 let value_type = value.typecheck(ValueContext {
@@ -439,14 +433,12 @@ impl GlobalContext {
                     gcx,
                     value,
                     value_idx,
-                    object_graph,
-                    object_graph_index,
                 })?;
 
                 if let Some(key) = object_graph
                     .node_weight(key_idx)
                     .map(|weight| match weight {
-                        Value::String(st) => montyc_hlir::HostGlue::name_to_spanref(gcx, st),
+                        Value::String(st) => montyc_hlir::HostGlue::str_to_spanref(gcx, st),
                         _ => unreachable!(),
                     })
                 {
@@ -484,7 +476,7 @@ impl GlobalContext {
 
         let mut modules = HashSet::with_capacity(qualnames.len());
 
-        let __monty = self.spanner.name_to_spanref::<0>("__monty").unwrap();
+        let __monty = self.spanner.str_to_spanref::<0>("__monty").unwrap();
 
         for qualname in &qualnames {
             assert!(!qualname.is_empty(), "{:?}", qualname);
@@ -622,7 +614,7 @@ impl GlobalContext {
         };
 
         let entry_function = entry_path.split(":").last().unwrap();
-        let (module_object_graph, _) = store.get_graph_of(module_value_id);
+        let module_object_graph = &self.const_runtime.borrow().object_graph;
 
         let module_ast_graph = self
             .modules
@@ -632,14 +624,15 @@ impl GlobalContext {
             .body
             .clone();
 
-        let entry_function_value_index = store.with(module_value_id, |module| {
-            let entry_function_hash = self.const_runtime.borrow().hash(entry_function);
-            let module_globals = module.properties();
+        let entry_function_value_index =
+            store.with(module_value_id, module_object_graph, |module| {
+                let entry_function_hash = self.const_runtime.borrow().hash(entry_function);
+                let module_globals = module.properties();
 
-            let (_, entry_function_index) = module_globals.get(entry_function_hash).unwrap();
+                let (_, entry_function_index) = module_globals.get(entry_function_hash).unwrap();
 
-            entry_function_index
-        });
+                entry_function_index
+            });
 
         let entry_function_alloc_id = module_object_graph
             .alloc_id_of(entry_function_value_index)
@@ -649,75 +642,77 @@ impl GlobalContext {
             .node_weight(entry_function_value_index)
             .unwrap();
 
-        let entry_function_ast_index = if let Value::Function { defsite, .. } = entry_function_value
-        {
-            let defsite = defsite.expect("Function must be defined in a source file.");
+        todo!();
 
-            assert!(defsite.subgraph_index.is_none());
+        // let entry_function_ast_index = if let Value::Function { defsite, .. } = entry_function_value
+        // {
+        //     let defsite = defsite.expect("Function must be defined in a source file.");
 
-            defsite.node_index
-        } else {
-            return Err(MontyError::TypeError {
-                module: mref.clone(),
-                error: TypeError::NotAFunction,
-            });
-        };
+        //     assert!(defsite.subgraph_index.is_none());
 
-        let entry_function_value_id = store.get_value_from_alloc(entry_function_alloc_id).unwrap();
+        //     defsite.node_index
+        // } else {
+        //     return Err(MontyError::TypeError {
+        //         module: mref.clone(),
+        //         error: TypeError::NotAFunction,
+        //     });
+        // };
 
-        let tcx = self.typing_context.borrow();
-        let type_id = store.type_of(entry_function_value_id).unwrap();
+        // let entry_function_value_id = store.get_value_from_alloc(entry_function_alloc_id).unwrap();
 
-        {
-            let local_type_id = tcx.contextualize(type_id).unwrap();
+        // let tcx = self.typing_context.borrow();
+        // let type_id = store.type_of(entry_function_value_id).unwrap();
 
-            match local_type_id.as_python_type() {
-                PythonType::Callable { args, ret } => match (args, ret.clone()) {
-                    (Some(_), _) => todo!("main function can not accept arguments."),
-                    (None, TypingContext::Int) | (None, TypingContext::None) => (),
-                    (None, _) => todo!("main must return either None or int."),
-                },
+        // {
+        //     let local_type_id = tcx.contextualize(type_id).unwrap();
 
-                _ => unimplemented!(),
-            }
-        }
+        //     match local_type_id.as_python_type() {
+        //         PythonType::Callable { args, ret } => match (args, ret.clone()) {
+        //             (Some(_), _) => todo!("main function can not accept arguments."),
+        //             (None, TypingContext::Int) | (None, TypingContext::None) => (),
+        //             (None, _) => todo!("main must return either None or int."),
+        //         },
 
-        std::mem::drop(tcx);
-        std::mem::drop(store);
+        //         _ => unimplemented!(),
+        //     }
+        // }
 
-        if let AstNode::FuncDef(fndef) = module_ast_graph
-            .node_weight(entry_function_ast_index)
-            .unwrap()
-        {
-            let def_stack = {
-                self.value_store
-                    .borrow_mut()
-                    .function_rib_stack(entry_function_value_id)
-                    .unwrap()
-            };
+        // std::mem::drop(tcx);
+        // std::mem::drop(store);
 
-            let cx = FunctionContext {
-                object_graph: module_object_graph,
-                value_index: entry_function_value_index,
-                value_alloc_id: entry_function_alloc_id,
-                type_id,
-                def_stack,
-                ast_index: UniqueNodeIndex {
-                    subgraph_index: None,
-                    node_index: entry_function_ast_index,
-                },
-            };
+        // if let AstNode::FuncDef(fndef) = module_ast_graph
+        //     .node_weight(entry_function_ast_index)
+        //     .unwrap()
+        // {
+        //     let def_stack = {
+        //         self.value_store
+        //             .borrow_mut()
+        //             .function_rib_stack(entry_function_value_id)
+        //             .unwrap()
+        //     };
 
-            fndef.lower((cx, self))
-        } else {
-            unreachable!();
-        }
+        //     let cx = FunctionContext {
+        //         object_graph: module_object_graph,
+        //         value_index: entry_function_value_index,
+        //         value_alloc_id: entry_function_alloc_id,
+        //         type_id,
+        //         def_stack,
+        //         ast_index: UniqueNodeIndex {
+        //             subgraph_index: None,
+        //             node_index: entry_function_ast_index,
+        //         },
+        //     };
+
+        //     fndef.lower((cx, self))
+        // } else {
+        //     unreachable!();
+        // }
     }
 }
 
 impl HostGlue for GlobalContext {
-    fn name_to_spanref(&self, name: &str) -> SpanRef {
-        self.spanner.name_to_spanref::<0>(name).unwrap()
+    fn str_to_spanref(&self, name: &str) -> SpanRef {
+        self.spanner.str_to_spanref::<0>(name).unwrap()
     }
 
     fn spanref_to_str(&self, sref: SpanRef) -> &str {

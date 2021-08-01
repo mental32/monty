@@ -1,6 +1,6 @@
 use crate::{
     interpreter::{HashKeyT, Runtime},
-    ObjectGraphIndex,
+    ObjectGraph, ObjectGraphIndex,
 };
 
 use super::{alloc::ObjAllocId, PyObject, RawObject};
@@ -8,6 +8,7 @@ use super::{alloc::ObjAllocId, PyObject, RawObject};
 #[derive(Debug)]
 pub(in crate::interpreter) struct ClassObj {
     pub header: RawObject,
+    pub name: String,
 }
 
 impl PyObject for ClassObj {
@@ -36,29 +37,26 @@ impl PyObject for ClassObj {
 
     fn for_each(
         &self,
-        rt: &Runtime,
-        f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
+        object_graph: &mut ObjectGraph,
+        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
-        self.header.for_each(rt, f)
+        self.header.for_each(object_graph, f)
     }
 
-    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> ObjectGraphIndex {
+    fn into_value(&self, object_graph: &mut ObjectGraph) -> ObjectGraphIndex {
         if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
             return idx;
         } else {
+            let Self { header, name } = self;
+
             object_graph.insert_node_traced(
                 self.alloc_id(),
-                |_, _| crate::Value::Class {
-                    name: self
-                        .get_attribute_direct(rt, rt.hash("__name__"), self.alloc_id())
-                        .map(|obj| rt.try_as_str_value(obj))
-                        .unwrap()
-                        .unwrap(),
-
+                move |_, _| crate::Value::Class {
+                    name: name.clone(),
                     properties: Default::default(),
                 },
                 |object_graph, value| {
-                    let props = self.header.into_value_dict(rt, object_graph);
+                    let props = self.header.into_value_dict(object_graph);
 
                     match value(object_graph) {
                         crate::Value::Class { properties, .. } => {

@@ -6,7 +6,7 @@ pub mod func;
 pub mod string {
     use crate::{
         interpreter::{HashKeyT, Runtime},
-        ObjectGraphIndex, Value,
+        ObjectGraph, ObjectGraphIndex, Value,
     };
 
     use super::{alloc::ObjAllocId, PyObject, RawObject};
@@ -15,6 +15,7 @@ pub mod string {
     pub(in crate::interpreter) struct StrObj {
         pub(in crate::interpreter) header: RawObject,
         pub(in crate::interpreter) value: String,
+        pub(in crate::interpreter) value_hashed: HashKeyT,
     }
 
     impl PyObject for StrObj {
@@ -43,22 +44,18 @@ pub mod string {
 
         fn for_each(
             &self,
-            rt: &Runtime,
-            f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
+            rt: &mut ObjectGraph,
+            f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
         ) {
             self.header.for_each(rt, f)
         }
 
-        fn into_value(
-            &self,
-            rt: &Runtime,
-            object_graph: &mut crate::ObjectGraph,
-        ) -> ObjectGraphIndex {
+        fn into_value(&self, object_graph: &mut ObjectGraph) -> ObjectGraphIndex {
             if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
                 return idx;
             }
 
-            let hash = rt.hash(self.value.clone());
+            let hash = self.value_hashed.clone();
 
             object_graph.strings.get(&hash).cloned().unwrap_or_else(|| {
                 object_graph.insert_node_traced(
@@ -85,7 +82,7 @@ pub mod string {
 pub mod int {
     use crate::{
         interpreter::{HashKeyT, Runtime},
-        ObjectGraphIndex, Value,
+        ObjectGraph, ObjectGraphIndex, Value,
     };
 
     use super::{alloc::ObjAllocId, PyObject, RawObject};
@@ -122,17 +119,13 @@ pub mod int {
 
         fn for_each(
             &self,
-            rt: &Runtime,
-            f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
+            rt: &mut ObjectGraph,
+            f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
         ) {
             self.header.for_each(rt, f)
         }
 
-        fn into_value(
-            &self,
-            _rt: &Runtime,
-            object_graph: &mut crate::ObjectGraph,
-        ) -> ObjectGraphIndex {
+        fn into_value(&self, object_graph: &mut ObjectGraph) -> ObjectGraphIndex {
             object_graph.insert_node_traced(
                 self.alloc_id(),
                 |_, _| Value::Integer(self.value),
@@ -174,14 +167,10 @@ pub mod raw {
 
     impl RawObject {
         #[inline]
-        pub fn into_value_dict(
-            &self,
-            rt: &Runtime,
-            object_graph: &mut ObjectGraph,
-        ) -> PyDictRaw<(NodeIndex, NodeIndex)> {
+        pub fn into_value_dict(&self, rt: &mut ObjectGraph) -> PyDictRaw<(NodeIndex, NodeIndex)> {
             let mut properties: PyDictRaw<_> = Default::default();
 
-            self.properties_into_values(rt, object_graph, &mut properties);
+            self.properties_into_values(rt, &mut properties);
 
             properties
         }
@@ -231,8 +220,8 @@ pub mod raw {
 
         fn for_each(
             &self,
-            rt: &Runtime,
-            f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId),
+            rt: &mut ObjectGraph,
+            f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
         ) {
             self.__dict__
                 .0
@@ -240,11 +229,7 @@ pub mod raw {
                 .for_each(|(h, (k, v))| f(rt, *h, *k, *v))
         }
 
-        fn into_value(
-            &self,
-            rt: &Runtime,
-            object_graph: &mut crate::ObjectGraph,
-        ) -> ObjectGraphIndex {
+        fn into_value(&self, object_graph: &mut ObjectGraph) -> ObjectGraphIndex {
             if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
                 return idx;
             } else {
@@ -257,7 +242,7 @@ pub mod raw {
                         })
                     },
                     |object_graph, value| {
-                        let props = self.into_value_dict(rt, object_graph);
+                        let props = self.into_value_dict(object_graph);
                         if let Value::Object(object) = value(object_graph) {
                             object.properties = props;
                         } else {
@@ -278,9 +263,9 @@ pub(in crate::interpreter) use raw::RawObject;
 
 pub use dict::PyDictRaw;
 
-use crate::ObjectGraphIndex;
+use crate::{ObjectGraph, ObjectGraphIndex};
 
-use super::{runtime::eval::AstExecutor, HashKeyT, PyResult, Runtime};
+use super::{runtime::ceval::ConstEvalContext, HashKeyT, PyResult, Runtime};
 
 pub use alloc::ObjAllocId;
 
@@ -334,21 +319,24 @@ pub(in crate::interpreter) trait PyObject:
     }
 
     /// Iterate through this objects `__dict__` and call `f` with the hash, key, and value of every entry.
-    fn for_each(&self, rt: &Runtime, f: &mut dyn FnMut(&Runtime, HashKeyT, ObjAllocId, ObjAllocId));
+    fn for_each(
+        &self,
+        rt: &mut ObjectGraph,
+        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
+    );
 
     /// Produce a `crate::Value` from this interpreter object.
-    fn into_value(&self, rt: &Runtime, object_graph: &mut crate::ObjectGraph) -> ObjectGraphIndex;
+    fn into_value(&self, rt: &mut ObjectGraph) -> ObjectGraphIndex;
 
     #[inline]
     fn properties_into_values(
         &self,
-        rt: &Runtime,
-        object_graph: &mut crate::ObjectGraph,
+        rt: &mut ObjectGraph,
         properties: &mut PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
     ) {
         self.for_each(rt, &mut |rt, hash, key, value| {
-            let key = key.into_value(rt, object_graph);
-            let value = value.into_value(rt, object_graph);
+            let key = key.into_value(rt);
+            let value = value.into_value(rt);
 
             properties.insert(hash, (key, value));
         });
@@ -369,8 +357,12 @@ pub(in crate::interpreter) trait PyObject:
         None
     }
 
-    fn call(&self, _ex: &mut AstExecutor, _args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
+    fn call(&self, _ex: &mut ConstEvalContext, _args: &[ObjAllocId]) -> PyResult<ObjAllocId> {
         todo!();
+    }
+
+    fn is_truthy(&self) -> PyResult<bool> {
+        Ok(false)
     }
 
     fn as_any(&self) -> &dyn std::any::Any;
@@ -438,7 +430,7 @@ pub(in crate::interpreter) trait PyObjectEx: PyObject {
 
     //     // TODO: use MRO instead of __bases__
     //     let __bases__ = klass
-    //         .attr(ex, ex.name_to_spanref_hashed("__bases__"))?
+    //         .attr(ex, ex.str_to_spanref_hashed("__bases__"))?
     //         .alloc_id();
 
     //     return Ok(__bases__.contains(ex, other_klass));
@@ -446,7 +438,7 @@ pub(in crate::interpreter) trait PyObjectEx: PyObject {
 
     // #[inline]
     // fn hash(&self, ex: &'rt ModuleExecutor<'_, '_>) -> PyResult<super::HashKeyT> {
-    //     if let Ok(__hash__) = self.attr(ex, ex.name_to_spanref_hashed("__hash__")) {
+    //     if let Ok(__hash__) = self.attr(ex, ex.str_to_spanref_hashed("__hash__")) {
     //         let obj = __hash__.call(ex, &[self.alloc_id()])?;
     //         let number = ex.try_as_int_value(obj)?;
 
@@ -482,7 +474,7 @@ pub(in crate::interpreter) trait PyObjectEx: PyObject {
     //     attrib: ObjAllocId,
     //     value: ObjAllocId,
     // ) -> PyResult<()> {
-    //     if let Ok(attr) = self.attr(ex, ex.name_to_spanref_hashed("__setattr__")) {
+    //     if let Ok(attr) = self.attr(ex, ex.str_to_spanref_hashed("__setattr__")) {
     //         attr.call(ex, &[attrib, value])?;
 
     //         return Ok(());

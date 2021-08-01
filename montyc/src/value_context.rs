@@ -8,7 +8,7 @@ use petgraph::graph::NodeIndex;
 use crate::{
     def_stack::{DefKind, DefScope, DefStack},
     prelude::GlobalContext,
-    type_eval::TypeEvalContext,
+    // type_eval::TypeEvalContext,
     typechk::Typecheck,
 };
 
@@ -18,8 +18,6 @@ pub struct ValueContext<'this, 'gcx> {
     pub gcx: &'gcx GlobalContext,
     pub value: &'this Value,
     pub value_idx: ObjectGraphIndex,
-    pub object_graph: &'this ObjectGraph,
-    pub object_graph_index: usize,
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
@@ -37,20 +35,21 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
 
 impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
     fn typecheck(&self, cx: ValueContext) -> MontyResult<TypeId> {
+        let object_graph = &cx.gcx.const_runtime.borrow().object_graph;
+
         match self {
             Value::Function {
                 name: _,
                 properties: _,
                 annotations,
-                defsite,
-                parent,
+                ..
             } => {
                 let value_id = cx.gcx.value_store.borrow_mut().insert_function(
                     cx.value_idx,
-                    cx.object_graph_index,
                     cx.mref,
                     None,
                     None,
+                    object_graph,
                 );
 
                 cx.gcx
@@ -58,163 +57,165 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
                     .borrow_mut()
                     .set_type_of(value_id, Some(TypingContext::UntypedFunc));
 
-                let defsite = match defsite {
-                    None => return Ok(TypingContext::UntypedFunc),
-                    Some(defsite) => *defsite,
-                };
+                todo!();
 
-                let node = defsite
-                    .subgraph_index
-                    .and_then(|subgraph| cx.object_graph.ast_subgraphs.get(&subgraph))
-                    .and_then(|subgraph| subgraph.node_weight(defsite.node_index).cloned())
-                    .or_else(|| cx.get_node_from_module_body(defsite.node_index))
-                    .unwrap();
+                // let defsite = match defsite {
+                //     None => return Ok(TypingContext::UntypedFunc),
+                //     Some(defsite) => *defsite,
+                // };
 
-                let funcdef = match node {
-                    AstNode::FuncDef(funcdef) => funcdef,
-                    _ => unreachable!(),
-                };
+                // let node = defsite
+                //     .subgraph_index
+                //     .and_then(|subgraph| object_graph.ast_subgraphs.get(&subgraph))
+                //     .and_then(|subgraph| subgraph.node_weight(defsite.node_index).cloned())
+                //     .or_else(|| cx.get_node_from_module_body(defsite.node_index))
+                //     .unwrap();
 
-                let funcdef_args = funcdef.args.as_ref();
-                let mut def_stack = Rc::new(RefCell::new({
-                    if cx.mref != ModuleRef(1) {
-                        let module_value_id = cx
-                            .gcx
-                            .value_store
-                            .borrow_mut()
-                            .get_module_value(ModuleRef(1));
+                // let funcdef = match node {
+                //     AstNode::FuncDef(funcdef) => funcdef,
+                //     _ => unreachable!(),
+                // };
 
-                        let builtin_rib = cx
-                            .gcx
-                            .value_store
-                            .borrow_mut()
-                            .get_rib_data_of(module_value_id)
-                            .unwrap();
+                // let funcdef_args = funcdef.args.as_ref();
+                // let mut def_stack = Rc::new(RefCell::new({
+                //     if cx.mref != ModuleRef(1) {
+                //         let module_value_id = cx
+                //             .gcx
+                //             .value_store
+                //             .borrow_mut()
+                //             .get_module_value(ModuleRef(1));
 
-                        DefStack::new(Some(builtin_rib), Some(DefKind::Builtins))
-                    } else {
-                        DefStack::new(None, None)
-                    }
-                }));
+                //         let builtin_rib = cx
+                //             .gcx
+                //             .value_store
+                //             .borrow_mut()
+                //             .get_rib_data_of(module_value_id)
+                //             .unwrap();
 
-                let return_type = if let Some((_, ret_v)) =
-                    annotations.get(cx.gcx.const_runtime.borrow().hash("return"))
-                {
-                    let value = cx.object_graph.node_weight(ret_v).unwrap();
+                //         DefStack::new(Some(builtin_rib), Some(DefKind::Builtins))
+                //     } else {
+                //         DefStack::new(None, None)
+                //     }
+                // }));
 
-                    let value_id = cx
-                        .gcx
-                        .value_store
-                        .borrow()
-                        .get_value_from_alloc(cx.object_graph.alloc_id_of(ret_v).unwrap())
-                        .unwrap();
+                // let return_type = if let Some((_, ret_v)) =
+                //     annotations.get(cx.gcx.const_runtime.borrow().hash("return"))
+                // {
+                //     let value = object_graph.node_weight(ret_v).unwrap();
 
-                    if let Value::Class { .. } = value {
-                        cx.gcx
-                            .value_store
-                            .borrow()
-                            .type_of(value_id)
-                            .expect("class object does not have a type_id.")
-                    } else {
-                        panic!(
-                            "error: only expected class values as return annotations got {:#?}",
-                            value
-                        );
-                    }
-                } else {
-                    TypingContext::None
-                };
+                //     let value_id = cx
+                //         .gcx
+                //         .value_store
+                //         .borrow()
+                //         .get_value_from_alloc(object_graph.alloc_id_of(ret_v).unwrap())
+                //         .unwrap();
 
-                let mut params =
-                    Vec::with_capacity(funcdef_args.map(|args| args.len()).unwrap_or(0));
+                //     if let Value::Class { .. } = value {
+                //         cx.gcx
+                //             .value_store
+                //             .borrow()
+                //             .type_of(value_id)
+                //             .expect("class object does not have a type_id.")
+                //     } else {
+                //         panic!(
+                //             "error: only expected class values as return annotations got {:#?}",
+                //             value
+                //         );
+                //     }
+                // } else {
+                //     TypingContext::None
+                // };
 
-                let arg_t = if let Some(args) = funcdef_args {
-                    let mut seen = ahash::AHashSet::with_capacity(args.len());
+                // let mut params =
+                //     Vec::with_capacity(funcdef_args.map(|args| args.len()).unwrap_or(0));
 
-                    // Verify that the parameter names are all unique.
-                    for (arg, kind) in args.iter() {
-                        // true iff the spanref group was already present in the set.
-                        if !seen.insert(arg.group()) {
-                            return Err(MontyError::TypeError {
-                                module: cx.mref.clone(),
-                                error: TypeError::DuplicateParameters,
-                            });
-                        }
+                // let arg_t = if let Some(args) = funcdef_args {
+                //     let mut seen = ahash::AHashSet::with_capacity(args.len());
 
-                        if let Some(_) = kind.as_ref() {
-                            let arg_name = cx.gcx.spanref_to_str(arg.clone());
-                            let (_, kind_value) = annotations
-                                .get(cx.gcx.const_runtime.borrow().hash(arg_name))
-                                .unwrap();
+                //     // Verify that the parameter names are all unique.
+                //     for (arg, kind) in args.iter() {
+                //         // true iff the spanref group was already present in the set.
+                //         if !seen.insert(arg.group()) {
+                //             return Err(MontyError::TypeError {
+                //                 module: cx.mref.clone(),
+                //                 error: TypeError::DuplicateParameters,
+                //             });
+                //         }
 
-                            let kind_alloc_id = cx.object_graph.alloc_id_of(kind_value).unwrap();
-                            let kind_value_id = cx
-                                .gcx
-                                .value_store
-                                .borrow()
-                                .get_value_from_alloc(kind_alloc_id)
-                                .unwrap();
+                //         if let Some(_) = kind.as_ref() {
+                //             let arg_name = cx.gcx.spanref_to_str(arg.clone());
+                //             let (_, kind_value) = annotations
+                //                 .get(cx.gcx.const_runtime.borrow().hash(arg_name))
+                //                 .unwrap();
 
-                            let kind = cx.gcx.value_store.borrow().type_of(kind_value_id).unwrap();
+                //             let kind_alloc_id = object_graph.alloc_id_of(kind_value).unwrap();
+                //             let kind_value_id = cx
+                //                 .gcx
+                //                 .value_store
+                //                 .borrow()
+                //                 .get_value_from_alloc(kind_alloc_id)
+                //                 .unwrap();
 
-                            params.push((arg.group(), kind))
-                        }
-                    }
+                //             let kind = cx.gcx.value_store.borrow().type_of(kind_value_id).unwrap();
 
-                    // Ignore any function definitions with non-annotated arguments.
-                    if funcdef.is_dynamically_typed() {
-                        return Ok(TypingContext::UntypedFunc);
-                    } else {
-                        Some(params.iter().map(|(_, t)| *t).collect())
-                    }
-                } else {
-                    None
-                };
+                //             params.push((arg.group(), kind))
+                //         }
+                //     }
 
-                let func_type = cx
-                    .gcx
-                    .typing_context
-                    .borrow_mut()
-                    .callable(arg_t, return_type);
+                //     // Ignore any function definitions with non-annotated arguments.
+                //     if funcdef.is_dynamically_typed() {
+                //         return Ok(TypingContext::UntypedFunc);
+                //     } else {
+                //         Some(params.iter().map(|(_, t)| *t).collect())
+                //     }
+                // } else {
+                //     None
+                // };
 
-                cx.gcx
-                    .value_store
-                    .borrow_mut()
-                    .set_type_of(value_id, Some(func_type));
+                // let func_type = cx
+                //     .gcx
+                //     .typing_context
+                //     .borrow_mut()
+                //     .callable(arg_t, return_type);
 
-                // Don't typecheck the bodies of ellipsis-stubbed functions as they are
-                // essentially either "extern" declarations or nops.
-                if funcdef.is_ellipsis_stubbed() || parent.is_none() {
-                    return Ok(func_type);
-                }
+                // cx.gcx
+                //     .value_store
+                //     .borrow_mut()
+                //     .set_type_of(value_id, Some(func_type));
 
-                {
-                    let store = cx.gcx.value_store.borrow_mut();
-                    let module = store.get_module_value(cx.mref);
-                    let module_rib = store.get_rib_data_of(module).unwrap();
+                // // Don't typecheck the bodies of ellipsis-stubbed functions as they are
+                // // essentially either "extern" declarations or nops.
+                // if funcdef.is_ellipsis_stubbed() || parent.is_none() {
+                //     return Ok(func_type);
+                // }
 
-                    def_stack.borrow_mut().extend(module_rib.into_iter());
-                    def_stack.borrow_mut().extend(params.into_iter());
-                }
+                // {
+                //     let store = cx.gcx.value_store.borrow_mut();
+                //     let module = store.get_module_value(cx.mref);
+                //     let module_rib = store.get_rib_data_of(module).unwrap();
 
-                for node in funcdef.body.iter() {
-                    node.typecheck(TypeEvalContext {
-                        value_cx: &cx,
-                        expected_return_value: return_type,
-                        def_stack: Rc::clone(&def_stack),
-                    })?;
-                }
+                //     def_stack.borrow_mut().extend(module_rib.into_iter());
+                //     def_stack.borrow_mut().extend(params.into_iter());
+                // }
 
-                let mut store = cx.gcx.value_store.borrow_mut();
+                // for node in funcdef.body.iter() {
+                //     node.typecheck(TypeEvalContext {
+                //         value_cx: &cx,
+                //         expected_return_value: return_type,
+                //         def_stack: Rc::clone(&def_stack),
+                //     })?;
+                // }
 
-                store.set_type_of(value_id, Some(func_type));
+                // let mut store = cx.gcx.value_store.borrow_mut();
 
-                match store.function_rib_stack(value_id) {
-                    Ok(_) => unreachable!(),
-                    Err(slot) => slot.replace(Rc::make_mut(&mut def_stack).clone().into_inner()),
-                };
+                // store.set_type_of(value_id, Some(func_type));
 
-                Ok(func_type)
+                // match store.function_rib_stack(value_id) {
+                //     Ok(_) => unreachable!(),
+                //     Err(slot) => slot.replace(Rc::make_mut(&mut def_stack).clone().into_inner()),
+                // };
+
+                // Ok(func_type)
             }
 
             Value::Class { name, properties } => {
@@ -225,8 +226,8 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
 
                 let mut store = cx.gcx.value_store.borrow_mut();
 
-                let alloc_id = cx.object_graph.alloc_id_of(cx.value_idx).unwrap();
-                let class_value_id = store.insert(cx.value_idx, alloc_id, cx.object_graph_index);
+                let alloc_id = object_graph.alloc_id_of(cx.value_idx).unwrap();
+                let class_value_id = store.insert(cx.value_idx, alloc_id);
                 let type_id = {
                     if cx.mref == ModuleRef(1) {
                         // builtins
@@ -257,24 +258,22 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
 
                 let mut rib = DefScope::default();
 
-                for (key_idx, value_idx) in properties.iter_by_alloc_asc(cx.object_graph) {
-                    let value = cx.object_graph.node_weight(value_idx).unwrap();
+                for (key_idx, value_idx) in properties.iter_by_alloc_asc(object_graph) {
+                    let value = object_graph.node_weight(value_idx).unwrap();
 
                     let value_type = value.typecheck(ValueContext {
                         mref: cx.mref,
                         gcx: cx.gcx,
                         value,
                         value_idx,
-                        object_graph: cx.object_graph,
-                        object_graph_index: cx.object_graph_index,
                     })?;
 
                     if let Some(key) =
-                        cx.object_graph
+                        object_graph
                             .node_weight(key_idx)
                             .map(|weight| match weight {
                                 Value::String(st) => {
-                                    montyc_hlir::HostGlue::name_to_spanref(cx.gcx, st)
+                                    montyc_hlir::HostGlue::str_to_spanref(cx.gcx, st)
                                 }
                                 _ => unreachable!(),
                             })
