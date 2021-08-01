@@ -4,13 +4,15 @@ use crate::{
     ast::{Atom, Import, Primary},
     spanned::Spanned,
     token::PyToken,
-    TokenSlice,
+    TokenStreamRef,
 };
 
 use super::{expect, expect_many_n, primary};
 
 #[inline]
-fn import_from<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Import>> {
+fn import_from<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Import>> {
     let (stream, tok) = expect(stream, PyToken::Import)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
@@ -46,7 +48,9 @@ fn import_from<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Im
 }
 
 #[inline]
-fn from_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Import>> {
+fn from_import<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Import>> {
     let (stream, tok) = expect(stream, PyToken::From)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
@@ -101,6 +105,8 @@ fn from_import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Im
 }
 
 #[inline]
-pub fn import<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Import>> {
+pub fn import<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Import>> {
     alt((import_from, from_import))(stream)
 }

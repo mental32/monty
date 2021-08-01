@@ -57,7 +57,7 @@ impl SpanInterner {
 
     /// Return a new span reference to the given string.
     #[inline]
-    pub fn name_to_spanref<const N: u32>(&self, name: &str) -> Result<SpanRef, ()> {
+    pub fn str_to_spanref<const N: u32>(&self, name: &str) -> Result<SpanRef, ()> {
         let mut bound = self.contextualize(name, ModuleRef(N))?;
         Ok(bound.insert(0..name.len()))
     }
@@ -81,6 +81,7 @@ impl SpanInterner {
 
 // -- struct BoundMutInterner<'source, 'data>
 
+#[derive(Debug)]
 pub struct BoundMutInterner<'source, 'data> {
     source: &'source str,
     module: ModuleRef,

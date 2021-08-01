@@ -4,13 +4,15 @@ use crate::{
     ast::models::{Atom, ClassDef, Primary},
     spanned::Spanned,
     token::PyToken,
-    TokenSlice,
+    TokenStreamRef,
 };
 
 use super::{atom, chomp, expect, expect_many_n, stmt::statement};
 
 #[inline]
-pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<ClassDef>> {
+pub fn class_def<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<ClassDef>> {
     // decorators on the def "@foo\n@bar"
 
     let (stream, decorators) = decorator_list(stream)?;
@@ -70,7 +72,9 @@ pub fn class_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
     Ok((stream, def))
 }
 
-pub(super) fn decorator<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+pub(super) fn decorator<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     let (stream, _at) = expect(stream, PyToken::At)?;
     let (stream, dec) = super::primary(stream)?;
 
@@ -91,9 +95,9 @@ pub(super) fn decorator<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, S
     Ok((stream, dec))
 }
 
-pub(super) fn decorator_list<'a>(
-    stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, Vec<Spanned<Primary>>> {
+pub(super) fn decorator_list<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Vec<Spanned<Primary>>> {
     let mut list = vec![];
     let mut stream = stream;
 

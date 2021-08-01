@@ -8,13 +8,15 @@ use crate::{
     comb::expect_many_n_var,
     spanned::Spanned,
     token::PyToken,
-    TokenSlice,
+    TokenStreamRef,
 };
 
 use super::{expect, expect_, expect_many_n, expression, stmt::statement};
 
 #[inline]
-pub fn if_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<IfChain>> {
+pub fn if_stmt<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<IfChain>> {
     let (stream, token) = match expect(stream, PyToken::If) {
         Ok((stream, tok)) => {
             log::trace!("parser:if_stmt parsing If");

@@ -3,9 +3,10 @@ use nom::IResult;
 use crate::{
     ast::{Atom, Expr, Module, Primary, Return, Statement},
     spanned::Spanned,
+    TokenStreamRef,
 };
 
-use super::{token::PyToken, TokenSlice};
+use super::token::PyToken;
 
 pub mod assign;
 pub mod atom;
@@ -22,14 +23,18 @@ pub mod while_;
 pub(self) use {self::core::*, assign::*, atom::*, expr::*, primary::*};
 
 #[inline]
-pub fn return_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Return> {
+pub fn return_unspanned<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Return> {
     let (stream, Spanned { inner, .. }) = return_stmt(stream)?;
 
     Ok((stream, inner))
 }
 
 #[inline]
-pub fn return_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Return>> {
+pub fn return_stmt<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Return>> {
     let (stream, ret) = expect(stream, PyToken::Return)?;
 
     let (stream, span_end, value) = match expression(stream) {
@@ -49,7 +54,9 @@ pub fn return_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanne
     Ok((stream, ret))
 }
 
-fn chomp<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Spanned<PyToken>>> {
+fn chomp<'this, 'source, 'data>(
+    mut stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Vec<Spanned<PyToken>>> {
     let mut refs = vec![];
 
     loop {
@@ -74,7 +81,9 @@ fn chomp<'a>(mut stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Vec<Spanned<
 }
 
 #[inline]
-pub fn module<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Module> {
+pub fn module<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Module> {
     let (mut stream, mut head) = chomp(stream)?;
 
     let mut body: Vec<_> = head

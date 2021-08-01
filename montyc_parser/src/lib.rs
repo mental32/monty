@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 
-use std::{fmt::Debug, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nom::IResult;
 
@@ -22,28 +22,45 @@ use token_iter::TokenStreamIter;
 
 pub(crate) type Token = (PyToken, logos::Span);
 
-pub(crate) type TokenSlice<'a> = &'a [Token];
-
 #[derive(Debug)]
-struct Parser<'s> {
-    source: &'s str,
-    span_ref: SpanInterner,
+pub(crate) struct TokenStream<'source, 'data> {
+    pub(crate) stream_iter: TokenStreamIter<'source, 'data>,
+    pub(crate) tokens: Vec<Token>,
+    stream_iter_complete: bool,
 }
 
-impl Parser<'_> {
-    #[inline]
-    fn token_sequence(&self, module: ModuleRef) -> Box<[Token]> {
-        let bound = self.span_ref.contextualize(&self.source, module).unwrap();
+#[derive(Debug, Clone, Copy)]
+pub struct TokenStreamRef<'this, 'source, 'data> {
+    stream: &'this RefCell<TokenStream<'source, 'data>>,
+    tokens_slice_start: usize,
+}
 
-        let token_stream = TokenStreamIter {
-            bound,
-            lexer: <PyToken as logos::Logos>::lexer(&self.source),
+impl<'this, 'source, 'data> TokenStreamRef<'this, 'source, 'data> {
+    pub(crate) fn grow(&self) -> Option<Token> {
+        let mut this = self.stream.borrow_mut();
+
+        let token = match this.stream_iter.next() {
+            Some(t) => t.unwrap(),
+            None => {
+                this.stream_iter_complete = true;
+                return None;
+            }
         };
 
-        token_stream
-            .map(Result::unwrap)
-            .collect::<Vec<_>>()
-            .into_boxed_slice()
+        this.tokens.push(token.clone());
+
+        Some(token)
+    }
+
+    pub(crate) fn is_eof(&self) -> bool {
+        self.stream.borrow().stream_iter_complete
+    }
+}
+
+impl<'t, 's, 'd> PartialEq for TokenStreamRef<'t, 's, 'd> {
+    fn eq(&self, other: &Self) -> bool {
+        debug_assert_eq!(self.stream as *const _, other.stream as *const _);
+        self.tokens_slice_start == other.tokens_slice_start
     }
 }
 
@@ -54,29 +71,57 @@ pub fn parse<P, R>(
     mref: ModuleRef,
 ) -> R
 where
-    P: for<'a> Fn(TokenSlice<'a>) -> IResult<TokenSlice<'a>, R>,
+    P: for<'this, 'source, 'data> Fn(
+        TokenStreamRef<'this, 'source, 'data>,
+    ) -> IResult<TokenStreamRef<'this, 'source, 'data>, R>,
     R: Debug,
 {
     let source = source.as_ref();
-    let parser = match span_ref {
-        Some(span_ref) => Parser { source, span_ref },
+    let span_ref = span_ref.unwrap_or_else(|| SpanInterner::new());
 
-        None => Parser {
-            source,
-            span_ref: SpanInterner::new(),
-        },
+    let stream = {
+        let bound = span_ref.contextualize(&source, mref).unwrap();
+
+        let token_stream = TokenStreamIter {
+            bound,
+            lexer: <PyToken as logos::Logos>::lexer(&source),
+        };
+
+        let stream = TokenStream {
+            stream_iter: token_stream,
+            tokens: Vec::with_capacity(1024),
+            stream_iter_complete: false,
+        };
+
+        RefCell::new(stream)
     };
 
-    let seq = parser.token_sequence(mref);
+    let result = {
+        let stream_ref = TokenStreamRef {
+            stream: &stream,
+            tokens_slice_start: 0,
+        };
 
-    let (stream, result) = func(&seq).unwrap();
+        let (_, result) = func(stream_ref).unwrap();
 
-    assert!(stream.is_empty(), "{:?}\n{:#?}", stream, result);
+        result
+    };
+
+    let stream = stream.into_inner();
+
+    assert!(
+        stream.stream_iter_complete,
+        "{:?}\n{:#?}",
+        stream.tokens, result
+    );
 
     result
 }
 
-pub type ParserT<R> = for<'a> fn(TokenSlice<'a>) -> nom::IResult<TokenSlice<'a>, R>;
+pub type ParserT<R> =
+    for<'this, 'source, 'data> fn(
+        TokenStreamRef<'this, 'source, 'data>,
+    ) -> nom::IResult<TokenStreamRef<'this, 'source, 'data>, R>;
 
 pub trait Parseable {
     const PARSER: ParserT<Self>;

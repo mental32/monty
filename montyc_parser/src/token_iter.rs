@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use logos::Lexer;
 
 use crate::{span_interner::BoundMutInterner, token::PyToken};
@@ -5,6 +7,14 @@ use crate::{span_interner::BoundMutInterner, token::PyToken};
 pub struct TokenStreamIter<'source, 'data> {
     pub(crate) bound: BoundMutInterner<'source, 'data>,
     pub(crate) lexer: Lexer<'source, PyToken>,
+}
+
+impl Debug for TokenStreamIter<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenStreamIter")
+            .field("bound", &self.bound)
+            .finish()
+    }
 }
 
 impl<'source, 'data> Iterator for TokenStreamIter<'source, 'data> {

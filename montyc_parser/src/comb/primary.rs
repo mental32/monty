@@ -8,7 +8,7 @@ use crate::{
     ast::{models::Primary, Atom, Expr},
     spanned::Spanned,
     token::PyToken,
-    TokenSlice,
+    TokenStreamRef,
 };
 
 use super::{
@@ -18,14 +18,14 @@ use super::{
 };
 
 #[inline]
-fn primary_subscript<'a>(
-    stream: TokenSlice<'a>,
+fn primary_subscript<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
     base: &Spanned<Primary>,
-) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     let (stream, _) = expect(stream, PyToken::LBracket)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
-    let tuple = |stream| -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+    let tuple = |stream| -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
         let (stream, values) = super::atom::tuple_literal_inner(stream)?;
 
         let first_value = values.get(0).unwrap();
@@ -60,10 +60,10 @@ fn primary_subscript<'a>(
 }
 
 #[inline]
-fn primary_call<'a>(
-    stream: TokenSlice<'a>,
+fn primary_call<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
     base: &Spanned<Primary>,
-) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     let (stream, _) = expect(stream, PyToken::LParen)?;
     let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
@@ -110,10 +110,10 @@ fn primary_call<'a>(
 }
 
 #[inline]
-fn primary_dot_name<'a>(
-    stream: TokenSlice<'a>,
+fn primary_dot_name<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
     base: &Spanned<Primary>,
-) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, _) = expect(stream, PyToken::Dot)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -132,10 +132,10 @@ fn primary_dot_name<'a>(
 }
 
 #[inline]
-fn primary_left_recurse<'a>(
-    stream: TokenSlice<'a>,
+fn primary_left_recurse<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
     base: &Spanned<Primary>,
-) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     // Try each of the subrules until success or bail with a nom error.
     let mut output = primary_dot_name(stream, &base)
         .or_else(|_| primary_call(stream, &base))
@@ -151,7 +151,9 @@ fn primary_left_recurse<'a>(
 }
 
 #[inline]
-pub fn primary<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+pub fn primary<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     let (stream, atom) = atom(stream)?;
     let base = atom.replace_with(|at| Primary::Atomic(at));
 
@@ -159,7 +161,9 @@ pub fn primary<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Pr
 }
 
 #[inline]
-pub fn await_primary<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Primary>> {
+pub fn await_primary<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     let mut await_ = terminated(
         expect_(PyToken::Await),
         expect_many_n::<1>(PyToken::Whitespace),

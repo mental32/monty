@@ -2,7 +2,8 @@ use nom::{sequence::terminated, IResult};
 
 use crate::ast::models::Assign;
 use crate::spanned::Spanned;
-use crate::{token::PyToken, TokenSlice};
+use crate::token::PyToken;
+use crate::TokenStreamRef;
 
 use super::primary;
 use super::{
@@ -11,13 +12,17 @@ use super::{
 };
 
 #[inline]
-pub fn assignment_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Assign> {
+pub fn assignment_unspanned<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Assign> {
     let (stream, Spanned { inner, .. }) = assignment(stream)?;
     Ok((stream, inner))
 }
 
 #[inline]
-pub fn assignment<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Assign>> {
+pub fn assignment<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Assign>> {
     let (stream, ident) = terminated(primary, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
     let mut parsed = terminated(

@@ -1,13 +1,15 @@
 use nom::{sequence::tuple, IResult};
 
-use crate::{ast::models::While, spanned::Spanned, token::PyToken, TokenSlice};
+use crate::{ast::models::While, spanned::Spanned, token::PyToken, TokenStreamRef};
 
 use super::{
     expect, expect_, expect_many_n, expect_many_n_var, expression, stmt::statement_unstripped,
 };
 
 #[inline]
-pub fn while_stmt<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<While>> {
+pub fn while_stmt<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<While>> {
     let (stream, tok) = expect(stream, PyToken::While)?;
 
     let (mut stream, (_, test, _, _, _)) = tuple((

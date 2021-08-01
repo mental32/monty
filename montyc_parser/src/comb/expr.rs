@@ -3,7 +3,7 @@ use nom::{branch::alt, IResult};
 use crate::ast::models::{Expr, InfixOp, UnaryOp};
 use crate::spanned::Spanned;
 use crate::token::PyToken;
-use crate::TokenSlice;
+use crate::TokenStreamRef;
 
 use super::core::{
     expect, expect_, expect_any_of, expect_any_token, expect_many_n, expect_wrapped_values,
@@ -12,7 +12,9 @@ use super::core::{
 use super::primary::await_primary;
 
 #[inline]
-fn power<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn power<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let (stream, left) = await_primary(stream)?;
     let left = left.replace_with(Expr::Primary);
 
@@ -39,7 +41,9 @@ fn power<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
 }
 
 #[inline]
-fn factor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn factor<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     use PyToken::{Minus, Plus, Tilde};
 
     if let Ok((stream, token)) = expect_any_token([Plus, Minus, Tilde])(stream) {
@@ -70,12 +74,14 @@ fn factor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> 
 }
 
 #[inline]
-fn term<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn term<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     #[inline]
-    fn term_<'a>(
-        stream: TokenSlice<'a>,
+    fn term_<'this, 'source, 'data>(
+        stream: TokenStreamRef<'this, 'source, 'data>,
         left: &Spanned<Expr>,
-    ) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+    ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
         use PyToken::{At, Div, Modulo, Star};
 
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -131,14 +137,16 @@ fn term<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
 }
 
 #[inline]
-fn sum<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn sum<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     use PyToken::{Minus, Plus};
 
     #[inline]
-    fn sum_<'a>(
-        stream: TokenSlice<'a>,
+    fn sum_<'this, 'source, 'data>(
+        stream: TokenStreamRef<'this, 'source, 'data>,
         left: &Spanned<Expr>,
-    ) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+    ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
         let (stream, tok) = expect_any_token([Plus, Minus])(stream)?;
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -174,7 +182,9 @@ fn sum<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
 }
 
 #[inline]
-fn shift_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn shift_expr<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     use PyToken::{GreaterThan, LessThan};
 
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -208,7 +218,9 @@ fn shift_expr<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Exp
 }
 
 #[inline]
-fn bitwise_and<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn bitwise_and<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, base) = shift_expr(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -238,7 +250,9 @@ fn bitwise_and<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
 }
 
 #[inline]
-fn bitwise_xor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn bitwise_xor<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, base) = bitwise_and(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -268,7 +282,9 @@ fn bitwise_xor<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
 }
 
 #[inline]
-fn bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn bitwise_or<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, base) = bitwise_xor(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -297,7 +313,9 @@ fn bitwise_or<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Exp
     }
 }
 #[inline]
-fn equality<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn equality<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     use PyToken::{Bang, Equal, Whitespace};
 
     let (stream, _) = expect_many_n::<0>(Whitespace)(stream)?;
@@ -329,12 +347,16 @@ fn equality<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>
 }
 
 #[inline]
-fn comparison<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn comparison<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     alt((equality, bitwise_or))(stream)
 }
 
 #[inline]
-fn inversion<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn inversion<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let not_comparison = |stream| {
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
         let (stream, tok) = expect(stream, PyToken::Not)?;
@@ -355,7 +377,9 @@ fn inversion<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr
 }
 
 #[inline]
-fn conjunction<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn conjunction<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let and_inversion = |stream| {
         let (stream, left) = inversion(stream)?;
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -382,7 +406,9 @@ fn conjunction<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
 }
 
 #[inline]
-fn disjunction<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+fn disjunction<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let or_conjunction = |stream| {
         let (stream, left) = conjunction(stream)?;
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -409,13 +435,17 @@ fn disjunction<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ex
 }
 
 #[inline]
-pub fn expression_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Expr> {
+pub fn expression_unspanned<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Expr> {
     let (stream, result) = expression(stream)?;
     Ok((stream, result.inner))
 }
 
 #[inline]
-pub fn expression<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Expr>> {
+pub fn expression<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
     let ternary_disjunction = |stream| {
         let (stream, body) = disjunction(stream)?;
         let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;

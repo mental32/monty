@@ -5,7 +5,7 @@ use crate::{
     comb::expect_many_n_var,
     spanned::Spanned,
     token::PyToken,
-    TokenSlice,
+    TokenStreamRef,
 };
 
 use super::{
@@ -14,7 +14,9 @@ use super::{
 };
 
 #[inline]
-fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {
+fn argument<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<PyToken>> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, name) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -22,9 +24,9 @@ fn argument<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyTok
 }
 
 #[inline]
-fn argument_annotated<'a>(
-    stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, (Spanned<PyToken>, Option<Spanned<Expr>>)> {
+fn argument_annotated<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, (Spanned<PyToken>, Option<Spanned<Expr>>)> {
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
     let (stream, name) = expect_ident(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
@@ -37,10 +39,7 @@ fn argument_annotated<'a>(
             (stream, Some(kind))
         }
 
-        Err(nom::Err::Error(error::Error {
-            input: [(_, _first), ..],
-            ..
-        })) => {
+        Err(nom::Err::Error(error::Error { input, .. })) if !input.is_eof() => {
             let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
 
             (stream, None)
@@ -53,10 +52,10 @@ fn argument_annotated<'a>(
 }
 
 #[inline]
-fn arguments<'a>(
-    stream: TokenSlice<'a>,
+fn arguments<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<
-    TokenSlice<'a>,
+    TokenStreamRef<'this, 'source, 'data>,
     (
         Option<Spanned<PyToken>>,
         Vec<(Spanned<PyToken>, Option<Spanned<Expr>>)>,
@@ -77,7 +76,9 @@ fn arguments<'a>(
 }
 
 #[inline]
-pub fn function_def<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<FunctionDef>> {
+pub fn function_def<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<FunctionDef>> {
     let (stream, dec) = match decorator_list(stream) {
         Ok((stream, dec)) => (stream, Some(dec)),
         Err(_) => (stream, None),

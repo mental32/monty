@@ -5,22 +5,28 @@ use crate::ast::models::{Atom, Expr};
 use crate::comb::{expect, expect_any_of, expect_many_n, expect_with};
 use crate::spanned::Spanned;
 use crate::token::PyToken;
-use crate::TokenSlice;
+use crate::TokenStreamRef;
 
 use super::expect_;
 
 #[inline]
-fn expect_digits<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {
+fn expect_digits<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<PyToken>> {
     expect_with(stream, |(tok, _)| matches!(tok, PyToken::Digits(_)))
 }
 
 #[inline]
-pub fn expect_ident<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<PyToken>> {
+pub fn expect_ident<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<PyToken>> {
     expect_with(stream, |(tok, _)| matches!(tok, PyToken::Ident(_)))
 }
 
 #[inline]
-pub(crate) fn name<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+pub(crate) fn name<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Atom>> {
     let (stream, ident) = expect_ident(stream)?;
 
     let name = if let PyToken::Ident(name) = ident.inner {
@@ -36,7 +42,9 @@ pub(crate) fn name<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanne
 }
 
 #[inline]
-fn integer<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+fn integer<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Atom>> {
     let (stream, digits) = expect_digits(stream)?;
 
     let int = if let PyToken::Digits(inner) = digits.inner {
@@ -52,7 +60,9 @@ fn integer<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>>
 }
 
 #[inline]
-fn float<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+fn float<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Atom>> {
     let (stream, (left, _, right)) =
         tuple((expect_digits, expect_(PyToken::Dot), expect_digits))(stream)?;
 
@@ -72,7 +82,9 @@ fn float<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
 }
 
 #[inline]
-fn string_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+fn string_ref<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Atom>> {
     let (stream, ident) = expect_with(stream, |(t, _)| matches!(t, PyToken::StringRef(_)))?;
 
     let name = if let PyToken::StringRef(name) = ident.inner {
@@ -88,9 +100,9 @@ fn string_ref<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Ato
 }
 
 #[inline]
-pub fn tuple_literal_inner<'a>(
-    stream: TokenSlice<'a>,
-) -> IResult<TokenSlice<'a>, Vec<Spanned<Expr>>> {
+pub fn tuple_literal_inner<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Vec<Spanned<Expr>>> {
     let (stream, first) = super::expr::expression(stream)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
     let (stream, _) = match expect(stream, PyToken::Comma) {
@@ -127,7 +139,9 @@ pub fn tuple_literal_inner<'a>(
 }
 
 #[inline]
-fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+fn tuple_literal<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Atom>> {
     let (stream, lparen) = expect(stream, PyToken::LParen)?;
     let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream).unwrap_or((stream, vec![]));
     let (stream, values) = tuple_literal_inner(stream)?;
@@ -142,13 +156,17 @@ fn tuple_literal<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<
 }
 
 #[inline]
-pub fn atom_unspanned<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Atom> {
+pub fn atom_unspanned<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Atom> {
     let (stream, Spanned { inner, .. }) = atom(stream)?;
     Ok((stream, inner))
 }
 
 #[inline]
-pub fn atom<'a>(stream: TokenSlice<'a>) -> IResult<TokenSlice<'a>, Spanned<Atom>> {
+pub fn atom<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Atom>> {
     use PyToken::{Ellipsis, False, None, True};
 
     let fallback = |stream| {
