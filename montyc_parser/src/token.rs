@@ -173,7 +173,7 @@ pub enum PyToken {
     FormFeed,
 
     #[token(";")]
-    Dissapointment,
+    Disappointment,
 
     // -- Regex rules
     #[regex(r"\t| ")]
