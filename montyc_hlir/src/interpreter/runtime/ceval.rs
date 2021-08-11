@@ -1,28 +1,52 @@
 use std::{cell::RefCell, rc::Rc};
 
+use ahash::AHashMap;
 use montyc_core::{patma, SpanRef};
 use montyc_parser::ast::UnaryOp;
 use petgraph::graph::NodeIndex;
 
 use crate::{
     flatcode::{
-        raw_inst::{Dunder, RawInst},
-        FlatCode,
+        raw_inst::{Const, Dunder, RawInst},
+        FlatCode, FlatInst,
     },
     interpreter::{
-        object::{string::StrObj, PyObject, RawObject},
+        object::{frame::FrameObject, string::StrObj, PyObject, RawObject},
         HashKeyT, PyResult,
     },
-    HostGlue, ObjAllocId,
+    HostGlue, ModuleData, ModuleObject, ObjAllocId,
 };
 
 use super::Runtime;
+
+#[derive(Debug)]
+struct FrameValues(Box<[Option<ObjAllocId>]>);
+
+impl FrameValues {
+    #[inline]
+    fn get(&mut self, index: usize) -> Option<ObjAllocId> {
+        self.0[index]
+    }
+
+    #[inline]
+    fn set(&mut self, index: usize, value: ObjAllocId) -> Option<ObjAllocId> {
+        self.0[index].replace(value)
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::interpreter) enum StackFrame {
     Module(ObjAllocId),
     Function(ObjAllocId),
     Class(ObjAllocId),
+}
+
+impl From<StackFrame> for ObjAllocId {
+    fn from(frame: StackFrame) -> Self {
+        match frame {
+            StackFrame::Module(o) | StackFrame::Function(o) | StackFrame::Class(o) => o,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -34,7 +58,7 @@ pub struct ConstEvalContext<'code, 'gcx, 'rt> {
     pub(crate) module: ObjAllocId,
 
     /// The host of the runtime, typically its GlobalContext in the `montyc` crate.
-    pub(crate) host: &'gcx dyn HostGlue,
+    pub(crate) host: &'gcx mut dyn HostGlue,
 
     /// The amount of remaning ticks for this evaluator, seeded by the runtimes default tick count.
     ticks: usize,
@@ -42,8 +66,7 @@ pub struct ConstEvalContext<'code, 'gcx, 'rt> {
     /// The code being evaluated.
     pub(crate) code: &'code FlatCode,
 
-    /// The produced values for instructions in sequences in the code.
-    pub(in crate::interpreter) values: Vec<Vec<Option<ObjAllocId>>>,
+    module_object: &'gcx ModuleData,
 
     /// The call stack.
     pub(in crate::interpreter) call_stack: Vec<(usize, usize, StackFrame)>,
@@ -67,79 +90,23 @@ impl TryIntoObject for &str {
 
 impl TryIntoObject for SpanRef {
     fn try_into_object(&self, ex: &mut ConstEvalContext) -> PyResult<ObjAllocId> {
-        ex.host.spanref_to_str(*self).try_into_object(ex)
+        ex.host
+            .spanref_to_str(*self)
+            .to_string()
+            .as_str()
+            .try_into_object(ex)
     }
 }
 
 impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
-    // /// Create a new `AstExecutor`
-    // #[inline]
-    // pub fn new_with_module(
-    //     runtime: &'global mut super::Runtime,
-    //     module: &'module ModuleObject,
-    //     host: &'global dyn HostGlue,
-    // ) -> Self {
-    //     let graph = &module.body;
-
-    //     let ast_object_id = runtime.objects.reserve();
-
-    //     {
-    //         let __class__ = runtime
-    //             .builtins
-    //             .get_attribute_direct(runtime, runtime.hash("_module_type_"), ast_object_id)
-    //             .unwrap()
-    //             .alloc_id();
-
-    //         runtime
-    //             .objects
-    //             .try_set_value(
-    //                 ast_object_id,
-    //                 RawObject {
-    //                     __class__,
-    //                     __dict__: Default::default(),
-    //                     alloc_id: ast_object_id,
-    //                 },
-    //             )
-    //             .unwrap();
-
-    //         runtime.modules.insert(module.mref, ast_object_id);
-    //     }
-
-    //     let namespace = runtime.scope_graph.insert(ast_object_id);
-    //     let frame = StackFrame::Module(ast_object_id);
-
-    //     if runtime.builtins_scope == NodeIndex::end() {
-    //         runtime.builtins_scope = namespace;
-    //     } else {
-    //         runtime.scope_graph.nest(namespace, runtime.builtins_scope);
-    //     }
-
-    //     Self {
-    //         runtime,
-    //         graph,
-    //         host,
-    //         subgraphs: Default::default(),
-    //         ast_object: ast_object_id,
-    //         node_index: module.body.from_index(0),
-    //         eval_stack: vec![(
-    //             namespace,
-    //             UniqueNodeIndex {
-    //                 subgraph_index: None,
-    //                 node_index: NodeIndex::end(),
-    //             },
-    //             frame,
-    //         )],
-    //     }
-    // }
-
     #[inline]
     pub fn define(&mut self, name: SpanRef, value: ObjAllocId) -> PyResult<()> {
         let (_, _, frame) = self.call_stack.last().as_ref().unwrap();
         let mut frame =
             patma!(*o, StackFrame::Class(o) | StackFrame::Function(o) | StackFrame::Module(o) in frame).unwrap();
 
-        let st_name = self.host.spanref_to_str(name);
-        let (name, hash) = self.string(st_name)?;
+        let st_name = self.host.spanref_to_str(name).to_string();
+        let (name, hash) = self.string(&st_name)?;
 
         log::trace!(
             "[ConstEvalContext::define] setattr {:?} . {:?} = {:?}",
@@ -172,7 +139,9 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
 
         Some(object)
     }
+}
 
+impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
     /// A helper method to set the stringy property `key` to `value` on some `object`.
     #[inline]
     fn set_attribute(
@@ -219,7 +188,7 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
     pub fn string(&mut self, initial: impl AsRef<str>) -> PyResult<(ObjAllocId, HashKeyT)> {
         let __class__ = self
             .runtime
-            .builtins
+            .internals
             .getattr_static(self.runtime, "str")
             .unwrap();
 
@@ -249,163 +218,169 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
 impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
     pub fn new(
         runtime: &'rt mut Runtime,
-        host: &'gcx dyn HostGlue,
+        host: &'gcx mut dyn HostGlue,
         code: &'code FlatCode,
         module: ObjAllocId,
+        module_object: &'gcx ModuleData,
     ) -> Self {
-        let values = code
-            .sequences
-            .iter()
-            .map(|seq| Vec::with_capacity(seq.len()))
-            .collect();
-
         Self {
+            module_object,
             ticks: runtime.op_ticks,
             runtime,
             host,
             code,
-            values,
             module,
             call_stack: vec![],
         }
     }
 
+    /// Evaluate a single frame.
+    ///
+    /// This is separate from `Self::eval` because it let's me use the try operator
+    /// and not fuck up any exception handling.
+    ///
     #[inline]
-    fn get_value(&self, seq_ix: usize, inst_ix: usize) -> Option<ObjAllocId> {
-        self.values[seq_ix][inst_ix]
-    }
-
-    #[inline]
-    fn set_value(
+    fn eval_frame(
         &mut self,
-        seq_ix: usize,
-        inst_ix: usize,
-        value: ObjAllocId,
-    ) -> Option<ObjAllocId> {
-        self.values[seq_ix][inst_ix].replace(value)
-    }
+        (seq_ix, mut inst_ix, frame): (usize, usize, StackFrame),
+    ) -> PyResult<(ObjAllocId, FrameValues)> {
+        assert_eq!(inst_ix, 0, "Refusing to start evaluating a frame mid-way.");
 
-    pub fn eval(mut self) -> PyResult<NodeIndex> {
-        assert!(self.call_stack.is_empty());
+        let seq = match self.code.sequences.get(seq_ix) {
+            Some(seq) => seq.as_slice(),
+            None => unreachable!("out-of-bounds sequence index {:?}", seq_ix),
+        };
 
-        self.call_stack
-            .push((0, 0, StackFrame::Module(self.module)));
+        log::trace!("[ConstEvalContext::eval] Sequence {}", self.code);
 
-        let mut call_stack = std::mem::take(&mut self.call_stack);
+        let mut values = FrameValues(vec![None; seq.len()].into_boxed_slice());
+        let frame_object_alloc_id = self.runtime.objects.reserve();
+        let mut frame_object = FrameObject {
+            inner: RawObject {
+                alloc_id: frame_object_alloc_id,
+                __class__: frame_object_alloc_id,
+                __dict__: Default::default(),
+            },
 
-        loop {
-            let (seq_ix, inst_ix, frame) = match call_stack.last_mut() {
-                Some((a, b, c)) => (a, b, c),
-                None => break,
-            };
+            locals: AHashMap::<u32, (HashKeyT, ObjAllocId, ObjAllocId)>::new(),
+        };
 
-            macro_rules! value {
-                () => {{
-                    self.get_value(*seq_ix, *inst_ix).unwrap()
-                }};
-
-                ($ix:expr) => {{
-                    self.get_value(*seq_ix, $ix).unwrap()
-                }};
-
-                ($ix:expr, $val:expr) => {{
-                    self.set_value(*seq_ix, $ix, $val)
-                }};
+        let final_value = 'outer: loop {
+            if self.ticks != 0 {
+                self.ticks -= 1;
+            } else {
+                panic!("Exceeded tick budget for const runtime");
             }
 
-            let seq = match self.code.sequences.get(*seq_ix) {
-                Some(seq) => seq.as_slice(),
-                None => break,
-            };
+            if inst_ix >= seq.len() {
+                break 'outer if let StackFrame::Module(mut module) = frame {
+                    debug_assert_eq!(module, self.module);
 
-            let inst = &seq[*inst_ix];
-
-            match &inst.op {
-                RawInst::Return { value } => {
-                    if matches!(frame, StackFrame::Function(_)) {
-                        todo!()
-                    } else {
-                        unreachable!()
+                    for (group, (hash, key, value)) in frame_object.locals.drain() {
+                        module.set_attribute_direct(&mut self.runtime, hash, key, value);
                     }
 
-                    *inst_ix = inst_ix.saturating_add(1);
+                    module
+                } else {
+                    self.runtime
+                        .internals
+                        .getattr_static(&self.runtime, "none")
+                        .unwrap()
+                };
+            }
+
+            let inst = &seq[inst_ix];
+
+            log::trace!(
+                "[ConstEvalContext::eval] [seq={:?}, inst={:?}] {:?}",
+                seq_ix,
+                inst_ix,
+                inst
+            );
+
+            match &inst.op {
+                RawInst::Nop => inst_ix += 1,
+
+                RawInst::Br { to: dest } => inst_ix = *dest,
+
+                /*  Just a jump target; handoff logic is handled below */
+                RawInst::PhiRecv => inst_ix += 1,
+                RawInst::PhiJump { recv, value } => {
+                    let value = values.get(*value).unwrap();
+                    let _ = values.set(*recv, value);
+
+                    inst_ix = *recv;
                 }
 
-                RawInst::Br { to } => *inst_ix = *to,
+                RawInst::Const(cst) => {
+                    let value = match cst {
+                        Const::Int(_) => todo!(),
+                        Const::Float(_) => todo!(),
+                        Const::Bool(_) => todo!(),
+
+                        Const::String(sref) => {
+                            self.string(
+                                self.host.spanref_to_str(sref.clone()).to_string().as_str(),
+                            )?
+                            .0
+                        }
+
+                        Const::None => todo!(),
+                        Const::Ellipsis => todo!(),
+                    };
+
+                    let _ = values.set(inst_ix, value);
+
+                    inst_ix += 1;
+                }
 
                 RawInst::SetVar { variable, value } => {
-                    let value = value!();
+                    let (st, hash) = self.string(self.host.spanref_to_str(variable.clone()).to_string().as_str())?;
 
-                    self.define(variable.clone(), value)?;
+                    let object = values.get(*value).unwrap();
 
-                    *inst_ix = inst_ix.saturating_add(1);
+                    frame_object
+                        .locals
+                        .insert(variable.group(), (hash, st, object));
+
+                    inst_ix += 1;
                 }
 
                 RawInst::UseVar { variable } => {
-                    let object = match self.lookup(variable.clone()) {
+                    log::trace!("{:?}", self.host.spanref_to_str(*variable));
+
+                    let object = match frame_object
+                        .locals
+                        .get(&variable.group())
+                        .cloned()
+                        .map(|(_, _, a)| a)
+                        .or_else(|| self.lookup(variable.clone()))
+                    {
                         Some(o) => o,
-                        None => todo!("NameError: {:?}", variable),
+                        None => todo!("NameError"),
                     };
 
-                    let _ = value!(*inst_ix, object);
+                    values.set(inst_ix, object);
 
-                    *inst_ix = inst_ix.saturating_add(1);
+                    inst_ix += 1;
                 }
 
-                RawInst::Defn {
-                    name,
-                    params,
-                    returns,
-                    sequence_id,
-                } => todo!(),
-
-                RawInst::Class { name } => todo!(),
-
-                RawInst::Call {
-                    callable,
-                    arguments,
-                } => {
-                    let callable = self
-                        .get_value(*seq_ix, *inst_ix)
-                        .expect("Attempted to call an undefined value.");
-
-                    let arguments: Vec<_> =
-                        arguments.iter().cloned().map(|arg| value!(arg)).collect();
-
-                    let result = callable.call(&mut self, arguments.as_slice())?;
-
-                    let _ = value!(*inst_ix, result);
-
-                    *inst_ix = inst_ix.saturating_add(1);
-                }
-
-                RawInst::If {
-                    test,
-                    truthy,
-                    falsey,
-                } => {
-                    let test = value!(*test);
-                    let is_true = test.is_truthy()?;
-
-                    *inst_ix = match (is_true, truthy, falsey) {
-                        (true, None, _) | (false, _, None) => inst_ix.saturating_add(1),
-                        (true, Some(true_ix), _) => true_ix.saturating_sub(1),
-                        (false, _, Some(false_ix)) => false_ix.saturating_sub(1),
-                        (_, None, None) => unreachable!(),
-                    };
-                }
                 RawInst::GetAttribute { object, name } => {
-                    let object = value!(*object);
+                    let object = values.get(*object).unwrap();
                     let name = self.host.spanref_to_str(name.clone());
 
                     let attr = match object.getattr_static(&self.runtime, name) {
                         Some(attr) => attr,
-                        None => todo!(),
+                        None => todo!(
+                            "AttributeError: {:?} does not have attribute {:?}",
+                            object,
+                            name
+                        ),
                     };
 
-                    let _ = value!(*inst_ix, attr);
+                    let _ = values.set(inst_ix, attr);
 
-                    *inst_ix = inst_ix.saturating_add(1);
+                    inst_ix += 1;
                 }
 
                 RawInst::SetAttribute {
@@ -413,79 +388,149 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     name,
                     value,
                 } => {
-                    let mut object = value!(*object);
+                    let mut object = values.get(*object).unwrap();
+                    let value = values.get(*value).unwrap();
+
                     let key = self.host.spanref_to_str(name.clone());
-                    let value = self.get_value(*seq_ix, *inst_ix).unwrap();
 
                     object.setattr_static(&mut self.runtime, key, value);
 
-                    *inst_ix = inst_ix.saturating_add(1);
+                    inst_ix += 1;
                 }
 
-                RawInst::GetDunder { object, dunder } => {
-                    let object = value!(*object);
-                    let key = match dunder {
-                        Dunder::Unary(op) => op.as_ref(),
-                        Dunder::Infix(op) => op.as_ref(),
-                        Dunder::DocComment => "__doc__",
-                    };
-
-                    let attr = match object.getattr_static(&self.runtime, key) {
-                        Some(attr) => attr,
-                        None => todo!(),
-                    };
-
-                    let _ = value!(*inst_ix, attr);
-
-                    *inst_ix = inst_ix.saturating_add(1);
-                }
+                RawInst::GetDunder { object, dunder } => todo!(),
 
                 RawInst::SetDunder {
                     object,
                     dunder,
                     value,
                 } => {
-                    let mut object = value!(*object);
-                    let val = self.get_value(*seq_ix, *inst_ix).unwrap();
-                    let key = match dunder {
-                        Dunder::Unary(op) => op.as_ref(),
-                        Dunder::Infix(op) => op.as_ref(),
-                        Dunder::DocComment => "__doc__",
-                    };
+                    let mut object = values.get(*object).unwrap();
+                    let value = values.get(*value).unwrap();
 
-                    object.setattr_static(&mut self.runtime, key, val);
-                    *inst_ix = inst_ix.saturating_add(1);
+                    match dunder {
+                        Dunder::Unary(_) => todo!(),
+                        Dunder::Infix(_) => todo!(),
+                        Dunder::DocComment => {
+                            object.setattr_static(&mut self.runtime, "__doc__", value)
+                        }
+                    }
+
+                    inst_ix += 1;
                 }
 
-                RawInst::GetItem { object, index } => {
-                    let object = value!(*object);
-                    let index = value!(*index);
-
-                    let getitem = object.getattr_static(self.runtime, "__getitem__").unwrap();
-                    let result = getitem.call(&mut self, &[object, index])?;
-
-                    let _ = value!(*inst_ix, result);
-
-                    *inst_ix = inst_ix.saturating_add(1);
-                }
-
+                RawInst::GetItem { object, index } => todo!(),
                 RawInst::SetItem {
                     object,
                     index,
                     value,
-                } => {}
+                } => todo!(),
 
-                RawInst::Import(_) => todo!(),
-                RawInst::Const(_) => todo!(),
-                RawInst::Tuple(_) => todo!(),
-                RawInst::Nop => todo!(),
+                RawInst::Return { value } => {
+                    let value = values.get(*value).unwrap();
+
+                    break 'outer value;
+                }
+
+                RawInst::Call {
+                    callable,
+                    arguments,
+                } => {
+                    let object = self.runtime.objects.reserve();
+
+                    values.set(inst_ix, object);
+
+                    inst_ix += 1;
+                }
+
+                RawInst::Import { path, relative } => {
+                    let Self {
+                        module_object,
+                        host,
+                        runtime,
+                        ..
+                    } = self;
+
+                    let base = (*relative != 0).then(|| (*relative, module_object.path.as_path()));
+
+                    let modules = host.import_module(path, base);
+                    let (mref, sr) = modules.first().unwrap();
+
+                    let object = runtime.consteval(*mref, *host)?;
+                    let object = runtime.object_graph.alloc_id_of(object).unwrap();
+
+                    let (st, hash) = self.string(
+                        self.host
+                            .spanref_to_str(path[0].clone())
+                            .to_string()
+                            .as_str(),
+                    )?;
+                    frame_object
+                        .locals
+                        .insert(path[0].group(), (hash, st, object));
+
+                    values.set(inst_ix, object);
+
+                    inst_ix += 1;
+                }
+
+                RawInst::Tuple(elements) => {
+                    let object = self.runtime.objects.reserve();
+
+                    values.set(inst_ix, object);
+
+                    inst_ix += 1;
+                }
+
                 RawInst::Undefined => todo!(),
 
-                RawInst::PhiJump { recv, value } => todo!(),
-                RawInst::PhiRecv => todo!(),
-            }
-        }
+                RawInst::If {
+                    test,
+                    truthy,
+                    falsey,
+                } => todo!(),
 
-        todo!();
+                RawInst::Defn {
+                    name,
+                    params,
+                    returns,
+                    sequence_id,
+                } => {
+                    let object = self.string("foo")?.0;
+
+                    values.set(inst_ix, object);
+
+                    inst_ix += 1;
+                }
+
+                RawInst::Class { name } => {
+                    let name = self.host.spanref_to_str(name.clone()).to_string();
+                    let object_class = self
+                        .runtime
+                        .internals
+                        .getattr_static(self.runtime, "_object_type_")
+                        .unwrap();
+
+                    let object = self.runtime.define_new_static_class(name, &[object_class]);
+
+                    values.set(inst_ix, object);
+
+                    inst_ix += 1;
+                }
+            }
+        };
+
+        Ok((final_value, values))
+    }
+
+    pub fn eval(mut self) -> PyResult<ObjAllocId> {
+        assert!(self.call_stack.is_empty());
+
+        self.call_stack
+            .push((0, 0, StackFrame::Module(self.module)));
+
+        let (module, values) = self.eval_frame((0, 0, StackFrame::Module(self.module)))?;
+
+        Ok(module)
     }
 }

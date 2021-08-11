@@ -196,7 +196,7 @@ impl AstObject for Annotation {
 
 pub use super::statement::Statement;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Module {
     pub body: Vec<Spanned<Statement>>,
 }

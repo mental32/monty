@@ -10,7 +10,7 @@ pub(self) type HashKeyT = u64;
 /// The interpreters Result type.
 pub type PyResult<T> = Result<T, exception::PyException>;
 
-use std::fmt::Debug;
+use std::{fmt::Debug, path::Path};
 
 use montyc_core::{ModuleRef, SpanRef};
 use montyc_parser::ast::ImportDecl;
@@ -19,7 +19,7 @@ pub use {object::PyDictRaw, runtime::Runtime};
 
 pub use object::alloc::ObjAllocId;
 
-use crate::ModuleObject;
+use crate::{ModuleData, ModuleObject};
 
 /// A trait to be implemented by the owner of a runtime.
 pub trait HostGlue {
@@ -30,14 +30,13 @@ pub trait HostGlue {
     fn spanref_to_str(&self, sref: SpanRef) -> &str;
 
     /// trigger the importing mechansim to import the given module.
-    fn import_module(&self, decl: ImportDecl) -> Vec<(ModuleRef, SpanRef)>;
+    fn import_module(
+        &mut self,
+        path: &[SpanRef],
+        base: Option<(usize, &Path)>,
+    ) -> Vec<(ModuleRef, SpanRef)>;
 
-    /// run the given function with the given module object.
-    fn with_module(
-        &self,
-        mref: ModuleRef,
-        f: &mut dyn FnMut(&ModuleObject) -> PyResult<()>,
-    ) -> PyResult<()>;
+    fn module_data(&self, mref: ModuleRef) -> Option<ModuleData>;
 
     /// run the given function with the given module object mut ref.
     fn with_module_mut(
@@ -47,7 +46,7 @@ pub trait HostGlue {
     ) -> PyResult<()>;
 }
 
-impl<'a> Debug for &'a dyn HostGlue {
+impl<'a> Debug for &'a mut dyn HostGlue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HostGlue").finish()
     }

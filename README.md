@@ -154,4 +154,3 @@ would be rejected normally are perfectly fine such as: `exec`, `eval`,
 
 [rpython-instances]: https://rpython.readthedocs.io/en/latest/translation.html#user-defined-classes-and-instances
 [type-narrowing]: https://www.python.org/dev/peps/pep-0647/#id3
- 

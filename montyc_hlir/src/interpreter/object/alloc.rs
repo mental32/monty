@@ -6,8 +6,13 @@ use std::{
     rc::Rc,
 };
 
+use montyc_core::utils::SSAMap;
+
 use crate::{
-    interpreter::{runtime::ceval::ConstEvalContext, HashKeyT, Runtime},
+    interpreter::{
+        runtime::{ceval::ConstEvalContext, SharedMutAnyObject},
+        HashKeyT, Runtime,
+    },
     ObjectGraph, ObjectGraphIndex,
 };
 
@@ -96,8 +101,16 @@ impl PyObject for ObjAllocId {
         unimplemented!("use rt.for_each(self, f)");
     }
 
-    fn into_value(&self, _: &mut ObjectGraph) -> ObjectGraphIndex {
-        unimplemented!("use rt.into_value(self)");
+    fn into_value(
+        &self,
+        graph: &mut ObjectGraph,
+        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
+    ) -> ObjectGraphIndex {
+        objects
+            .get(self.alloc_id())
+            .expect("allocated objects should always exist.")
+            .borrow()
+            .into_value(graph, objects)
     }
 
     fn set_item(

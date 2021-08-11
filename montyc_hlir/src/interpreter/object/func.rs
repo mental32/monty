@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use montyc_core::utils::SSAMap;
 use petgraph::graph::NodeIndex;
 
 use crate::{
@@ -75,7 +76,11 @@ impl PyObject for Function {
         self.header.borrow().for_each(rt, f)
     }
 
-    fn into_value(&self, object_graph: &mut ObjectGraph) -> ObjectGraphIndex {
+    fn into_value(
+        &self,
+        object_graph: &mut ObjectGraph,
+        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
+    ) -> ObjectGraphIndex {
         if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
             return idx;
         }
@@ -89,31 +94,16 @@ impl PyObject for Function {
                     name,
                     annotations: Default::default(),
                     properties: Default::default(),
-                    // defsite: self.defsite,
-                    // parent: match self.inner {
-                    //     Callable::SourceDef { scope_index, .. } => object_graph
-                    //         .alloc_to_idx
-                    //         .get(&rt.scope_graph.parent_of(scope_index).unwrap())
-                    //         .or_else(|| {
-                    //             rt.scope_graph
-                    //                 .parent_of(scope_index)
-                    //                 .unwrap()
-                    //                 .as_ref(rt, |v| panic!("{:?}", v))
-                    //         })
-                    //         .cloned(),
-
-                    //     _ => None,
-                    // },
                 }
             },
             |object_graph, value| {
-                let p = self.header.borrow().into_value_dict(object_graph);
+                let p = self.header.borrow().into_value_dict(object_graph, objects);
 
                 let mut ann = Default::default();
 
                 self.__annotations__
                     .borrow()
-                    .properties_into_values(object_graph, &mut ann);
+                    .properties_into_values(object_graph, &mut ann, objects);
 
                 let (properties, annotations) = if let Value::Function {
                     properties,

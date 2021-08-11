@@ -1,9 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
 use ahash::AHashMap;
+use montyc_core::utils::SSAMap;
 
 use crate::{
-    interpreter::{HashKeyT, Runtime},
+    interpreter::{runtime::SharedMutAnyObject, HashKeyT, Runtime},
     ObjectGraph, ObjectGraphIndex, Value,
 };
 
@@ -134,7 +135,11 @@ impl PyObject for PyDict {
         self.data.0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
     }
 
-    fn into_value(&self, object_graph: &mut ObjectGraph) -> ObjectGraphIndex {
+    fn into_value(
+        &self,
+        object_graph: &mut ObjectGraph,
+        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
+    ) -> ObjectGraphIndex {
         if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
             return idx;
         }
@@ -146,9 +151,9 @@ impl PyObject for PyDict {
                 data: Default::default(),
             },
             |object_graph, v| {
-                let mut obj = self.header.into_value(object_graph);
+                let mut obj = self.header.into_value(object_graph, objects);
                 let mut dat = Default::default();
-                self.properties_into_values(object_graph, &mut dat);
+                self.properties_into_values(object_graph, &mut dat, objects);
 
                 let (object, data) = if let Value::Dict { object, data } = v(object_graph) {
                     (object, data)

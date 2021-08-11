@@ -4,16 +4,21 @@ use std::{
     io,
     iter::FromIterator,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
+use ahash::AHashMap;
 use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef};
 use montyc_hlir::{
     flatcode::FlatCode,
     interpreter::{self, HostGlue},
     typing::TypingContext,
-    Value,
+    ModuleData, ModuleObject, Value,
 };
-use montyc_parser::{ast, AstObject, SpanInterner};
+use montyc_parser::{
+    ast::{self, Import},
+    AstObject, SpanInterner,
+};
 
 use crate::{
     // lower::{fndef_to_hlir::FunctionContext, Lower},
@@ -249,7 +254,7 @@ pub struct GlobalContext {
     module_sources: ahash::AHashMap<ModuleRef, Box<str>>,
 
     /// An interpreter runtime for consteval.
-    pub(crate) const_runtime: RefCell<interpreter::Runtime>,
+    pub(crate) const_runtime: Rc<RefCell<interpreter::Runtime>>,
 
     /// Used to keep track of type information.
     pub(crate) typing_context: RefCell<TypingContext>,
@@ -267,14 +272,21 @@ impl GlobalContext {
             static_names: Default::default(),
             modules: SSAMap::new(),
             module_sources: Default::default(),
-            const_runtime: RefCell::new(interpreter::Runtime::new(0x1000)),
+            const_runtime: Rc::new(RefCell::new(interpreter::Runtime::new(0x1000))),
             typing_context: RefCell::new(TypingContext::initialized()),
             value_store: RefCell::new(GlobalValueStore::default()),
         };
 
         gcx.const_runtime.borrow_mut().initialize_monty_module(&gcx);
 
-        gcx.modules.skip(1);
+        gcx.modules.insert(RefCell::new(ModuleObject {
+            mref: ModuleRef(0),
+            data: Rc::new(ModuleData {
+                ast: Default::default(),
+                path: PathBuf::default(),
+                name: String::from("__monty"),
+            }),
+        }));
 
         log::debug!("[global_context:initialize] {:?}", opts);
         log::debug!("[global_context:initialize] stdlib := {:?}", opts.libstd());
@@ -378,15 +390,10 @@ impl GlobalContext {
     ) -> MontyResult<ModuleRef> {
         #[allow(unreachable_code)]
         self.load_module_with(path, name, |gcx, mref| -> MontyResult<ModuleRef> {
-            let module = gcx.modules.get(mref).unwrap().borrow();
-            let mut flat = FlatCode::new();
-            module.ast.visit_with(&mut flat);
+            let const_rt = gcx.const_runtime.clone();
 
-            eprintln!("\n{}\n", flat);
-
-            let module_index = gcx.const_runtime.borrow_mut().consteval(mref, gcx).unwrap();
-
-            let object_graph = &gcx.const_runtime.borrow().object_graph;
+            let module_index = const_rt.borrow_mut().consteval(mref, gcx).unwrap();
+            let object_graph = &const_rt.borrow().object_graph;
 
             let (mref, properties) = match object_graph
                 .node_weight(module_index)
@@ -455,97 +462,6 @@ impl GlobalContext {
     }
 
     #[inline]
-    pub fn import_module(
-        &self,
-        decl: ast::ImportDecl,
-    ) -> Result<Vec<(ModuleRef, SpanRef)>, Vec<String>> {
-        let qualnames = match decl.parent {
-            ast::Import::Names(_) => vec![decl.name.inner.components()],
-            ast::Import::From { module, names, .. } => {
-                let base = module.inner.components();
-                let mut leaves = Vec::with_capacity(names.len());
-
-                for name in names {
-                    leaves.push(base.clone());
-                    leaves.last_mut().unwrap().extend(name.inner.components());
-                }
-
-                leaves
-            }
-        };
-
-        let mut modules = HashSet::with_capacity(qualnames.len());
-
-        let __monty = self.spanner.str_to_spanref::<0>("__monty").unwrap();
-
-        for qualname in &qualnames {
-            assert!(!qualname.is_empty(), "{:?}", qualname);
-
-            if matches!(qualname.get(0), Some(ast::Atom::Name(name)) if name.group() == __monty.group())
-            {
-                modules.insert((ModuleRef(0), __monty));
-                continue;
-            }
-
-            log::trace!(
-                "[global_context:import_module] Trying to resolve qualname to filepath {:?}",
-                qualname
-            );
-
-            unimplemented!();
-
-            // let name = qualname.last().unwrap().as_name().unwrap();
-            // let qualname: Vec<&str> = qualname
-            //     .into_iter()
-            //     .map(|atom| match atom {
-            //         ast::Atom::Name((n, _)) => {
-            //             mctx.source.get(self.span_ref.borrow().get(*n).unwrap()).unwrap()
-            //         }
-            //         _ => unreachable!(),
-            //     })
-            //     .collect();
-
-            // // the magical `__monty` module name is special.
-            // if matches!(qualname.as_slice(), ["__monty", ..]) {
-            //     modules.push((ModuleRef("__monty".into()), name));
-            //     continue;
-            // }
-
-            // let path = {
-            //     let path = match ImportPath::resolve_import_to_path(qualname.clone(), std::iter::once(module_dir.clone())) {
-            //         Some(p) => p,
-            //         None => return Err(qualname.iter().map(ToString::to_string).collect()),
-            //     };
-
-            //     let module_ref = ModuleRef(path);
-
-            //     if self.modules.contains_key(&module_ref) {
-            //         modules.push((module_ref, name));
-            //         continue;
-            //     } else {
-            //         module_ref.0
-            //     }
-            // };
-
-            // log::trace!("import: Import module ({:?})", shorten(&path));
-
-            // let source = match std::fs::read_to_string(&path) {
-            //     Ok(st) => st.into_boxed_str(),
-            //     Err(why) => {
-            //         log::error!("Failed to read module contents! why={:?}", why);
-            //         unreachable!();
-            //     }
-            // };
-
-            // let module_ref = self.parse_and_register_module(source, path);
-
-            // modules.push((module_ref, name));
-        }
-
-        Ok(Vec::from_iter(modules))
-    }
-
-    #[inline]
     pub(crate) fn resolve_fancy_path_to_modules(&self, path: impl AsRef<str>) -> Vec<ModuleRef> {
         let path = path.as_ref();
 
@@ -560,7 +476,7 @@ impl GlobalContext {
 
             for mref in candidates.drain(..) {
                 if let Some(module) = self.modules.get(mref.clone()) {
-                    if module.borrow().name.starts_with(&prefix) {
+                    if module.borrow().data.name.starts_with(&prefix) {
                         drain_bucket.push(mref);
                     }
                 }
@@ -579,7 +495,7 @@ impl GlobalContext {
         {
             for mref in candidates.drain(..) {
                 if let Some(module) = self.modules.get(mref.clone()) {
-                    if module.borrow().name.starts_with(&prefix) {
+                    if module.borrow().data.name.starts_with(&prefix) {
                         drain_bucket.push(mref);
                     }
                 }
@@ -616,13 +532,13 @@ impl GlobalContext {
         let entry_function = entry_path.split(":").last().unwrap();
         let module_object_graph = &self.const_runtime.borrow().object_graph;
 
-        let module_ast_graph = self
-            .modules
-            .get(mref.clone())
-            .unwrap()
-            .borrow()
-            .body
-            .clone();
+        // let module_ast_graph = self
+        //     .modules
+        //     .get(mref.clone())
+        //     .unwrap()
+        //     .borrow()
+        //     .body
+        //     .clone();
 
         let entry_function_value_index =
             store.with(module_value_id, module_object_graph, |module| {
@@ -717,25 +633,77 @@ impl HostGlue for GlobalContext {
 
     fn spanref_to_str(&self, sref: SpanRef) -> &str {
         self.spanner
-            .spanref_to_name(sref, |mref, range| {
+            .spanref_to_str(sref, |mref, range| {
                 self.module_sources.get(&mref)?.get(range)
             })
             .expect("unable to translate spanref to string")
     }
 
-    fn import_module(&self, decl: ast::ImportDecl) -> Vec<(ModuleRef, SpanRef)> {
-        self.import_module(decl).unwrap()
-    }
+    fn import_module(
+        &mut self,
+        path: &[SpanRef],
+        base: Option<(usize, &Path)>,
+    ) -> Vec<(ModuleRef, SpanRef)> {
+        log::trace!(
+            "[GlobalContext::import_module] Importing path={:?} with base={:?}",
+            path,
+            base
+        );
 
-    fn with_module(
-        &self,
-        mref: ModuleRef,
-        f: &mut dyn FnMut(&montyc_hlir::ModuleObject) -> interpreter::PyResult<()>,
-    ) -> interpreter::PyResult<()> {
-        let module = self.modules.get(mref).unwrap();
-        let module = module.borrow();
+        let path_as_str = path
+            .iter()
+            .cloned()
+            .map(|sr| {
+                self.spanner.spanref_to_str(sr, |mref, range| {
+                    self.module_sources.get(&mref).and_then(|st| st.get(range))
+                })
+            })
+            .map(|st| st.expect("SpanRef's should always be resolvable."))
+            .collect::<Vec<_>>();
 
-        f(&*module)
+        match base {
+            Some((level, base)) => {
+                let mut import_path = ImportPath::new(base.into());
+
+                match *path_as_str.as_slice() {
+                    [] => unreachable!(),
+
+                    [head] | [head, ..] if head == "__monty" => {
+                        return vec![(ModuleRef(0), path[0])];
+                    }
+
+                    ref rest => {
+                        let mut root = PathBuf::default();
+
+                        for part in rest.iter() {
+                            let final_path = match import_path.advance(part) {
+                                Some(p) => p,
+                                None => return vec![],
+                            };
+
+                            root = final_path.clone();
+                        }
+
+                        self.load_module_with(
+                            root.clone(),
+                            root.file_name().unwrap().to_string_lossy(),
+                            |_gcx, mref| mref,
+                        );
+                    }
+                }
+
+                todo!("{:#?}", level);
+            }
+
+            None => {
+                let import = ImportPath::resolve_import_to_path(
+                    path_as_str,
+                    Some(self.opts.libstd()).into_iter(),
+                );
+
+                todo!("{:?}", import);
+            }
+        }
     }
 
     fn with_module_mut(
@@ -747,5 +715,11 @@ impl HostGlue for GlobalContext {
         let mut module = module.borrow_mut();
 
         f(&mut *module)
+    }
+
+    fn module_data(&self, mref: ModuleRef) -> Option<montyc_hlir::ModuleData> {
+        Some(montyc_hlir::ModuleData::clone(
+            self.modules.get(mref)?.borrow().data.as_ref(),
+        ))
     }
 }

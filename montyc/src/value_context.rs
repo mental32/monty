@@ -23,13 +23,15 @@ pub struct ValueContext<'this, 'gcx> {
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
     /// Get the AST node from the modules body via the given index.
     pub fn get_node_from_module_body(&self, idx: NodeIndex) -> Option<AstNode> {
-        self.gcx
-            .modules
-            .get(self.mref)?
-            .borrow()
-            .body
-            .node_weight(idx)
-            .cloned()
+        unimplemented!()
+        // self.gcx
+        //     .modules
+        //     .get(self.mref)?
+        //     .borrow()
+        //     .data
+        //     .body
+        //     .node_weight(idx)
+        //     .cloned()
     }
 }
 

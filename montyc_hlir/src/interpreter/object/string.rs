@@ -2,19 +2,20 @@ use montyc_core::utils::SSAMap;
 
 use crate::{
     interpreter::{runtime::SharedMutAnyObject, HashKeyT, Runtime},
-    ObjectGraph, ObjectGraphIndex,
+    ObjectGraph, ObjectGraphIndex, Value,
 };
 
 use super::{alloc::ObjAllocId, PyObject, RawObject};
 
 #[derive(Debug)]
-pub(in crate::interpreter) struct ClassObj {
-    pub header: RawObject,
-    pub name: String,
+pub(in crate::interpreter) struct StrObj {
+    pub(in crate::interpreter) header: RawObject,
+    pub(in crate::interpreter) value: String,
+    pub(in crate::interpreter) value_hashed: HashKeyT,
 }
 
-impl PyObject for ClassObj {
-    fn alloc_id(&self) -> ObjAllocId {
+impl PyObject for StrObj {
+    fn alloc_id(&self) -> super::alloc::ObjAllocId {
         self.header.alloc_id
     }
 
@@ -22,8 +23,8 @@ impl PyObject for ClassObj {
         &mut self,
         rt: &Runtime,
         hash: HashKeyT,
-        key: ObjAllocId,
-        value: ObjAllocId,
+        key: super::alloc::ObjAllocId,
+        value: super::alloc::ObjAllocId,
     ) {
         self.header.set_attribute_direct(rt, hash, key, value)
     }
@@ -32,17 +33,17 @@ impl PyObject for ClassObj {
         &self,
         rt: &Runtime,
         hash: HashKeyT,
-        key: ObjAllocId,
-    ) -> Option<ObjAllocId> {
+        key: super::alloc::ObjAllocId,
+    ) -> Option<super::alloc::ObjAllocId> {
         self.header.get_attribute_direct(rt, hash, key)
     }
 
     fn for_each(
         &self,
-        object_graph: &mut ObjectGraph,
+        rt: &mut ObjectGraph,
         f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
-        self.header.for_each(object_graph, f)
+        self.header.for_each(rt, f)
     }
 
     fn into_value(
@@ -52,27 +53,24 @@ impl PyObject for ClassObj {
     ) -> ObjectGraphIndex {
         if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
             return idx;
-        } else {
-            let Self { header, name } = self;
+        }
 
+        let hash = self.value_hashed.clone();
+
+        object_graph.strings.get(&hash).cloned().unwrap_or_else(|| {
             object_graph.insert_node_traced(
                 self.alloc_id(),
-                move |_, _| crate::Value::Class {
-                    name: name.clone(),
-                    properties: Default::default(),
+                |object_graph, index| {
+                    object_graph.strings.insert(hash, index);
+                    Value::String(self.value.clone())
                 },
-                |object_graph, value| {
-                    let props = self.header.into_value_dict(object_graph, objects);
-
-                    match value(object_graph) {
-                        crate::Value::Class { properties, .. } => {
-                            *properties = props;
-                        }
-                        v => unreachable!("{:?}", v),
-                    }
-                },
+                |_, _| {},
             )
-        }
+        })
+    }
+
+    fn hash(&self, rt: &Runtime) -> Option<HashKeyT> {
+        Some(rt.hash(self.value.clone()))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

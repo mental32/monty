@@ -90,10 +90,20 @@ impl AstVisitor<usize> for FlatCode {
         match import {
             Import::Names(names) => {
                 for name in names {
-                    let name = name.inner.as_name().unwrap();
-                    let value = self.inst(RawInst::Import(name));
+                    let path = name
+                        .inner
+                        .components()
+                        .into_iter()
+                        .map(|at| at.as_name().unwrap())
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice();
+
+                    let root = path.get(0).unwrap().clone();
+
+                    let value = self.inst(RawInst::Import { path, relative: 0 });
+
                     self.inst(RawInst::SetVar {
-                        variable: name,
+                        variable: root,
                         value,
                     });
                 }
@@ -102,10 +112,19 @@ impl AstVisitor<usize> for FlatCode {
             Import::From {
                 module,
                 names,
-                level: _,
+                level,
             } => {
-                let name = module.inner.as_name().unwrap();
-                let module = self.inst(RawInst::Import(name));
+                let path = module
+                    .inner
+                    .components()
+                    .into_iter()
+                    .map(|at| at.as_name().unwrap())
+                    .collect();
+
+                let module = self.inst(RawInst::Import {
+                    path,
+                    relative: *level,
+                });
 
                 for name in names {
                     let name = name.inner.as_name().unwrap();
@@ -128,6 +147,11 @@ impl AstVisitor<usize> for FlatCode {
     fn visit_classdef(&mut self, classdef: &ClassDef) -> usize {
         let name = classdef.name.inner.as_name().unwrap();
         let class = self.inst(RawInst::Class { name });
+
+        self.inst(RawInst::SetVar {
+            variable: name,
+            value: class,
+        });
 
         let mut body = classdef.body.iter().peekable();
 
@@ -177,7 +201,7 @@ impl AstVisitor<usize> for FlatCode {
     }
 
     fn visit_funcdef(&mut self, fndef: &FunctionDef) -> usize {
-        let decorators: Vec<_> = fndef
+        let _decorators: Vec<_> = fndef
             .decorator_list
             .iter()
             .rev()
@@ -212,19 +236,25 @@ impl AstVisitor<usize> for FlatCode {
             }
         });
 
-        let mut func = self.inst(RawInst::Defn {
-            name: fndef.name.inner.as_name().unwrap(),
+        let name = fndef.name.inner.as_name().unwrap();
+        let func = self.inst(RawInst::Defn {
+            name,
             params,
             returns,
             sequence_id,
         });
 
-        for dec in decorators {
-            func = self.inst(RawInst::Call {
-                callable: dec,
-                arguments: vec![func],
-            });
-        }
+        self.inst(RawInst::SetVar {
+            variable: name,
+            value: func,
+        });
+
+        // for dec in decorators {
+        //     func = self.inst(RawInst::Call {
+        //         callable: dec,
+        //         arguments: vec![func],
+        //     });
+        // }
 
         func
     }

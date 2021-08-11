@@ -4,7 +4,8 @@ use std::{
     usize,
 };
 
-use petgraph::graph::NodeIndex;
+use ahash::AHashMap;
+use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::{
     grapher::AstNodeGraph,
@@ -19,13 +20,13 @@ pub type ObjectGraphIndex = NodeIndex<u32>;
 #[derive(Debug, Default)]
 pub struct ObjectGraph {
     /// Subgraphs of the object graph, these are made up of smaller graphs of the bodies of class and function definitions.
-    pub ast_subgraphs: ahash::AHashMap<NodeIndex, Rc<AstNodeGraph>>,
+    pub ast_subgraphs: AHashMap<NodeIndex, Rc<AstNodeGraph>>,
 
     pending_nodes: usize,
 
-    pub(crate) graph: petgraph::graph::DiGraph<Value, ()>,
-    pub(crate) strings: ahash::AHashMap<u64, ObjectGraphIndex>,
-    pub(crate) alloc_to_idx: ahash::AHashMap<interpreter::object::ObjAllocId, ObjectGraphIndex>,
+    pub(crate) graph: DiGraph<Value, ()>,
+    pub(crate) strings: AHashMap<u64, ObjectGraphIndex>,
+    pub(crate) alloc_to_idx: AHashMap<ObjAllocId, ObjectGraphIndex>,
 }
 
 impl ObjectGraph {
@@ -97,7 +98,7 @@ impl DerefMut for ObjectGraph {
 }
 
 impl Deref for ObjectGraph {
-    type Target = petgraph::graph::DiGraph<Value, ()>;
+    type Target = DiGraph<Value, ()>;
 
     fn deref(&self) -> &Self::Target {
         &self.graph

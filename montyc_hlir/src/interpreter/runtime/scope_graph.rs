@@ -8,7 +8,7 @@ use petgraph::{
 
 use crate::ObjAllocId;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub(crate) struct ScopeIndex(NodeIndex);
 
 impl Default for ScopeIndex {
@@ -36,20 +36,20 @@ impl Deref for ScopeGraph {
 
 impl ScopeGraph {
     #[inline]
-    pub fn insert(&mut self, node: ObjAllocId) -> NodeIndex<u32> {
-        self.0.add_node(node)
+    pub fn insert(&mut self, node: ObjAllocId) -> ScopeIndex {
+        ScopeIndex(self.0.add_node(node))
     }
 
     #[inline]
-    pub fn nest(&mut self, child: NodeIndex<u32>, parent: NodeIndex<u32>) {
+    pub fn nest(&mut self, child: ScopeIndex, parent: ScopeIndex) {
         assert_ne!(child, parent, "Can not nest scopes recursively.");
-        self.0.add_edge(child, parent, ());
+        self.0.add_edge(child.0, parent.0, ());
     }
 
     #[inline]
-    pub(in crate::interpreter) fn parent_of(&self, idx: NodeIndex<u32>) -> Option<ObjAllocId> {
+    pub(in crate::interpreter) fn parent_of(&self, idx: ScopeIndex) -> Option<ObjAllocId> {
         self.0
-            .neighbors_directed(idx, Outgoing)
+            .neighbors_directed(idx.0, Outgoing)
             .next()
             .and_then(|idx| self.0.node_weight(idx))
             .cloned()

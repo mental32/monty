@@ -46,7 +46,7 @@ impl SpanInterner {
 
     /// Return the string slice of the span's string.
     #[inline]
-    pub fn spanref_to_name<'a>(
+    pub fn spanref_to_str<'a>(
         &self,
         sref: SpanRef,
         resolver: impl Fn(ModuleRef, Range<usize>) -> Option<&'a str>,
@@ -113,60 +113,3 @@ impl<'source, 'data> BoundMutInterner<'source, 'data> {
         (group, distinct).into()
     }
 }
-
-//     #[inline]
-//     pub fn get_group(&self, group: SpanRef) -> Option<&[(NonZeroUsize, ModuleRef)]> {
-//         let (_, hash) = self.span_trace_map.get(&group)?;
-//         self.clobber_map
-//             .get(hash)
-//             .as_ref()
-//             .map(|(_, v)| v.as_slice())
-//     }
-
-//     #[inline]
-//     pub fn crosspan_eq(&self, a: SpanRef, b: SpanRef) -> bool {
-//         if let Some((a_t, b_t)) = self
-//             .span_trace_map
-//             .get(&a)
-//             .and_then(|a_t| self.span_trace_map.get(&b).map(|b_t| (a_t, b_t)))
-//         {
-//             // spans come from potentially separate modules (compare the hashes)
-//             a_t.1 == b_t.1
-//         } else {
-//             // not all spans are traced so just compare them directly
-//             a == b
-//         }
-//     }
-
-//     #[inline]
-//     pub(super) fn push(&mut self, value: Range<usize>) -> SpanRef {
-//         let key = self.inner.insert(value);
-//         assert_ne!(key, 0);
-//         unsafe { NonZeroUsize::new_unchecked(key) }
-//     }
-
-//     #[inline]
-//     pub fn get_traced<'a>(&self, reference: SpanRef) -> Option<(Span, ModuleRef)> {
-//         let (mref, _) = self.span_trace_map.get(&reference)?;
-//         let span = self.get(reference)?;
-
-//         Some((span, mref.clone()))
-//     }
-
-//     #[inline]
-//     pub fn get<'a>(&self, reference: SpanRef) -> Option<Span> {
-//         self.inner.get(usize::from(reference)).cloned()
-//     }
-
-//     #[inline]
-//     pub fn find(&self, st: impl AsRef<str>) -> Option<SpanRef> {
-//         let st = st.as_ref();
-//         let hash = {
-//             let mut s = DefaultHasher::new();
-//             st.hash(&mut s);
-//             s.finish()
-//         };
-
-//         self.clobber_map.get(&hash).map(|(gv, _)| *gv)
-//     }
-// }

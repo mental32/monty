@@ -109,7 +109,10 @@ pub enum RawInst<V = usize, R = SpanRef> {
         value: V,
     },
 
-    Import(R),
+    Import {
+        path: Box<[R]>,
+        relative: usize,
+    },
 
     Const(Const),
 
@@ -217,7 +220,7 @@ impl Display for RawInst {
                 value,
             } => write!(f, "set-item {:?} %{:?} %{:?}", object, index, value),
 
-            RawInst::Import(name) => write!(f, "import {:?}", name),
+            RawInst::Import { path, relative: _ } => write!(f, "import {:?}", path),
             RawInst::Const(c) => write!(f, "const {}", c),
             RawInst::Nop => write!(f, "nop"),
             RawInst::Undefined => write!(f, "undef"),

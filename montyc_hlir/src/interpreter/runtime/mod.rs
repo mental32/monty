@@ -10,6 +10,7 @@ use std::{
 
 use montyc_core::{utils::SSAMap, ModuleRef};
 use montyc_parser::AstObject;
+use petgraph::graph::NodeIndex;
 
 use self::scope_graph::{ScopeGraph, ScopeIndex};
 
@@ -17,11 +18,11 @@ use super::{
     object::{
         alloc::ObjAllocId, class::ClassObj, int::IntObj, string::StrObj, PyObject, RawObject,
     },
-    PyResult,
+    PyDictRaw, PyResult,
 };
 use crate::{
-    flatcode::FlatCode, interpreter::runtime::ceval::ConstEvalContext, HostGlue, ModuleObject,
-    ObjectGraph, ObjectGraphIndex, Value,
+    flatcode::FlatCode, interpreter::runtime::ceval::ConstEvalContext, HostGlue, ModuleData,
+    ModuleObject, ObjectGraph, ObjectGraphIndex, Value,
 };
 
 pub(in crate::interpreter) type SharedMutAnyObject = Rc<RefCell<Rc<dyn PyObject>>>;
@@ -38,7 +39,10 @@ pub struct Runtime {
     /// per-Runtime state that allows producing multiple hashers with the same seed.
     hash_state: ahash::RandomState,
 
-    /// per-Runtime global singleton builtins.
+    /// per-Runtime global singletons.
+    internals: ObjAllocId,
+
+    /// A reference to the `__builtins__` module.
     builtins: ObjAllocId,
 
     /// A map of the imported modules <=> their module object.
@@ -67,11 +71,12 @@ impl Runtime {
     #[inline]
     pub fn new(op_ticks: usize) -> Self {
         let mut objects = SSAMap::new();
-        let mut builtins = objects.reserve();
+        let mut internals = objects.reserve();
 
         let mut this = Self {
             op_ticks,
-            builtins,
+            internals,
+            builtins: internals,
             objects,
             object_graph: Default::default(),
             modules: Default::default(),
@@ -93,37 +98,38 @@ impl Runtime {
         // __builtins__ = ModuleType()
         this.objects
             .try_set_value(
-                builtins,
+                internals,
                 RawObject {
-                    alloc_id: builtins,
+                    alloc_id: internals,
                     __dict__: Default::default(),
                     __class__: module_class,
                 },
             )
             .unwrap();
 
-        builtins.setattr_static(&mut this, "_module_type_", module_class);
-        builtins.setattr_static(&mut this, "_object_type_", object_class);
+        internals.setattr_static(&mut this, "_type_type_", type_class);
+        internals.setattr_static(&mut this, "_module_type_", module_class);
+        internals.setattr_static(&mut this, "_object_type_", object_class);
 
         // class str(object): ...
         let str_class = this.define_new_static_class("str", &[object_class]);
 
-        builtins.setattr_static(&mut this, "str", str_class);
+        internals.setattr_static(&mut this, "str", str_class);
 
         // class int(object): ...
         let int_class = this.define_new_static_class("int", &[object_class]);
 
-        builtins.setattr_static(&mut this, "int", int_class);
+        internals.setattr_static(&mut this, "int", int_class);
 
         // class dict(object): ...
         let dict_class = this.define_new_static_class("dict", &[object_class]);
 
-        builtins.setattr_static(&mut this, "dict", dict_class);
+        internals.setattr_static(&mut this, "dict", dict_class);
 
         // class function(object): ...
         let func_class = this.define_new_static_class("func", &[object_class]);
 
-        builtins.setattr_static(&mut this, "_function_type_", func_class);
+        internals.setattr_static(&mut this, "_function_type_", func_class);
 
         // __monty = ModuleType()
         let __monty = this.new_object_from_class(module_class);
@@ -149,8 +155,6 @@ impl Runtime {
             .get_attribute_direct(self, self.hash("initialized"), __monty)
             .is_none()
         {
-            // let extern_func = ex.function_from_closure("extern", |_ex, _args| todo!())?;
-
             let extern_func = self.new_object_from_class(
                 self.builtins
                     .get_attribute_direct(self, self.hash("_function_type_"), __monty)
@@ -159,7 +163,38 @@ impl Runtime {
 
             __monty.setattr_static(self, "extern", extern_func);
 
-            // __monty.set_attribute_direct(self, self.hash("initialized"), __monty, __monty);
+            let Self {
+                object_graph,
+                objects,
+                ..
+            } = self;
+
+            object_graph.insert_node_traced(
+                __monty,
+                move |graph, index| Value::Module {
+                    mref: ModuleRef(0),
+                    properties: Default::default(),
+                },
+                |graph, value_mut| {
+                    let mut properties = Default::default();
+                    let properties = &mut properties;
+
+                    let __monty = objects.get(__monty).unwrap();
+
+                    __monty
+                        .borrow()
+                        .properties_into_values(graph, properties, objects);
+
+                    match value_mut(graph) {
+                        Value::Module {
+                            mref,
+                            properties: slot,
+                        } => std::mem::swap(properties, slot),
+
+                        _ => unreachable!(),
+                    }
+                },
+            );
         }
     }
 
@@ -264,8 +299,16 @@ impl Runtime {
     pub fn consteval<'global, 'module>(
         &'global mut self,
         mref: ModuleRef,
-        gcx: &'global dyn HostGlue,
+        gcx: &'global mut dyn HostGlue,
     ) -> PyResult<ObjectGraphIndex> {
+        if let Some(index) = self
+            .modules
+            .get(&mref)
+            .and_then(|alloc| self.object_graph.alloc_to_idx.get(alloc))
+        {
+            return Ok(*index);
+        }
+
         let mut module_object = self.objects.reserve();
 
         let module_index = self.object_graph.insert_node_traced(
@@ -277,32 +320,68 @@ impl Runtime {
             |_, _| (),
         );
 
-        let mut eval = |module: &ModuleObject| {
-            let mut code = FlatCode::new();
-            module.ast.visit_with(&mut code);
+        let module_type = self
+            .internals
+            .get_attribute_direct(self, self.hash("_module_type_"), module_object)
+            .unwrap()
+            .alloc_id();
 
-            let cx = ConstEvalContext::new(self, gcx, &code, module_object);
+        self.objects
+            .try_set_value(
+                module_object,
+                RawObject {
+                    __class__: module_object,
+                    __dict__: Default::default(),
+                    alloc_id: module_object,
+                },
+            )
+            .unwrap();
 
-            self.object_graph
-                .alloc_to_idx
-                .insert(module_object, module_index);
+        if self.builtins == self.internals {
+            // INVARIANT: assuming the first module consteval'd is actually the builtins module.
+            self.builtins = module_object;
+            self.builtins_scope = self.scope_graph.insert(module_object);
+        } else {
+            let module_scope = self.scope_graph.insert(module_object);
+            self.scope_graph.nest(module_scope, self.builtins_scope);
+        }
 
-            let mut properties = Default::default();
+        let module = gcx
+            .module_data(mref)
+            .expect("Modules should always have associated data.");
 
-            module_object.properties_into_values(&mut self.object_graph, &mut properties);
+        let mut code = FlatCode::new();
+        module.ast.visit_with(&mut code);
 
-            if let Some(Value::Module {
-                properties: blank_properties,
-                ..
-            }) = self.object_graph.node_weight_mut(module_index)
-            {
-                std::mem::swap(blank_properties, &mut properties);
-            }
+        let _ = ConstEvalContext::new(self, gcx, &code, module_object, &module)
+            .eval()
+            .unwrap();
 
-            Ok(())
-        };
+        self.object_graph
+            .alloc_to_idx
+            .insert(module_object, module_index);
 
-        gcx.with_module(mref, &mut eval);
+        let mut properties = Default::default();
+
+        self.objects
+            .get(module_object)
+            .unwrap()
+            .borrow()
+            .properties_into_values(&mut self.object_graph, &mut properties, &self.objects);
+
+        self.objects
+            .get(module_object)
+            .unwrap()
+            .borrow()
+            .properties_into_values(&mut self.object_graph, &mut properties, &self.objects);
+
+        if let Some(Value::Module {
+            properties: blank_properties,
+            ..
+        }) = self.object_graph.node_weight_mut(module_index)
+        {
+            std::mem::swap(blank_properties, &mut properties);
+        }
 
         Ok(module_index)
     }
