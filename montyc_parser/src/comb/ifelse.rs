@@ -5,19 +5,19 @@ use nom::{
 
 use crate::{
     ast::{If, IfChain},
-    comb::expect_many_n_var,
+    comb::{expect_many_n_var, whitespace},
     spanned::Spanned,
     token::PyToken,
     TokenStreamRef,
 };
 
-use super::{expect, expect_, expect_many_n, expression, stmt::statement};
+use super::{expect, expect_many_n, expression, stmt::statement};
 
 #[inline]
 pub fn if_stmt<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<IfChain>> {
-    let (stream, token) = match expect(stream, PyToken::If) {
+    let (stream, token) = match expect(PyToken::If)(stream) {
         Ok((stream, tok)) => {
             log::trace!("parser:if_stmt parsing If");
             (stream, tok)
@@ -27,11 +27,11 @@ pub fn if_stmt<'this, 'source, 'data>(
     };
 
     let (mut stream, (_, test, _, _, _)) = tuple((
-        expect_many_n::<0>(PyToken::Whitespace),
+        whitespace,
         expression,
-        expect_many_n::<0>(PyToken::Whitespace),
-        expect_(PyToken::Colon),
-        expect_many_n::<0>(PyToken::Whitespace),
+        whitespace,
+        expect(PyToken::Colon),
+        whitespace,
     ))(stream)?;
 
     // body of the function
@@ -69,7 +69,6 @@ pub fn if_stmt<'this, 'source, 'data>(
             if let Ok((remaining, _)) =
                 expect_many_n_var(inner_indent_level.unwrap(), PyToken::Whitespace)(remaining)
             {
-                // panic!("{:?}", remaining);
                 let (remaining, part) = match statement(remaining) {
                     Ok(i) => i,
                     Err(_) => break,
@@ -107,27 +106,25 @@ pub fn if_stmt<'this, 'source, 'data>(
             if let Ok((s, _)) =
                 expect_many_n_var(outer_indent_level.unwrap(), PyToken::Whitespace)(s)
             {
-                let elif = match expect(s, PyToken::Elif) {
+                let elif = match expect(PyToken::Elif)(s) {
                     Ok(inner) => inner,
                     Err(_) => break 'elif,
                 };
 
                 let (s, ref elif_) = elif;
                 let (mut elif_stream, (_, test, _, _, _)) = tuple((
-                    expect_many_n::<0>(PyToken::Whitespace),
+                    whitespace,
                     expression,
-                    expect_many_n::<0>(PyToken::Whitespace),
-                    expect_(PyToken::Colon),
-                    expect_many_n::<0>(PyToken::Whitespace),
+                    whitespace,
+                    expect(PyToken::Colon),
+                    whitespace,
                 ))(s)?;
-
-                // let test = Rc::new(test);
 
                 let mut elif_body = vec![];
 
                 loop {
                     if let Ok((remaining, _)) = terminated(
-                        expect_(PyToken::Newline),
+                        expect(PyToken::Newline),
                         expect_many_n::<4>(PyToken::Whitespace),
                     )(elif_stream)
                     {
@@ -176,12 +173,9 @@ pub fn if_stmt<'this, 'source, 'data>(
             expect_many_n_var(outer_indent_level.unwrap(), PyToken::Whitespace)(else_stream)
                 .unwrap_or((else_stream, vec![]));
 
-        if let Ok((stream, _)) = expect(else_stream, PyToken::Else) {
-            let (mut stream, (_, _, _)) = tuple((
-                expect_many_n::<0>(PyToken::Whitespace),
-                expect_(PyToken::Colon),
-                expect_many_n::<0>(PyToken::Whitespace),
-            ))(stream)?;
+        if let Ok((stream, _)) = expect(PyToken::Else)(else_stream) {
+            let (mut stream, (_, _, _)) =
+                tuple((whitespace, expect(PyToken::Colon), whitespace))(stream)?;
 
             let mut else_body = vec![];
 

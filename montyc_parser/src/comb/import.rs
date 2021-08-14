@@ -2,6 +2,7 @@ use nom::{branch::alt, IResult};
 
 use crate::{
     ast::{Atom, Import, Primary},
+    comb::whitespace,
     spanned::Spanned,
     token::PyToken,
     TokenStreamRef,
@@ -13,8 +14,8 @@ use super::{expect, expect_many_n, primary};
 fn import_from<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Import>> {
-    let (stream, tok) = expect(stream, PyToken::Import)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, tok) = expect(PyToken::Import)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
     let mut names = vec![];
 
@@ -33,7 +34,7 @@ fn import_from<'this, 'source, 'data>(
 
         names.push(thing);
 
-        remaining = match expect(remaining, PyToken::Comma) {
+        remaining = match expect(PyToken::Comma)(remaining) {
             Ok((remaining, _)) => remaining,
             Err(_) => break remaining,
         };
@@ -51,8 +52,8 @@ fn import_from<'this, 'source, 'data>(
 fn from_import<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Import>> {
-    let (stream, tok) = expect(stream, PyToken::From)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, tok) = expect(PyToken::From)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
     let (stream, dots) = expect_many_n::<0>(PyToken::Dot)(stream)?;
     let (stream, module) = primary(stream)?;
@@ -65,9 +66,9 @@ fn from_import<'this, 'source, 'data>(
         _ => unreachable!(),
     }
 
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, _) = expect(stream, PyToken::Import)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
+    let (stream, _) = expect(PyToken::Import)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
     let mut names = vec![];
 
@@ -86,7 +87,7 @@ fn from_import<'this, 'source, 'data>(
 
         names.push(thing);
 
-        remaining = match expect(remaining, PyToken::Comma) {
+        remaining = match expect(PyToken::Comma)(remaining) {
             Ok((remaining, _)) => remaining,
             Err(_) => break remaining,
         };

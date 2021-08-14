@@ -13,8 +13,8 @@ use crate::{
 
 use super::{
     atom::atom,
-    core::{expect, expect_, expect_many_n},
-    expression,
+    core::{expect, expect_many_n},
+    expression, whitespace,
 };
 
 #[inline]
@@ -22,8 +22,8 @@ fn primary_subscript<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
     base: &Spanned<Primary>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
-    let (stream, _) = expect(stream, PyToken::LBracket)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = expect(PyToken::LBracket)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
     let tuple = |stream| -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Expr>> {
         let (stream, values) = super::atom::tuple_literal_inner(stream)?;
@@ -45,8 +45,8 @@ fn primary_subscript<'this, 'source, 'data>(
 
     let (stream, index) = tuple(stream).or_else(|_| expression(stream))?;
 
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, rbracket) = expect(stream, PyToken::RBracket)?;
+    let (stream, _) = whitespace(stream)?;
+    let (stream, rbracket) = expect(PyToken::RBracket)(stream)?;
 
     let obj = Spanned {
         span: base.span.start..rbracket.span.end,
@@ -64,30 +64,30 @@ fn primary_call<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
     base: &Spanned<Primary>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
-    let (stream, _) = expect(stream, PyToken::LParen)?;
-    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = expect(PyToken::LParen)(stream)?;
+    let (mut stream, _) = whitespace(stream)?;
 
     let mut args = vec![];
     let rparen;
 
     loop {
-        let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+        let (s, _) = whitespace(stream)?;
 
         if let Ok((s, arg)) = super::expr::expression(s) {
             args.push(arg);
             let (s, _) = expect_many_n::<0>(PyToken::Whitespace)(s).unwrap();
 
-            if let Ok((s, _)) = expect(s, PyToken::Comma) {
+            if let Ok((s, _)) = expect(PyToken::Comma)(s) {
                 stream = s;
                 continue;
-            } else if let Ok((s, r)) = expect(s, PyToken::RParen) {
+            } else if let Ok((s, r)) = expect(PyToken::RParen)(s) {
                 rparen = r;
                 stream = s;
                 break;
             } else {
                 unreachable!("{:?}", s);
             }
-        } else if let Ok((s, r)) = expect(s, PyToken::RParen) {
+        } else if let Ok((s, r)) = expect(PyToken::RParen)(s) {
             rparen = r;
             stream = s;
             break;
@@ -114,11 +114,11 @@ fn primary_dot_name<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
     base: &Spanned<Primary>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, _) = expect(stream, PyToken::Dot)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
+    let (stream, _) = expect(PyToken::Dot)(stream)?;
+    let (stream, _) = whitespace(stream)?;
     let (stream, ident) = super::atom::name(stream)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
     let obj = Spanned {
         span: base.span.start..ident.span.end,
@@ -165,7 +165,7 @@ pub fn await_primary<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
     let mut await_ = terminated(
-        expect_(PyToken::Await),
+        expect(PyToken::Await),
         expect_many_n::<1>(PyToken::Whitespace),
     );
 

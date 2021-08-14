@@ -7,7 +7,7 @@ use crate::TokenStreamRef;
 
 use super::primary;
 use super::{
-    core::{expect_, expect_many_n},
+    core::{expect, expect_many_n},
     expression,
 };
 
@@ -26,7 +26,7 @@ pub fn assignment<'this, 'source, 'data>(
     let (stream, ident) = terminated(primary, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
     let mut parsed = terminated(
-        expect_(PyToken::Colon),
+        expect(PyToken::Colon),
         expect_many_n::<0>(PyToken::Whitespace),
     );
 
@@ -40,7 +40,7 @@ pub fn assignment<'this, 'source, 'data>(
     };
 
     let (stream, _) = terminated(
-        expect_(PyToken::Equal),
+        expect(PyToken::Equal),
         expect_many_n::<0>(PyToken::Whitespace),
     )(stream)?;
 

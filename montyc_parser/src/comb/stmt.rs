@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::{
-    assignment, expect, expect_, expect_many_n, expect_with, expression, funcdef::function_def,
-    name, return_stmt,
+    assignment, expect, expect_many_n, expect_with, expression, funcdef::function_def, name,
+    return_stmt, whitespace,
 };
 
 #[inline]
@@ -38,7 +38,7 @@ fn dyn_annotation<'this, 'source, 'data>(
     let (stream, ident) = terminated(name, expect_many_n::<0>(PyToken::Whitespace))(stream)?;
 
     let (stream, _) = terminated(
-        expect_(PyToken::Colon),
+        expect(PyToken::Colon),
         expect_many_n::<0>(PyToken::Whitespace),
     )(stream)?;
 
@@ -140,7 +140,7 @@ fn dyn_span_ref<'this, 'source, 'data>(
 fn dyn_pass<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Statement>> {
-    let (stream, span) = expect(stream, PyToken::Pass)?;
+    let (stream, span) = expect(PyToken::Pass)(stream)?;
     Ok((stream, span.map(|_| Statement::Pass)))
 }
 
@@ -184,7 +184,7 @@ pub fn statement_unstripped<'this, 'source, 'data>(
 pub fn statement<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Statement>> {
-    let stream = expect_many_n::<0>(PyToken::Whitespace)(stream)
+    let stream = whitespace(stream)
         .map(|(stream, _)| stream)
         .unwrap_or(stream);
 

@@ -2,24 +2,23 @@ use nom::{branch::alt, error, multi::many0, sequence::terminated, IResult};
 
 use crate::{
     ast::{Atom, Expr, FunctionDef},
-    comb::expect_many_n_var,
+    comb::{expect_many_n_var, whitespace},
     spanned::Spanned,
     token::PyToken,
     TokenStreamRef,
 };
 
 use super::{
-    class::decorator_list, expect, expect_, expect_ident, expect_many_n, expr::expression,
-    stmt::statement,
+    class::decorator_list, expect, expect_ident, expect_many_n, expr::expression, stmt::statement,
 };
 
 #[inline]
 fn argument<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<PyToken>> {
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
     let (stream, name) = expect_ident(stream)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
     Ok((stream, name))
 }
 
@@ -27,20 +26,20 @@ fn argument<'this, 'source, 'data>(
 fn argument_annotated<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, (Spanned<PyToken>, Option<Spanned<Expr>>)> {
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
     let (stream, name) = expect_ident(stream)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
-    let (stream, kind) = match expect(stream, PyToken::Colon) {
+    let (stream, kind) = match expect(PyToken::Colon)(stream) {
         Ok((stream, _)) => {
-            let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+            let (stream, _) = whitespace(stream)?;
             let (stream, kind) = expression(stream)?;
 
             (stream, Some(kind))
         }
 
         Err(nom::Err::Error(error::Error { input, .. })) if !input.is_eof() => {
-            let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+            let (stream, _) = whitespace(stream)?;
 
             (stream, None)
         }
@@ -61,14 +60,14 @@ fn arguments<'this, 'source, 'data>(
         Vec<(Spanned<PyToken>, Option<Spanned<Expr>>)>,
     ),
 > {
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
-    let (stream, recv) = terminated(argument, expect_(PyToken::Comma))(stream)
+    let (stream, recv) = terminated(argument, expect(PyToken::Comma))(stream)
         .map(|(s, r)| (s, Some(r)))
         .unwrap_or((stream, None));
 
     let (stream, args) = many0(alt((
-        terminated(argument_annotated, expect_(PyToken::Comma)),
+        terminated(argument_annotated, expect(PyToken::Comma)),
         argument_annotated,
     )))(stream)?;
 
@@ -84,22 +83,22 @@ pub fn function_def<'this, 'source, 'data>(
         Err(_) => (stream, None),
     };
 
-    let (stream, _def) = expect(stream, PyToken::FnDef)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _def) = expect(PyToken::FnDef)(stream)?;
+    let (stream, _) = whitespace(stream)?;
     let (stream, ident) = expect_ident(stream)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, _) = expect(stream, PyToken::LParen)?;
+    let (stream, _) = whitespace(stream)?;
+    let (stream, _) = expect(PyToken::LParen)(stream)?;
     let (stream, (reciever, mut arguments)) = arguments(stream)?;
-    let (stream, _) = expect(stream, PyToken::RParen)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = expect(PyToken::RParen)(stream)?;
+    let (stream, _) = whitespace(stream)?;
 
     // return type annotation
 
     let arrow =
-        expect(stream, PyToken::Minus).and_then(|(stream, _)| expect(stream, PyToken::GreaterThan));
+        expect(PyToken::Minus)(stream).and_then(|(stream, _)| expect(PyToken::GreaterThan)(stream));
 
     let (stream, returns) = if let Ok((stream, _)) = arrow {
-        let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+        let (stream, _) = whitespace(stream)?;
         let (stream, ret) = expression(stream)?;
 
         (stream, Some(ret))
@@ -107,9 +106,9 @@ pub fn function_def<'this, 'source, 'data>(
         (stream, None)
     };
 
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, _) = expect(stream, PyToken::Colon)?;
-    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
+    let (stream, _) = expect(PyToken::Colon)(stream)?;
+    let (mut stream, _) = whitespace(stream)?;
 
     // body of the function
 

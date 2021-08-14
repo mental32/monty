@@ -2,6 +2,7 @@ use nom::IResult;
 
 use crate::{
     ast::models::{Atom, ClassDef, Primary},
+    comb::whitespace,
     spanned::Spanned,
     token::PyToken,
     TokenStreamRef,
@@ -19,8 +20,8 @@ pub fn class_def<'this, 'source, 'data>(
 
     // head of ClassDef "class <name>:"
 
-    let (stream, tok) = expect(stream, PyToken::ClassDef)?;
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, tok) = expect(PyToken::ClassDef)(stream)?;
+    let (stream, _) = whitespace(stream)?;
     let (stream, name) = atom(stream)?;
 
     let name = name;
@@ -30,15 +31,15 @@ pub fn class_def<'this, 'source, 'data>(
         .map(|t| t.span.start.clone())
         .unwrap_or(tok.span.start);
 
-    let (stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
-    let (stream, _) = expect(stream, PyToken::Colon)?;
-    let (mut stream, _) = expect_many_n::<0>(PyToken::Whitespace)(stream)?;
+    let (stream, _) = whitespace(stream)?;
+    let (stream, _) = expect(PyToken::Colon)(stream)?;
+    let (mut stream, _) = whitespace(stream)?;
 
     // body of ClassDef
 
     let mut body = vec![];
 
-    if let Ok((s, _)) = expect(stream, PyToken::Newline) {
+    if let Ok((s, _)) = expect(PyToken::Newline)(stream) {
         stream = s;
         loop {
             if let Ok((s, _)) = expect_many_n::<4>(PyToken::Whitespace)(stream) {
@@ -75,7 +76,7 @@ pub fn class_def<'this, 'source, 'data>(
 pub(super) fn decorator<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Primary>> {
-    let (stream, _at) = expect(stream, PyToken::At)?;
+    let (stream, _at) = expect(PyToken::At)(stream)?;
     let (stream, dec) = super::primary(stream)?;
 
     match &dec.inner {

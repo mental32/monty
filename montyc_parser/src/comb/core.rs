@@ -22,9 +22,9 @@ pub fn expect_many_n<const N: usize>(
     Vec<Spanned<PyToken>>,
 > {
     move |stream| match N {
-        0 => many0(expect_(value))(stream),
-        1 => many1(expect_(value))(stream),
-        m => many_m_n(m, m.saturating_add(1), expect_(value))(stream),
+        0 => many0(expect(value))(stream),
+        1 => many1(expect(value))(stream),
+        m => many_m_n(m, m.saturating_add(1), expect(value))(stream),
     }
 }
 
@@ -39,14 +39,14 @@ pub fn expect_many_n_var(
     Vec<Spanned<PyToken>>,
 > {
     move |stream| match n {
-        0 => many0(expect_(value))(stream),
-        1 => many1(expect_(value))(stream),
-        m => many_m_n(m, m.saturating_add(1), expect_(value))(stream),
+        0 => many0(expect(value))(stream),
+        1 => many1(expect(value))(stream),
+        m => many_m_n(m, m.saturating_add(1), expect(value))(stream),
     }
 }
 
 #[inline]
-pub fn expect_(
+pub fn expect(
     value: PyToken,
 ) -> impl for<'this, 'source, 'data> Fn(
     TokenStreamRef<'this, 'source, 'data>,
@@ -55,17 +55,10 @@ pub fn expect_(
     Spanned<PyToken>,
 > {
     move |stream: TokenStreamRef<'_, '_, '_>| {
-        let (stream, result) = expect(stream, value)?;
+        let (stream, result) = expect(value)(stream)?;
         Ok((stream, result))
     }
 }
-
-// #[inline]
-// pub fn expect_token(
-//     value: PyToken,
-// ) -> impl for<'this, 'source, 'data> Fn(TokenStreamRef<'this, 'source, 'data>) -> IResult<TokenStreamRef<'this, 'source, 'data>, (PyToken, AstObject)> {
-//     move |stream: Tokens<'_>| expect(stream, value)
-// }
 
 #[inline]
 pub fn expect_any_of<const N: usize>(
@@ -78,7 +71,7 @@ pub fn expect_any_of<const N: usize>(
 > {
     move |stream: TokenStreamRef<'_, '_, '_>| {
         for token in values.iter() {
-            match expect(stream, *token) {
+            match expect(*token)(stream) {
                 Ok(r) => return Ok(r),
                 Err(_) => continue,
             }
@@ -99,7 +92,7 @@ pub fn expect_any_token<const N: usize>(
 > {
     move |stream: TokenStreamRef<'_, '_, '_>| {
         for token in values.iter() {
-            match expect(stream, *token) {
+            match expect(*token)(stream) {
                 Ok(r) => return Ok(r),
                 Err(_) => continue,
             }
@@ -152,14 +145,6 @@ where
     }
 }
 
-#[inline]
-pub fn expect<'this, 'source, 'data>(
-    stream: TokenStreamRef<'this, 'source, 'data>,
-    value: PyToken,
-) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<PyToken>> {
-    expect_with(stream, move |(tok, _)| *tok == value)
-}
-
 pub fn expect_wrapped_values<const N: usize>(
     values: [PyToken; N],
     wrapper: PyToken,
@@ -179,7 +164,7 @@ pub fn expect_wrapped_values<const N: usize>(
         let mut results = Vec::with_capacity(N);
 
         for token in values.iter() {
-            let (s, obj) = expect(stream, *token)?;
+            let (s, obj) = expect(*token)(stream)?;
             stream = s;
             results.push(obj)
         }

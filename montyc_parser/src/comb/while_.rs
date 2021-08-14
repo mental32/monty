@@ -2,21 +2,19 @@ use nom::{sequence::tuple, IResult};
 
 use crate::{ast::models::While, spanned::Spanned, token::PyToken, TokenStreamRef};
 
-use super::{
-    expect, expect_, expect_many_n, expect_many_n_var, expression, stmt::statement_unstripped,
-};
+use super::{expect, expect_many_n, expect_many_n_var, expression, stmt::statement_unstripped};
 
 #[inline]
 pub fn while_stmt<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<While>> {
-    let (stream, tok) = expect(stream, PyToken::While)?;
+    let (stream, tok) = expect(PyToken::While)(stream)?;
 
     let (mut stream, (_, test, _, _, _)) = tuple((
         expect_many_n::<0>(PyToken::Whitespace),
         expression,
         expect_many_n::<0>(PyToken::Whitespace),
-        expect_(PyToken::Colon),
+        expect(PyToken::Colon),
         expect_many_n::<0>(PyToken::Whitespace),
     ))(stream)?;
 

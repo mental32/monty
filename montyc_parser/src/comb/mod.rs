@@ -23,6 +23,13 @@ pub mod while_;
 pub(self) use {self::core::*, assign::*, atom::*, expr::*, primary::*};
 
 #[inline]
+pub fn whitespace<'this, 'source, 'data>(
+    stream: TokenStreamRef<'this, 'source, 'data>,
+) -> IResult<TokenStreamRef<'this, 'source, 'data>, ()> {
+    expect_many_n::<0>(PyToken::Whitespace)(stream).map(|(stream, _)| (stream, ()))
+}
+
+#[inline]
 pub fn return_unspanned<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Return> {
@@ -35,16 +42,14 @@ pub fn return_unspanned<'this, 'source, 'data>(
 pub fn return_stmt<'this, 'source, 'data>(
     stream: TokenStreamRef<'this, 'source, 'data>,
 ) -> IResult<TokenStreamRef<'this, 'source, 'data>, Spanned<Return>> {
-    let (stream, ret) = expect(stream, PyToken::Return)?;
+    let (stream, ret) = expect(PyToken::Return)(stream)?;
 
     let (stream, span_end, value) = match expression(stream) {
         Ok((stream, value)) => (stream, value.span.end, Some(value)),
         Err(_) => (stream, ret.span.end, None),
     };
 
-    let inner = Return {
-        value, //: value.map(Rc::new),
-    };
+    let inner = Return { value };
 
     let ret = Spanned {
         span: ret.span.start..span_end,
@@ -60,10 +65,10 @@ fn chomp<'this, 'source, 'data>(
     let mut refs = vec![];
 
     loop {
-        if let Ok((s, _)) = expect(stream, PyToken::Whitespace) {
+        if let Ok((s, _)) = expect(PyToken::Whitespace)(stream) {
             stream = s;
             continue;
-        } else if let Ok((s, _)) = expect(stream, PyToken::Newline) {
+        } else if let Ok((s, _)) = expect(PyToken::Newline)(stream) {
             stream = s;
             continue;
         } else if let Ok((s, sr)) =
