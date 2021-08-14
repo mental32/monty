@@ -26,6 +26,23 @@ use crate::{
 };
 
 pub(in crate::interpreter) type SharedMutAnyObject = Rc<RefCell<Rc<dyn PyObject>>>;
+pub(in crate::interpreter) type ObjectMap = SSAMap<ObjAllocId, SharedMutAnyObject>;
+
+#[derive(Debug, Default, Clone)]
+pub(in crate::interpreter) struct Singletons {
+    // Modules
+    builtins: ObjAllocId,
+    monty: ObjAllocId,
+
+    // Classes
+    function_class: ObjAllocId,
+    module_class: ObjAllocId,
+
+    // Constants
+    none_v: ObjAllocId,
+    false_v: ObjAllocId,
+    true_v: ObjAllocId,
+}
 
 /// An interpreter runtime capable of executing some Python.
 #[derive(Debug)]
@@ -34,7 +51,7 @@ pub struct Runtime {
     op_ticks: usize,
 
     /// A map that contains every object.
-    pub(super) objects: SSAMap<ObjAllocId, SharedMutAnyObject>,
+    pub(in crate::interpreter) objects: ObjectMap,
 
     /// per-Runtime state that allows producing multiple hashers with the same seed.
     hash_state: ahash::RandomState,
@@ -53,6 +70,9 @@ pub struct Runtime {
 
     /// The scope index for the builtins module.
     pub(in crate::interpreter) builtins_scope: ScopeIndex,
+
+    /// Easy access global singletons.
+    pub(in crate::interpreter) singletons: Singletons,
 
     /// A single output object graph is maintained in the runtime.
     pub object_graph: ObjectGraph,
@@ -73,11 +93,12 @@ impl Runtime {
         let mut objects = SSAMap::new();
         let mut internals = objects.reserve();
 
-        let mut this = Self {
+        let mut runtime = Self {
             op_ticks,
             internals,
             builtins: internals,
             objects,
+            singletons: Default::default(),
             object_graph: Default::default(),
             modules: Default::default(),
             hash_state: ahash::RandomState::new(),
@@ -86,56 +107,68 @@ impl Runtime {
             strings: Default::default(),
         };
 
-        // class type(Self): ...
-        let type_class = this.define_new_static_class("type", &[]);
+        let internals_module_object = Rc::new(RawObject {
+            alloc_id: internals,
+            __dict__: Default::default(),
+            __class__: internals,
+        });
 
-        // class object(type): ...
-        let object_class = this.define_new_static_class("object", &[type_class]);
+        let internals_module_object_ptr = Rc::as_ptr(&internals_module_object);
 
-        // class ModuleType(object): ...
-        let module_class = this.define_new_static_class("module", &[object_class]);
-
-        // __builtins__ = ModuleType()
-        this.objects
+        runtime
+            .objects
             .try_set_value(
                 internals,
-                RawObject {
-                    alloc_id: internals,
-                    __dict__: Default::default(),
-                    __class__: module_class,
-                },
+                Rc::new(RefCell::new(internals_module_object as Rc<dyn PyObject>)),
             )
             .unwrap();
 
-        internals.setattr_static(&mut this, "_type_type_", type_class);
-        internals.setattr_static(&mut this, "_module_type_", module_class);
-        internals.setattr_static(&mut this, "_object_type_", object_class);
+        macro_rules! static_class {
+            ($name:ident(): ...) => {{
+                let class_name = stringify!($name);
+                let class_object = runtime.define_new_static_class(class_name, &[]);
+                internals.setattr_static(&mut runtime, class_name, class_object);
+                class_object
+            }};
 
-        // class str(object): ...
-        let str_class = this.define_new_static_class("str", &[object_class]);
+            ($name:ident($parent:ident): ...) => {{
+                let class_name = stringify!($name);
+                let class_object = runtime.define_new_static_class(class_name, &[$parent]);
+                internals.setattr_static(&mut runtime, class_name, class_object);
+                class_object
+            }};
+        }
 
-        internals.setattr_static(&mut this, "str", str_class);
+        // Allocate the priomoridal classes.
 
-        // class int(object): ...
-        let int_class = this.define_new_static_class("int", &[object_class]);
+        let type_class = static_class!(type(): ...);
+        let object_class = static_class!(object(type_class): ...);
+        let module_class = static_class!(module(object_class): ...);
 
-        internals.setattr_static(&mut this, "int", int_class);
+        runtime.singletons.module_class = module_class;
 
-        // class dict(object): ...
-        let dict_class = this.define_new_static_class("dict", &[object_class]);
+        {
+            /// SAFETY: Nothing else accesses `internals_module_object` while we hot-patch the class slot.
+            let internals_object_mut =
+                unsafe { &mut *(internals_module_object_ptr as *mut RawObject) };
 
-        internals.setattr_static(&mut this, "dict", dict_class);
+            internals_object_mut.__class__ = module_class;
+        }
 
-        // class function(object): ...
-        let func_class = this.define_new_static_class("func", &[object_class]);
+        let int_class = static_class!(int(object_class): ...);
+        static_class!(bool(int_class): ...);
 
-        internals.setattr_static(&mut this, "_function_type_", func_class);
+        static_class!(str(object_class): ...);
+        static_class!(float(object_class): ...);
+        static_class!(dict(object_class): ...);
+        static_class!(function(object_class): ...);
 
-        // __monty = ModuleType()
-        let __monty = this.new_object_from_class(module_class);
-        this.modules.insert(ModuleRef(0), __monty);
+        // Allocate the special `__monty` module.
+        let __monty = runtime.new_object_from_class(module_class);
+        runtime.singletons.monty = __monty;
+        runtime.modules.insert(ModuleRef(0), __monty);
 
-        this
+        runtime
     }
 
     /// Get the runtimes hash state.
@@ -145,21 +178,12 @@ impl Runtime {
 
     /// Initialize the runtime with the builtin `__monty` module.
     pub fn initialize_monty_module(&mut self, _: &dyn HostGlue) {
-        let mut __monty = self
-            .modules
-            .get(&ModuleRef(0))
-            .cloned()
-            .expect("`__monty` module should exist.");
+        let mut __monty = self.singletons.monty;
 
-        if __monty
-            .get_attribute_direct(self, self.hash("initialized"), __monty)
-            .is_none()
-        {
-            let extern_func = self.new_object_from_class(
-                self.builtins
-                    .get_attribute_direct(self, self.hash("_function_type_"), __monty)
-                    .unwrap(),
-            );
+        if __monty.getattr_static(self, "initialized").is_none() {
+            __monty.setattr_static(self, "initialized", __monty);
+
+            let extern_func = self.new_object_from_class(self.singletons.function_class);
 
             __monty.setattr_static(self, "extern", extern_func);
 
@@ -251,22 +275,6 @@ impl Runtime {
         hasher.finish()
     }
 
-    /// "tick" the global runtime, subtracting one from the execution budget.
-    ///
-    /// When `op_ticks` reaches zero the function will return `true`
-    /// and its recommended that an immediete exception should be raised;
-    /// otherwise `false` will be returned.
-    ///
-    #[inline]
-    fn tick(&mut self) -> bool {
-        if self.op_ticks == 0 {
-            return true;
-        } else {
-            self.op_ticks -= 1;
-            return false;
-        }
-    }
-
     #[inline]
     #[allow(dead_code)] // TODO: Remove when actually used.
     pub(in crate::interpreter) fn try_as_int_value(&self, alloc_id: ObjAllocId) -> PyResult<i64> {
@@ -311,6 +319,16 @@ impl Runtime {
 
         let mut module_object = self.objects.reserve();
 
+        if self.builtins == self.internals {
+            // INVARIANT: assuming the first module consteval'd is actually the builtins module.
+            self.singletons.builtins = module_object;
+            self.builtins = module_object;
+            self.builtins_scope = self.scope_graph.insert(module_object);
+        } else {
+            let module_scope = self.scope_graph.insert(module_object);
+            self.scope_graph.nest(module_scope, self.builtins_scope);
+        }
+
         let module_index = self.object_graph.insert_node_traced(
             module_object,
             |_, _| Value::Module {
@@ -320,11 +338,7 @@ impl Runtime {
             |_, _| (),
         );
 
-        let module_type = self
-            .internals
-            .get_attribute_direct(self, self.hash("_module_type_"), module_object)
-            .unwrap()
-            .alloc_id();
+        let module_type = self.singletons.module_class;
 
         self.objects
             .try_set_value(
@@ -336,15 +350,6 @@ impl Runtime {
                 },
             )
             .unwrap();
-
-        if self.builtins == self.internals {
-            // INVARIANT: assuming the first module consteval'd is actually the builtins module.
-            self.builtins = module_object;
-            self.builtins_scope = self.scope_graph.insert(module_object);
-        } else {
-            let module_scope = self.scope_graph.insert(module_object);
-            self.scope_graph.nest(module_scope, self.builtins_scope);
-        }
 
         let module = gcx
             .module_data(mref)
@@ -385,4 +390,9 @@ impl Runtime {
 
         Ok(module_index)
     }
+}
+
+#[cfg_attr(test, test)]
+fn test_runtime_new() {
+    let _ = Runtime::new(0);
 }

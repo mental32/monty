@@ -25,6 +25,13 @@ use super::PyObject;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjAllocId(pub usize);
 
+impl Default for ObjAllocId {
+    fn default() -> Self {
+        // `usize::MAX` so it makes a nice loud *crash bang* when it's used ;)
+        Self(std::usize::MAX)
+    }
+}
+
 impl ObjAllocId {
     pub(in crate::interpreter) fn setattr_static(
         &mut self,
@@ -59,7 +66,12 @@ impl ObjAllocId {
         rt: &Runtime,
         mut f: impl FnMut(&mut dyn PyObject) -> T,
     ) -> T {
-        let object = rt.objects.get(self.alloc_id()).unwrap().clone();
+        let object = rt
+            .objects
+            .get(self.alloc_id())
+            .expect("Allocated objects must always exist.")
+            .clone();
+
         let object = &mut *object.borrow_mut();
         let object = Rc::get_mut(object).unwrap();
 
@@ -114,7 +126,7 @@ impl PyObject for ObjAllocId {
     }
 
     fn set_item(
-        &mut self,
+        &self,
         rt: &Runtime,
         key: ObjAllocId,
         value: ObjAllocId,
@@ -122,7 +134,7 @@ impl PyObject for ObjAllocId {
         self.as_mut(rt, |obj| obj.set_item(rt, key, value))
     }
 
-    fn get_item(&mut self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
+    fn get_item(&self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
         self.as_mut(rt, |obj| obj.get_item(rt, key))
     }
 

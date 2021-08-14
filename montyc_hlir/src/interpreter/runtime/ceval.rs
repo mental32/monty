@@ -11,7 +11,12 @@ use crate::{
         FlatCode, FlatInst,
     },
     interpreter::{
-        object::{frame::FrameObject, string::StrObj, PyObject, RawObject},
+        object::{
+            frame::FrameObject,
+            func::{Callable, Function},
+            string::StrObj,
+            PyObject, RawObject,
+        },
         HashKeyT, PyResult,
     },
     HostGlue, ModuleData, ModuleObject, ObjAllocId,
@@ -335,7 +340,12 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                 }
 
                 RawInst::SetVar { variable, value } => {
-                    let (st, hash) = self.string(self.host.spanref_to_str(variable.clone()).to_string().as_str())?;
+                    let (st, hash) = self.string(
+                        self.host
+                            .spanref_to_str(variable.clone())
+                            .to_string()
+                            .as_str(),
+                    )?;
 
                     let object = values.get(*value).unwrap();
 
@@ -347,8 +357,6 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                 }
 
                 RawInst::UseVar { variable } => {
-                    log::trace!("{:?}", self.host.spanref_to_str(*variable));
-
                     let object = match frame_object
                         .locals
                         .get(&variable.group())
@@ -496,7 +504,20 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     returns,
                     sequence_id,
                 } => {
-                    let object = self.string("foo")?.0;
+                    let name = self.host.spanref_to_str(name.clone()).to_string();
+                    let object = self.insert_new_object(
+                        self.runtime.singletons.function_class,
+                        |cx, header, alloc| {
+                            let func = Function {
+                                header,
+                                inner: Callable::SourceDef(*sequence_id),
+                                name,
+                                annotations: Default::default(),
+                            };
+
+                            Ok(func)
+                        },
+                    )?;
 
                     values.set(inst_ix, object);
 
@@ -508,7 +529,7 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     let object_class = self
                         .runtime
                         .internals
-                        .getattr_static(self.runtime, "_object_type_")
+                        .getattr_static(self.runtime, "object")
                         .unwrap();
 
                     let object = self.runtime.define_new_static_class(name, &[object_class]);

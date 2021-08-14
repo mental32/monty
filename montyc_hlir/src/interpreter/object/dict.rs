@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    cell::RefCell,
+    ops::{Deref, DerefMut},
+};
 
 use ahash::AHashMap;
 use montyc_core::utils::SSAMap;
@@ -100,7 +103,7 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
 #[derive(Debug)]
 pub(in crate::interpreter) struct PyDict {
     pub header: RawObject,
-    pub data: PyDictRaw<(ObjAllocId, ObjAllocId)>,
+    pub data: RefCell<PyDictRaw<(ObjAllocId, ObjAllocId)>>,
 }
 
 impl PyObject for PyDict {
@@ -115,7 +118,7 @@ impl PyObject for PyDict {
         key: ObjAllocId,
         value: ObjAllocId,
     ) {
-        self.data.insert(hash, (key, value));
+        self.data.borrow_mut().insert(hash, (key, value));
     }
 
     fn get_attribute_direct(
@@ -124,7 +127,7 @@ impl PyObject for PyDict {
         hash: HashKeyT,
         _key: ObjAllocId,
     ) -> Option<ObjAllocId> {
-        self.data.get(hash).map(|kv| kv.0)
+        self.data.borrow_mut().get(hash).map(|kv| kv.0)
     }
 
     fn for_each(
@@ -132,7 +135,11 @@ impl PyObject for PyDict {
         rt: &mut ObjectGraph,
         f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
     ) {
-        self.data.0.iter().for_each(|(h, (k, v))| f(rt, *h, *k, *v))
+        self.data
+            .borrow_mut()
+            .0
+            .iter()
+            .for_each(|(h, (k, v))| f(rt, *h, *k, *v))
     }
 
     fn into_value(
@@ -168,16 +175,18 @@ impl PyObject for PyDict {
     }
 
     fn set_item(
-        &mut self,
+        &self,
         rt: &Runtime,
         key: ObjAllocId,
         value: ObjAllocId,
     ) -> Option<(ObjAllocId, ObjAllocId)> {
-        self.data.insert(key.hash(rt).unwrap(), (key, value))
+        self.data
+            .borrow_mut()
+            .insert(key.hash(rt).unwrap(), (key, value))
     }
 
-    fn get_item(&mut self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
-        self.data.get(key.hash(rt).unwrap())
+    fn get_item(&self, rt: &Runtime, key: ObjAllocId) -> Option<(ObjAllocId, ObjAllocId)> {
+        self.data.borrow_mut().get(key.hash(rt).unwrap())
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
