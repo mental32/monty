@@ -1,49 +1,40 @@
-use std::{cell::RefCell, rc::Rc};
-
 use montyc_core::{ModuleRef, MontyError, MontyResult, TypeError, TypeId};
-use montyc_hlir::{typing::TypingContext, HostGlue, ObjectGraph, ObjectGraphIndex, Value};
-use montyc_parser::AstNode;
-use petgraph::graph::NodeIndex;
+use montyc_hlir::{
+    flatcode::{
+        raw_inst::{Const, Dunder, RawInst},
+        FlatCode,
+    },
+    typing::{PythonType, TypingContext},
+    ObjectGraph, ObjectGraphIndex, Value,
+};
+use montyc_parser::ast::InfixOp;
 
 use crate::{
     def_stack::{DefKind, DefScope, DefStack},
     prelude::GlobalContext,
-    // type_eval::TypeEvalContext,
-    typechk::Typecheck,
 };
 
 #[derive(Debug)]
 pub struct ValueContext<'this, 'gcx> {
     pub mref: ModuleRef,
+    pub code: &'this FlatCode,
+    pub object_graph: &'gcx ObjectGraph,
     pub gcx: &'gcx GlobalContext,
     pub value: &'this Value,
     pub value_idx: ObjectGraphIndex,
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
-    /// Get the AST node from the modules body via the given index.
-    pub fn get_node_from_module_body(&self, idx: NodeIndex) -> Option<AstNode> {
-        unimplemented!()
-        // self.gcx
-        //     .modules
-        //     .get(self.mref)?
-        //     .borrow()
-        //     .data
-        //     .body
-        //     .node_weight(idx)
-        //     .cloned()
-    }
-}
+    pub(crate) fn typecheck(&self) -> MontyResult<TypeId> {
+        let cx = self;
+        let object_graph = cx.object_graph;
 
-impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
-    fn typecheck(&self, cx: ValueContext) -> MontyResult<TypeId> {
-        let object_graph = &cx.gcx.const_runtime.borrow().object_graph;
-
-        match self {
+        match dbg!(cx.value) {
             Value::Function {
-                name: _,
-                properties: _,
-                annotations,
+                ret_t,
+                args_t,
+                source,
+                name,
                 ..
             } => {
                 let value_id = cx.gcx.value_store.borrow_mut().insert_function(
@@ -59,165 +50,301 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
                     .borrow_mut()
                     .set_type_of(value_id, Some(TypingContext::UntypedFunc));
 
-                todo!();
+                let return_type = {
+                    let value = object_graph.node_weight(*ret_t).unwrap();
 
-                // let defsite = match defsite {
-                //     None => return Ok(TypingContext::UntypedFunc),
-                //     Some(defsite) => *defsite,
-                // };
+                    let value_id = cx
+                        .gcx
+                        .value_store
+                        .borrow()
+                        .get_value_from_alloc(object_graph.alloc_id_of(*ret_t).unwrap())
+                        .unwrap();
 
-                // let node = defsite
-                //     .subgraph_index
-                //     .and_then(|subgraph| object_graph.ast_subgraphs.get(&subgraph))
-                //     .and_then(|subgraph| subgraph.node_weight(defsite.node_index).cloned())
-                //     .or_else(|| cx.get_node_from_module_body(defsite.node_index))
-                //     .unwrap();
+                    if let Value::Class { .. } = value {
+                        cx.gcx
+                            .value_store
+                            .borrow()
+                            .type_of(value_id)
+                            .expect("class object does not have a type_id.")
+                    } else {
+                        panic!(
+                            "error: only expected class values as return annotations got {:#?}",
+                            value
+                        );
+                    }
+                };
 
-                // let funcdef = match node {
-                //     AstNode::FuncDef(funcdef) => funcdef,
-                //     _ => unreachable!(),
-                // };
+                let mut params = Vec::with_capacity(
+                    args_t
+                        .as_ref()
+                        .map(|(recv, args)| recv.is_some() as usize + args.len())
+                        .unwrap_or(0),
+                );
 
-                // let funcdef_args = funcdef.args.as_ref();
-                // let mut def_stack = Rc::new(RefCell::new({
-                //     if cx.mref != ModuleRef(1) {
-                //         let module_value_id = cx
-                //             .gcx
-                //             .value_store
-                //             .borrow_mut()
-                //             .get_module_value(ModuleRef(1));
+                let arg_t: Option<Vec<TypeId>> = if let Some((recv, args)) = args_t {
+                    let mut seen =
+                        ahash::AHashSet::with_capacity(recv.is_some() as usize + args.len());
 
-                //         let builtin_rib = cx
-                //             .gcx
-                //             .value_store
-                //             .borrow_mut()
-                //             .get_rib_data_of(module_value_id)
-                //             .unwrap();
+                    if let Some(recv) = recv {
+                        seen.insert(recv.clone().group());
+                    }
 
-                //         DefStack::new(Some(builtin_rib), Some(DefKind::Builtins))
-                //     } else {
-                //         DefStack::new(None, None)
-                //     }
-                // }));
+                    let mut is_dynamically_typed = false;
 
-                // let return_type = if let Some((_, ret_v)) =
-                //     annotations.get(cx.gcx.const_runtime.borrow().hash("return"))
-                // {
-                //     let value = object_graph.node_weight(ret_v).unwrap();
+                    // Verify that the parameter names are all unique.
+                    for (arg, kind) in args.iter() {
+                        // true iff the spanref group was already present in the set.
+                        if !seen.insert(arg.group()) {
+                            return Err(MontyError::TypeError {
+                                module: cx.mref.clone(),
+                                error: TypeError::DuplicateParameters,
+                            });
+                        }
 
-                //     let value_id = cx
-                //         .gcx
-                //         .value_store
-                //         .borrow()
-                //         .get_value_from_alloc(object_graph.alloc_id_of(ret_v).unwrap())
-                //         .unwrap();
+                        is_dynamically_typed = kind.is_none();
 
-                //     if let Value::Class { .. } = value {
-                //         cx.gcx
-                //             .value_store
-                //             .borrow()
-                //             .type_of(value_id)
-                //             .expect("class object does not have a type_id.")
-                //     } else {
-                //         panic!(
-                //             "error: only expected class values as return annotations got {:#?}",
-                //             value
-                //         );
-                //     }
-                // } else {
-                //     TypingContext::None
-                // };
+                        match kind.clone() {
+                            Some(kind_value) => {
+                                let kind_alloc_id = object_graph.alloc_id_of(kind_value).unwrap();
+                                let kind_value_id = cx
+                                    .gcx
+                                    .value_store
+                                    .borrow()
+                                    .get_value_from_alloc(kind_alloc_id)
+                                    .unwrap();
 
-                // let mut params =
-                //     Vec::with_capacity(funcdef_args.map(|args| args.len()).unwrap_or(0));
+                                let kind =
+                                    cx.gcx.value_store.borrow().type_of(kind_value_id).unwrap();
 
-                // let arg_t = if let Some(args) = funcdef_args {
-                //     let mut seen = ahash::AHashSet::with_capacity(args.len());
+                                params.push((arg.group(), kind))
+                            }
 
-                //     // Verify that the parameter names are all unique.
-                //     for (arg, kind) in args.iter() {
-                //         // true iff the spanref group was already present in the set.
-                //         if !seen.insert(arg.group()) {
-                //             return Err(MontyError::TypeError {
-                //                 module: cx.mref.clone(),
-                //                 error: TypeError::DuplicateParameters,
-                //             });
-                //         }
+                            None => continue,
+                        }
+                    }
 
-                //         if let Some(_) = kind.as_ref() {
-                //             let arg_name = cx.gcx.spanref_to_str(arg.clone());
-                //             let (_, kind_value) = annotations
-                //                 .get(cx.gcx.const_runtime.borrow().hash(arg_name))
-                //                 .unwrap();
+                    // Ignore any function definitions with non-annotated arguments.
+                    if is_dynamically_typed {
+                        return Ok(TypingContext::UntypedFunc);
+                    } else {
+                        Some(params.iter().map(|(_, t)| *t).collect())
+                    }
+                } else {
+                    None
+                };
 
-                //             let kind_alloc_id = object_graph.alloc_id_of(kind_value).unwrap();
-                //             let kind_value_id = cx
-                //                 .gcx
-                //                 .value_store
-                //                 .borrow()
-                //                 .get_value_from_alloc(kind_alloc_id)
-                //                 .unwrap();
+                let func_type = cx
+                    .gcx
+                    .typing_context
+                    .borrow_mut()
+                    .callable(dbg!(arg_t), return_type);
 
-                //             let kind = cx.gcx.value_store.borrow().type_of(kind_value_id).unwrap();
+                cx.gcx
+                    .value_store
+                    .borrow_mut()
+                    .set_type_of(value_id, Some(func_type));
 
-                //             params.push((arg.group(), kind))
-                //         }
-                //     }
+                // Don't typecheck the bodies of ellipsis-stubbed functions as they are
+                // essentially either "extern" declarations or nops.
+                let source = source.and_then(|(s_mref, seq)| {
+                    (s_mref == cx.mref && cx.code.is_sequence_ellipsis_stubbed(seq)).then(|| seq)
+                });
 
-                //     // Ignore any function definitions with non-annotated arguments.
-                //     if funcdef.is_dynamically_typed() {
-                //         return Ok(TypingContext::UntypedFunc);
-                //     } else {
-                //         Some(params.iter().map(|(_, t)| *t).collect())
-                //     }
-                // } else {
-                //     None
-                // };
+                let s = match source {
+                    Some(seq) => seq,
+                    None => return Ok(func_type),
+                };
 
-                // let func_type = cx
-                //     .gcx
-                //     .typing_context
-                //     .borrow_mut()
-                //     .callable(arg_t, return_type);
+                let mut def_stack = {
+                    if cx.mref != ModuleRef(1) {
+                        let module_value_id = cx
+                            .gcx
+                            .value_store
+                            .borrow_mut()
+                            .get_module_value(ModuleRef(1));
 
-                // cx.gcx
-                //     .value_store
-                //     .borrow_mut()
-                //     .set_type_of(value_id, Some(func_type));
+                        let builtin_rib = cx
+                            .gcx
+                            .value_store
+                            .borrow_mut()
+                            .get_rib_data_of(module_value_id)
+                            .unwrap();
 
-                // // Don't typecheck the bodies of ellipsis-stubbed functions as they are
-                // // essentially either "extern" declarations or nops.
-                // if funcdef.is_ellipsis_stubbed() || parent.is_none() {
-                //     return Ok(func_type);
-                // }
+                        DefStack::new(Some(builtin_rib), Some(DefKind::Builtins))
+                    } else {
+                        DefStack::new(None, None)
+                    }
+                };
 
-                // {
-                //     let store = cx.gcx.value_store.borrow_mut();
-                //     let module = store.get_module_value(cx.mref);
-                //     let module_rib = store.get_rib_data_of(module).unwrap();
+                let mut store = cx.gcx.value_store.borrow_mut();
 
-                //     def_stack.borrow_mut().extend(module_rib.into_iter());
-                //     def_stack.borrow_mut().extend(params.into_iter());
-                // }
+                {
+                    let module = store.get_module_value(cx.mref);
+                    let module_rib = store.get_rib_data_of(module).unwrap();
 
-                // for node in funcdef.body.iter() {
-                //     node.typecheck(TypeEvalContext {
-                //         value_cx: &cx,
-                //         expected_return_value: return_type,
-                //         def_stack: Rc::clone(&def_stack),
-                //     })?;
-                // }
+                    def_stack.extend(DefKind::Global, module_rib.into_iter());
+                    def_stack.extend(DefKind::Parameters, params.into_iter());
+                }
 
-                // let mut store = cx.gcx.value_store.borrow_mut();
+                let seq = cx.code.sequences().get(s).unwrap();
+                let mut seq_value_types = vec![TypingContext::Unknown; seq.inst().len()];
 
-                // store.set_type_of(value_id, Some(func_type));
+                for (ix, inst) in seq.inst().iter().enumerate() {
+                    match &inst.op {
+                        RawInst::Class { .. } | RawInst::Defn { .. } => todo!(),
 
-                // match store.function_rib_stack(value_id) {
-                //     Ok(_) => unreachable!(),
-                //     Err(slot) => slot.replace(Rc::make_mut(&mut def_stack).clone().into_inner()),
-                // };
+                        RawInst::UseVar { variable } => {
+                            let (var_t, _) = def_stack.get(variable.group()).unwrap();
+                            seq_value_types[ix] = var_t;
+                        }
 
-                // Ok(func_type)
+                        RawInst::Call {
+                            callable,
+                            arguments,
+                        } => {
+                            let callable_type_id = seq_value_types[*callable];
+                            assert_ne!(callable_type_id, TypingContext::Unknown);
+
+                            let arguments_types: Vec<_> = arguments
+                                .iter()
+                                .map(|i| {
+                                    let ty = seq_value_types[*i];
+                                    assert_ne!(callable_type_id, TypingContext::Unknown);
+                                    ty
+                                })
+                                .collect();
+
+                            let tcx = cx.gcx.typing_context.borrow();
+                            let callable_type = tcx.contextualize(callable_type_id).unwrap();
+
+                            seq_value_types[ix] =
+                                if let PythonType::Callable { args: params, ret } =
+                                    callable_type.as_python_type()
+                                {
+                                    match (params, arguments_types.as_slice()) {
+                                        (None, []) => (),
+                                        (Some(params), args @ [_, ..]) => {
+                                            assert_eq!(params, args)
+                                        }
+
+                                        (Some(_params), []) => todo!(),
+                                        (None, _args) => todo!(),
+                                    }
+
+                                    *ret
+                                } else {
+                                    todo!("Not callable.");
+                                };
+                        }
+
+                        RawInst::SetVar { variable, value } => todo!(),
+
+                        RawInst::GetAttribute { object, name } => todo!(),
+
+                        RawInst::GetDunder { object, dunder } => {
+                            let type_id = seq_value_types[*object];
+                            assert_ne!(type_id, TypingContext::Unknown);
+
+                            let (_, type_class_value) =
+                                store.class_of(type_id, cx.object_graph).unwrap();
+
+                            let dunder_entry = match type_class_value {
+                                Value::Class { properties, .. } => match dunder {
+                                    Dunder::Unary(_) => todo!(),
+
+                                    Dunder::Infix(op) => match op {
+                                        InfixOp::Add => todo!(),
+                                        InfixOp::Sub => todo!(),
+                                        InfixOp::Power => todo!(),
+                                        InfixOp::Invert => todo!(),
+                                        InfixOp::FloorDiv => todo!(),
+                                        InfixOp::MatMult => todo!(),
+                                        InfixOp::Mod => todo!(),
+                                        InfixOp::Div => todo!(),
+                                        InfixOp::Mult => todo!(),
+                                        InfixOp::LeftShift => todo!(),
+                                        InfixOp::RightShift => todo!(),
+                                        InfixOp::NotEq => todo!(),
+
+                                        InfixOp::Eq => properties
+                                            .get(cx.gcx.const_runtime.borrow().hash("__eq__")),
+
+                                        InfixOp::And => todo!(),
+                                        InfixOp::Or => todo!(),
+                                        InfixOp::Xor => todo!(),
+                                    },
+
+                                    Dunder::DocComment => todo!(),
+                                },
+
+                                _ => unreachable!(),
+                            };
+
+                            let (_, dunder_index) = dunder_entry.unwrap();
+                            let dunder_alloc = object_graph.alloc_id_of(dunder_index).unwrap();
+                            let dunder_value = store.get_value_from_alloc(dunder_alloc).unwrap();
+                            let dunder_type = store.type_of(dunder_value).unwrap();
+
+                            seq_value_types[ix] = dunder_type;
+                        }
+
+                        RawInst::SetAttribute {
+                            object,
+                            name,
+                            value,
+                        } => todo!(),
+
+                        RawInst::SetDunder {
+                            object,
+                            dunder,
+                            value,
+                        } => todo!(),
+
+                        RawInst::GetItem { object, index } => todo!(),
+                        RawInst::SetItem {
+                            object,
+                            index,
+                            value,
+                        } => todo!(),
+
+                        RawInst::Import { path, relative } => todo!(),
+
+                        RawInst::Const(const_) => {
+                            let ty = match const_ {
+                                Const::Int(_) => TypingContext::Int,
+                                Const::Float(_) => TypingContext::Float,
+                                Const::Bool(_) => TypingContext::Bool,
+                                Const::String(_) => TypingContext::Str,
+                                Const::None => TypingContext::None,
+                                Const::Ellipsis => TypingContext::None,
+                            };
+
+                            seq_value_types[ix] = ty;
+                        }
+                        RawInst::Tuple(_) => todo!(),
+                        RawInst::Nop => todo!(),
+                        RawInst::Undefined => todo!(),
+                        RawInst::If {
+                            test,
+                            truthy,
+                            falsey,
+                        } => todo!(),
+
+                        RawInst::Br { to } => todo!(),
+                        RawInst::PhiJump { recv, value } => todo!(),
+                        RawInst::PhiRecv => todo!(),
+                        RawInst::Return { value } => todo!(),
+                    }
+                }
+
+                store.set_type_of(value_id, Some(func_type));
+
+                match store.function_rib_stack(value_id) {
+                    Ok(_) => unreachable!(),
+                    Err(slot) => slot.replace(def_stack),
+                };
+
+                Ok(func_type)
             }
 
             Value::Class { name, properties } => {
@@ -263,12 +390,15 @@ impl<'this, 'gcx> Typecheck<ValueContext<'this, 'gcx>, TypeId> for Value {
                 for (key_idx, value_idx) in properties.iter_by_alloc_asc(object_graph) {
                     let value = object_graph.node_weight(value_idx).unwrap();
 
-                    let value_type = value.typecheck(ValueContext {
+                    let value_type = ValueContext {
                         mref: cx.mref,
+                        object_graph,
                         gcx: cx.gcx,
+                        code: cx.code,
                         value,
                         value_idx,
-                    })?;
+                    }
+                    .typecheck()?;
 
                     if let Some(key) =
                         object_graph

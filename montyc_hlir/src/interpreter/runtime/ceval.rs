@@ -252,7 +252,7 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
         assert_eq!(inst_ix, 0, "Refusing to start evaluating a frame mid-way.");
 
         let seq = match self.code.sequences.get(seq_ix) {
-            Some(seq) => seq.as_slice(),
+            Some(seq) => seq.inst.as_slice(),
             None => unreachable!("out-of-bounds sequence index {:?}", seq_ix),
         };
 
@@ -261,7 +261,7 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
         let mut values = FrameValues(vec![None; seq.len()].into_boxed_slice());
         let frame_object_alloc_id = self.runtime.objects.reserve();
         let mut frame_object = FrameObject {
-            inner: RawObject {
+            header: RawObject {
                 alloc_id: frame_object_alloc_id,
                 __class__: frame_object_alloc_id,
                 __dict__: Default::default(),
@@ -399,9 +399,10 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     let mut object = values.get(*object).unwrap();
                     let value = values.get(*value).unwrap();
 
-                    let key = self.host.spanref_to_str(name.clone());
+                    let key = self.host.spanref_to_str(name.clone()).to_string();
+                    let (key, hash) = self.string(key)?;
 
-                    object.setattr_static(&mut self.runtime, key, value);
+                    object.set_attribute_direct(&mut self.runtime, hash, key, value);
 
                     inst_ix += 1;
                 }
@@ -420,7 +421,8 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                         Dunder::Unary(_) => todo!(),
                         Dunder::Infix(_) => todo!(),
                         Dunder::DocComment => {
-                            object.setattr_static(&mut self.runtime, "__doc__", value)
+                            let (key, hash) = self.string("__doc__")?;
+                            object.set_attribute_direct(&mut self.runtime, hash, key, value)
                         }
                     }
 
@@ -461,10 +463,10 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
 
                     let base = (*relative != 0).then(|| (*relative, module_object.path.as_path()));
 
-                    let modules = host.import_module(path, base);
+                    let modules = host.import_module(&*path, base);
                     let (mref, sr) = modules.first().unwrap();
 
-                    let object = runtime.consteval(*mref, *host)?;
+                    let (object, _) = runtime.consteval(*mref, *host)?;
                     let object = runtime.object_graph.alloc_id_of(object).unwrap();
 
                     let (st, hash) = self.string(
@@ -505,12 +507,48 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     sequence_id,
                 } => {
                     let name = self.host.spanref_to_str(name.clone()).to_string();
+
+                    let params = match params.as_slice() {
+                        [] => None,
+
+                        [(first, first_kind), rest @ ..] => {
+                            let recv = (first_kind.is_none()
+                                && self.host.spanref_to_str(first.clone()) == "self")
+                                .then(|| first.clone());
+
+                            let params = if recv.is_some() {
+                                rest.iter()
+                                    .map(|(name, ann)| {
+                                        (name.clone(), ann.map(|ann| values.get(ann).unwrap()))
+                                    })
+                                    .collect::<Vec<_>>()
+                            } else {
+                                Some((first.clone(), first_kind.clone()))
+                                    .iter()
+                                    .cloned()
+                                    .chain(rest.iter().cloned())
+                                    .map(|(name, ann)| {
+                                        (name.clone(), ann.map(|ann| values.get(ann).unwrap()))
+                                    })
+                                    .collect::<Vec<_>>()
+                            };
+
+                            Some((recv, params.into_boxed_slice()))
+                        }
+                    };
+
+                    let returns = returns
+                        .map(|value| values.get(value).unwrap())
+                        .unwrap_or(self.runtime.singletons.none_v);
+
                     let object = self.insert_new_object(
                         self.runtime.singletons.function_class,
                         |cx, header, alloc| {
                             let func = Function {
                                 header,
-                                inner: Callable::SourceDef(*sequence_id),
+                                returns,
+                                params,
+                                inner: Callable::SourceDef(cx.module_object.mref, *sequence_id),
                                 name,
                                 annotations: Default::default(),
                             };

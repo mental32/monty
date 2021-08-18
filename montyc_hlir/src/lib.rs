@@ -20,7 +20,7 @@ pub mod interpreter;
 pub mod module_object;
 pub mod typing;
 
-use montyc_core::{ModuleRef, TypeId};
+use montyc_core::{ModuleRef, SpanRef, TypeId};
 
 use crate::interpreter::PyDictRaw;
 
@@ -39,6 +39,8 @@ pub struct Object {
 
     properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
 }
+
+pub(crate) type CallableSignature<T> = Option<(Option<SpanRef>, Box<[(SpanRef, Option<T>)]>)>;
 
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
@@ -60,17 +62,19 @@ pub enum Value {
 
     Function {
         name: String,
+
+        ret_t: ObjectGraphIndex,
+        args_t: CallableSignature<ObjectGraphIndex>,
+
+        source: Option<(ModuleRef, usize)>,
+
         properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
         annotations: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-        // defsite: Option<UniqueNodeIndex>,
-        // parent: Option<ObjectGraphIndex>,
     },
 
     Class {
         name: String,
         properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-        // defsite: ObjectGraphIndex,
-        // parent: ObjectGraphIndex,
     },
 }
 

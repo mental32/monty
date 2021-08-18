@@ -51,8 +51,8 @@ impl ObjectGraph {
     pub(crate) fn insert_node_traced(
         &mut self,
         alloc_id: ObjAllocId,
-        mut make_value: impl FnMut(&mut Self, ObjectGraphIndex) -> Value,
-        mut mutate_value: impl FnMut(&mut Self, &dyn Fn(&mut Self) -> &mut Value),
+        mut make_value: impl FnOnce(&mut Self, ObjectGraphIndex) -> Value,
+        mut mutate_value: impl FnOnce(&mut Self, &dyn Fn(&mut Self) -> &mut Value),
     ) -> ObjectGraphIndex {
         if let Some(idx) = self.alloc_to_idx.get(&alloc_id) {
             log::trace!(
@@ -76,12 +76,6 @@ impl ObjectGraph {
         let value = make_value(self, index);
 
         let real_index = self.graph.add_node(value);
-
-        log::trace!(
-            "[ObjectGraph::insert_node_traced] {:?} -> {:?}",
-            alloc_id,
-            real_index
-        );
 
         assert_eq!(real_index, index, "Expected index did not match the pre-computed index, was something added to the graph whilst the Value was being created?");
 

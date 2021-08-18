@@ -28,18 +28,30 @@ impl AstObject for Import {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        match self {
+            Import::Names(names) => {
+                let (head, tail) = names.first().zip(names.last())?;
+                Some(head.span.start..tail.span.end)
+            }
+
+            Import::From { module, names, .. } => {
+                let head = &module.span;
+                let tail = &names.last()?.span;
+
+                Some(head.start..tail.end)
+            }
+        }
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
+        self
     }
 
     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_import(self)
+        visitor.visit_import(self, self.span())
     }
 }
 

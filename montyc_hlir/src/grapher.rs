@@ -1,5 +1,6 @@
 use std::iter::Peekable;
 
+use montyc_core::Span;
 use montyc_parser::{
     ast::{self, Statement},
     spanned::Spanned,
@@ -43,7 +44,7 @@ impl AstVisitor for NodeGrapher<'_> {
         self.add_node(&node.into_ast_node());
     }
 
-    fn visit_ifstmt(&mut self, ifstmt: &ast::IfChain) {
+    fn visit_ifstmt(&mut self, ifstmt: &ast::IfChain, _: Option<Span>) {
         let mut predecessor = self.last.take();
         let mut branch_leaves = vec![];
 

@@ -77,7 +77,9 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
 
             for (key, value) in self.0.values() {
                 log::trace!(
-                    "[PyDictRaw::iter_by_alloc_asc] {:?} := {:?}",
+                    "[PyDictRaw::iter_by_alloc_asc]\n{:?} -> {:#?}\n {:?} -> {:#?}",
+                    key,
+                    graph.node_weight(*key),
                     value,
                     graph.node_weight(*value)
                 );

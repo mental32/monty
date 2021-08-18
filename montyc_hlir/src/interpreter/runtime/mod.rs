@@ -127,14 +127,30 @@ impl Runtime {
             ($name:ident(): ...) => {{
                 let class_name = stringify!($name);
                 let class_object = runtime.define_new_static_class(class_name, &[]);
-                internals.setattr_static(&mut runtime, class_name, class_object);
+
+                let class_name_hash = runtime.hash(class_name);
+                internals.set_attribute_direct(
+                    &mut runtime,
+                    class_name_hash,
+                    class_object,
+                    class_object,
+                );
+
                 class_object
             }};
 
             ($name:ident($parent:ident): ...) => {{
                 let class_name = stringify!($name);
                 let class_object = runtime.define_new_static_class(class_name, &[$parent]);
-                internals.setattr_static(&mut runtime, class_name, class_object);
+
+                let class_name_hash = runtime.hash(class_name);
+                internals.set_attribute_direct(
+                    &mut runtime,
+                    class_name_hash,
+                    class_object,
+                    class_object,
+                );
+
                 class_object
             }};
         }
@@ -156,7 +172,17 @@ impl Runtime {
         }
 
         let int_class = static_class!(int(object_class): ...);
-        static_class!(bool(int_class): ...);
+        let bool_class = static_class!(bool(int_class): ...);
+
+        let none_class = static_class!(NoneType(object_class): ...);
+        let none = runtime.new_object_from_class(none_class);
+        runtime.singletons.none_v = none;
+
+        let true_v = runtime.new_object_from_class(bool_class);
+        runtime.singletons.true_v = true_v;
+
+        let false_v = runtime.new_object_from_class(bool_class);
+        runtime.singletons.false_v = false_v;
 
         static_class!(str(object_class): ...);
         static_class!(float(object_class): ...);
@@ -177,15 +203,30 @@ impl Runtime {
     }
 
     /// Initialize the runtime with the builtin `__monty` module.
-    pub fn initialize_monty_module(&mut self, _: &dyn HostGlue) {
+    pub fn initialize_monty_module(&mut self, host: &mut dyn HostGlue) {
         let mut __monty = self.singletons.monty;
 
         if __monty.getattr_static(self, "initialized").is_none() {
-            __monty.setattr_static(self, "initialized", __monty);
+            {
+                let module_object = host.module_data(ModuleRef(0)).unwrap();
+                let code = FlatCode::default();
+                let mut cx = ConstEvalContext::new(self, host, &code, __monty, &module_object);
 
-            let extern_func = self.new_object_from_class(self.singletons.function_class);
+                let (initialized_st, hash) = cx.string("initialized").unwrap();
+                __monty.set_attribute_direct(
+                    cx.runtime,
+                    hash,
+                    initialized_st,
+                    cx.runtime.singletons.true_v,
+                );
 
-            __monty.setattr_static(self, "extern", extern_func);
+                let extern_func = cx
+                    .runtime
+                    .new_object_from_class(cx.runtime.singletons.function_class);
+
+                let (extern_st, hash) = cx.string("extern").unwrap();
+                __monty.set_attribute_direct(self, hash, extern_st, extern_func);
+            }
 
             let Self {
                 object_graph,
@@ -308,13 +349,20 @@ impl Runtime {
         &'global mut self,
         mref: ModuleRef,
         gcx: &'global mut dyn HostGlue,
-    ) -> PyResult<ObjectGraphIndex> {
+    ) -> PyResult<(ObjectGraphIndex, FlatCode)> {
+        let module = gcx
+            .module_data(mref)
+            .expect("Modules should always have associated data.");
+
+        let mut code = FlatCode::new();
+        module.ast.visit_with(&mut code);
+
         if let Some(index) = self
             .modules
             .get(&mref)
             .and_then(|alloc| self.object_graph.alloc_to_idx.get(alloc))
         {
-            return Ok(*index);
+            return Ok((*index, code));
         }
 
         let mut module_object = self.objects.reserve();
@@ -351,13 +399,6 @@ impl Runtime {
             )
             .unwrap();
 
-        let module = gcx
-            .module_data(mref)
-            .expect("Modules should always have associated data.");
-
-        let mut code = FlatCode::new();
-        module.ast.visit_with(&mut code);
-
         let _ = ConstEvalContext::new(self, gcx, &code, module_object, &module)
             .eval()
             .unwrap();
@@ -388,7 +429,7 @@ impl Runtime {
             std::mem::swap(blank_properties, &mut properties);
         }
 
-        Ok(module_index)
+        Ok((module_index, code))
     }
 }
 

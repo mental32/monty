@@ -3,60 +3,7 @@ use std::convert::TryFrom;
 use montyc_core::SpanRef;
 
 use super::*;
-pub use super::{atom::*, expr::*, ifstmt::*, import::*, primary::*};
-
-#[derive(Debug, Clone)]
-pub struct FunctionDef {
-    pub reciever: Option<Spanned<Atom>>,
-    pub name: Spanned<Atom>,
-    pub args: Option<Vec<(SpanRef, Option<Spanned<Expr>>)>>,
-    pub body: Vec<Spanned<Statement>>,
-    pub decorator_list: Vec<Spanned<Primary>>,
-    pub returns: Option<Spanned<Expr>>,
-    // type_comment: Option<Expr>,
-}
-
-impl AstObject for FunctionDef {
-    fn into_ast_node(&self) -> AstNode {
-        AstNode::FuncDef(self.clone())
-    }
-
-    fn span(&self) -> Option<Span> {
-        todo!()
-    }
-
-    fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
-    }
-
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
-    where
-        Self: Sized,
-    {
-        visitor.visit_funcdef(self)
-    }
-}
-
-impl FunctionDef {
-    pub fn is_dynamically_typed(&self) -> bool {
-        self.args
-            .as_ref()
-            .map(|args| args.iter().any(|arg| arg.1.is_none()))
-            .unwrap_or(false)
-    }
-
-    pub fn is_ellipsis_stubbed(&self) -> bool {
-        match self.body.as_slice() {
-            [] => unreachable!(),
-            [head] => matches!(head.into_ast_node(), AstNode::Ellipsis(_)),
-            [head, tail] => {
-                matches!(head.into_ast_node(), AstNode::Str(_))
-                    && matches!(tail.into_ast_node(), AstNode::Ellipsis(_))
-            }
-            _ => false,
-        }
-    }
-}
+pub use super::{atom::*, expr::*, funcdef::*, ifstmt::*, import::*, primary::*};
 
 #[derive(Debug, Clone)]
 pub struct While {
@@ -70,24 +17,31 @@ impl AstObject for While {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        Some(
+            self.test.span.start
+                ..self
+                    .body
+                    .last()
+                    .map(|node| node.span.end)
+                    .unwrap_or(self.test.span.end),
+        )
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
+        self
     }
 
     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_while(self)
+        visitor.visit_while(self, self.span())
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Return {
-    pub value: Option<Spanned<Expr>>,
+    pub value: Result<Spanned<Expr>, Spanned<()>>,
 }
 
 impl AstObject for Return {
@@ -96,18 +50,21 @@ impl AstObject for Return {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        Some(match &self.value {
+            Ok(val) => val.span.clone(),
+            Err(tok) => tok.span.clone(),
+        })
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
+        self
     }
 
     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_return(self)
+        visitor.visit_return(self, self.span())
     }
 }
 
@@ -124,18 +81,25 @@ impl AstObject for ClassDef {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        Some(
+            self.name.span.start
+                ..self
+                    .body
+                    .last()
+                    .map(|node| node.span.end)
+                    .unwrap_or(self.name.span.end),
+        )
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
+        self
     }
 
     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_classdef(self)
+        visitor.visit_classdef(self, self.span())
     }
 }
 
@@ -152,18 +116,18 @@ impl AstObject for Assign {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        Some(self.name.span.start..self.value.span.end)
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
+        self
     }
 
     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_assign(self)
+        visitor.visit_assign(self, self.span())
     }
 }
 
@@ -207,7 +171,11 @@ impl AstObject for Module {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        match self.body.as_slice() {
+            [] => None,
+            [item] => item.span(),
+            [head, .., tail] => Some(head.span.start..tail.span.end),
+        }
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
@@ -218,7 +186,7 @@ impl AstObject for Module {
     where
         Self: Sized,
     {
-        visitor.visit_module(self)
+        visitor.visit_module(self, self.span())
     }
 }
 

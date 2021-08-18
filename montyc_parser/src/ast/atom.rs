@@ -34,11 +34,11 @@ impl AstObject for Atom {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        None
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
+        self
     }
 
     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
@@ -46,15 +46,15 @@ impl AstObject for Atom {
         Self: Sized,
     {
         match self {
-            Atom::None => visitor.visit_none(self),
-            Atom::Ellipsis => visitor.visit_ellipsis(self),
-            Atom::Int(_) => visitor.visit_int(self),
-            Atom::Str(_) => visitor.visit_str(self),
-            Atom::Bool(_) => visitor.visit_bool(self),
-            Atom::Float(_) => visitor.visit_float(self),
-            Atom::Tuple(_) => visitor.visit_tuple(self),
+            Atom::None => visitor.visit_none(self, self.span()),
+            Atom::Ellipsis => visitor.visit_ellipsis(self, self.span()),
+            Atom::Int(_) => visitor.visit_int(self, self.span()),
+            Atom::Str(_) => visitor.visit_str(self, self.span()),
+            Atom::Bool(_) => visitor.visit_bool(self, self.span()),
+            Atom::Float(_) => visitor.visit_float(self, self.span()),
+            Atom::Tuple(_) => visitor.visit_tuple(self, self.span()),
             Atom::Comment(_) => todo!(),
-            Atom::Name(_) => visitor.visit_name(self),
+            Atom::Name(_) => visitor.visit_name(self, self.span()),
         }
     }
 }

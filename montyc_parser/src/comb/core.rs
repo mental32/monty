@@ -54,10 +54,7 @@ pub fn expect(
     TokenStreamRef<'this, 'source, 'data>,
     Spanned<PyToken>,
 > {
-    move |stream: TokenStreamRef<'_, '_, '_>| {
-        let (stream, result) = expect(value)(stream)?;
-        Ok((stream, result))
-    }
+    move |stream: TokenStreamRef<'_, '_, '_>| expect_with(stream, |(t, _)| *t == value)
 }
 
 #[inline]

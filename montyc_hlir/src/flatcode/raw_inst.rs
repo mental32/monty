@@ -161,10 +161,11 @@ impl Display for RawInst {
                 name,
                 params,
                 returns,
-                sequence_id: _,
+                sequence_id,
             } => write!(
                 f,
-                "defn {:?} [{}] {:?}",
+                "defn({:?}) {:?} [{}] {:?}",
+                sequence_id,
                 name,
                 {
                     let p = params

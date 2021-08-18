@@ -19,6 +19,9 @@ pub struct ModuleData {
 
     /// equivalent to `__name__`
     pub name: String,
+
+    /// The module reference, used to refer to the module.
+    pub mref: ModuleRef,
 }
 
 /// A module object is a representation of a Python module.
@@ -36,7 +39,7 @@ impl ModuleObject {
     #[inline]
     pub fn new(path: PathBuf, ast: ast::Module, mref: ModuleRef, name: String) -> Self {
         Self {
-            data: Rc::new(ModuleData { path, name, ast }),
+            data: Rc::new(ModuleData { path, name, ast, mref }),
             mref,
         }
     }

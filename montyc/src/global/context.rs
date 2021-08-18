@@ -1,31 +1,19 @@
 use std::{
     cell::RefCell,
-    collections::HashSet,
     io,
-    iter::FromIterator,
     path::{Path, PathBuf},
     rc::Rc,
 };
 
-use ahash::AHashMap;
 use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef};
 use montyc_hlir::{
-    flatcode::FlatCode,
     interpreter::{self, HostGlue},
-    typing::TypingContext,
+    typing::{PythonType, TypingContext},
     ModuleData, ModuleObject, Value,
 };
-use montyc_parser::{
-    ast::{self, Import},
-    AstObject, SpanInterner,
-};
+use montyc_parser::SpanInterner;
 
-use crate::{
-    // lower::{fndef_to_hlir::FunctionContext, Lower},
-    prelude::*,
-    typechk::Typecheck,
-    value_context::ValueContext,
-};
+use crate::{prelude::*, value_context::ValueContext};
 
 use super::value_store::GlobalValueStore;
 
@@ -266,27 +254,29 @@ pub struct GlobalContext {
 impl GlobalContext {
     /// Initiate a new context with the given, verified, options.
     pub fn initialize(VerifiedCompilerOptions(opts): &VerifiedCompilerOptions) -> Self {
+        let const_runtime = Rc::new(RefCell::new(interpreter::Runtime::new(0x1000)));
         let mut gcx = Self {
             opts: opts.clone(),
             spanner: SpanInterner::new(),
             static_names: Default::default(),
             modules: SSAMap::new(),
             module_sources: Default::default(),
-            const_runtime: Rc::new(RefCell::new(interpreter::Runtime::new(0x1000))),
+            const_runtime: Rc::clone(&const_runtime),
             typing_context: RefCell::new(TypingContext::initialized()),
             value_store: RefCell::new(GlobalValueStore::default()),
         };
 
-        gcx.const_runtime.borrow_mut().initialize_monty_module(&gcx);
-
         gcx.modules.insert(RefCell::new(ModuleObject {
             mref: ModuleRef(0),
             data: Rc::new(ModuleData {
+                mref: ModuleRef(0),
                 ast: Default::default(),
                 path: PathBuf::default(),
                 name: String::from("__monty"),
             }),
         }));
+
+        const_runtime.borrow_mut().initialize_monty_module(&mut gcx);
 
         log::debug!("[global_context:initialize] {:?}", opts);
         log::debug!("[global_context:initialize] stdlib := {:?}", opts.libstd());
@@ -392,7 +382,7 @@ impl GlobalContext {
         self.load_module_with(path, name, |gcx, mref| -> MontyResult<ModuleRef> {
             let const_rt = gcx.const_runtime.clone();
 
-            let module_index = const_rt.borrow_mut().consteval(mref, gcx).unwrap();
+            let (module_index, module_code) = const_rt.borrow_mut().consteval(mref, gcx).unwrap();
             let object_graph = &const_rt.borrow().object_graph;
 
             let (mref, properties) = match object_graph
@@ -435,12 +425,15 @@ impl GlobalContext {
             for (key_idx, value_idx) in properties.iter_by_alloc_asc(&object_graph) {
                 let value = object_graph.node_weight(value_idx).unwrap();
 
-                let value_type = value.typecheck(ValueContext {
+                let value_type = ValueContext {
                     mref,
                     gcx,
+                    object_graph,
+                    code: &module_code,
                     value,
                     value_idx,
-                })?;
+                }
+                .typecheck()?;
 
                 if let Some(key) = object_graph
                     .node_weight(key_idx)
@@ -461,6 +454,10 @@ impl GlobalContext {
         .map_err(|err| MontyError::IO(err))?
     }
 
+    /// A "fancy path" is any colon-deliminated string describing a path to a function through it's modules.
+    ///
+    /// i.e. `__main__:main` would talk about a function called `main` in the module `__main__.py`
+    ///
     #[inline]
     pub(crate) fn resolve_fancy_path_to_modules(&self, path: impl AsRef<str>) -> Vec<ModuleRef> {
         let path = path.as_ref();
@@ -520,7 +517,7 @@ impl GlobalContext {
         }
 
         let store = self.value_store.borrow();
-        let (module_value_id, mref) = match self
+        let (module_value_id, _mref) = match self
             .resolve_fancy_path_to_modules(entry_path.as_str())
             .as_slice()
         {
@@ -531,14 +528,6 @@ impl GlobalContext {
 
         let entry_function = entry_path.split(":").last().unwrap();
         let module_object_graph = &self.const_runtime.borrow().object_graph;
-
-        // let module_ast_graph = self
-        //     .modules
-        //     .get(mref.clone())
-        //     .unwrap()
-        //     .borrow()
-        //     .body
-        //     .clone();
 
         let entry_function_value_index =
             store.with(module_value_id, module_object_graph, |module| {
@@ -554,75 +543,30 @@ impl GlobalContext {
             .alloc_id_of(entry_function_value_index)
             .unwrap();
 
-        let entry_function_value = module_object_graph
+        let _entry_function_value = module_object_graph
             .node_weight(entry_function_value_index)
             .unwrap();
 
-        todo!();
+        let entry_function_value_id = store.get_value_from_alloc(entry_function_alloc_id).unwrap();
 
-        // let entry_function_ast_index = if let Value::Function { defsite, .. } = entry_function_value
-        // {
-        //     let defsite = defsite.expect("Function must be defined in a source file.");
+        let tcx = self.typing_context.borrow();
+        let type_id = store.type_of(entry_function_value_id).unwrap();
 
-        //     assert!(defsite.subgraph_index.is_none());
+        {
+            let local_type_id = tcx.contextualize(type_id).unwrap();
 
-        //     defsite.node_index
-        // } else {
-        //     return Err(MontyError::TypeError {
-        //         module: mref.clone(),
-        //         error: TypeError::NotAFunction,
-        //     });
-        // };
+            match local_type_id.as_python_type() {
+                PythonType::Callable { args, ret } => match (args, ret.clone()) {
+                    (Some(_), _) => todo!("main function can not accept arguments."),
+                    (None, TypingContext::Int) | (None, TypingContext::None) => (),
+                    (None, _) => todo!("main must return either None or int."),
+                },
 
-        // let entry_function_value_id = store.get_value_from_alloc(entry_function_alloc_id).unwrap();
+                _ => unimplemented!(),
+            }
+        }
 
-        // let tcx = self.typing_context.borrow();
-        // let type_id = store.type_of(entry_function_value_id).unwrap();
-
-        // {
-        //     let local_type_id = tcx.contextualize(type_id).unwrap();
-
-        //     match local_type_id.as_python_type() {
-        //         PythonType::Callable { args, ret } => match (args, ret.clone()) {
-        //             (Some(_), _) => todo!("main function can not accept arguments."),
-        //             (None, TypingContext::Int) | (None, TypingContext::None) => (),
-        //             (None, _) => todo!("main must return either None or int."),
-        //         },
-
-        //         _ => unimplemented!(),
-        //     }
-        // }
-
-        // std::mem::drop(tcx);
-        // std::mem::drop(store);
-
-        // if let AstNode::FuncDef(fndef) = module_ast_graph
-        //     .node_weight(entry_function_ast_index)
-        //     .unwrap()
-        // {
-        //     let def_stack = {
-        //         self.value_store
-        //             .borrow_mut()
-        //             .function_rib_stack(entry_function_value_id)
-        //             .unwrap()
-        //     };
-
-        //     let cx = FunctionContext {
-        //         object_graph: module_object_graph,
-        //         value_index: entry_function_value_index,
-        //         value_alloc_id: entry_function_alloc_id,
-        //         type_id,
-        //         def_stack,
-        //         ast_index: UniqueNodeIndex {
-        //             subgraph_index: None,
-        //             node_index: entry_function_ast_index,
-        //         },
-        //     };
-
-        //     fndef.lower((cx, self))
-        // } else {
-        //     unreachable!();
-        // }
+        todo!("emit hlir::Function's that wrap FlatSeq's with semantic metadata.");
     }
 }
 
@@ -688,7 +632,8 @@ impl HostGlue for GlobalContext {
                             root.clone(),
                             root.file_name().unwrap().to_string_lossy(),
                             |_gcx, mref| mref,
-                        );
+                        )
+                        .unwrap();
                     }
                 }
 

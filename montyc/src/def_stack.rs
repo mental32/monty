@@ -7,6 +7,7 @@ pub type DefScope = AHashMap<u32, TypeId>;
 pub enum DefKind {
     Builtins,
     Global,
+    Parameters,
     Local,
 }
 
@@ -37,11 +38,10 @@ impl DefStack {
 
     /// Extend by adding multiple entries into one level.
     #[inline]
-    pub fn extend(&mut self, it: impl Iterator<Item = (u32, TypeId)>) {
+    pub fn extend(&mut self, kind: DefKind, it: impl Iterator<Item = (u32, TypeId)>) {
         let rib: AHashMap<_, _> = it.collect();
         log::trace!("[DefStack::add] extending rib={:?}", rib);
-
-        self.0.push((DefKind::Local, rib));
+        self.0.push((kind, rib));
     }
 
     /// Get the type associated with a name's span group.

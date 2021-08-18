@@ -45,8 +45,15 @@ pub fn return_stmt<'this, 'source, 'data>(
     let (stream, ret) = expect(PyToken::Return)(stream)?;
 
     let (stream, span_end, value) = match expression(stream) {
-        Ok((stream, value)) => (stream, value.span.end, Some(value)),
-        Err(_) => (stream, ret.span.end, None),
+        Ok((stream, value)) => (stream, value.span.end, Ok(value)),
+        Err(_) => (
+            stream,
+            ret.span.end,
+            Err(Spanned {
+                inner: (),
+                span: ret.span.clone(),
+            }),
+        ),
     };
 
     let inner = Return { value };

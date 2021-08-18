@@ -18,7 +18,14 @@ impl AstObject for If {
     }
 
     fn span(&self) -> Option<Span> {
-        None
+        Some(
+            self.test.span.start
+                ..self
+                    .body
+                    .last()
+                    .map(|node| node.span.end)
+                    .unwrap_or(self.test.span.end),
+        )
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
@@ -29,7 +36,7 @@ impl AstObject for If {
     where
         Self: Sized,
     {
-        visitor.visit_expr(&self.test.inner)
+        visitor.visit_expr(&self.test.inner, self.span())
     }
 }
 
@@ -45,17 +52,25 @@ impl AstObject for IfChain {
     }
 
     fn span(&self) -> Option<Span> {
-        todo!()
+        let head = &self.branches[0];
+        let tail = self
+            .orelse
+            .as_ref()
+            .and_then(|or| or.last().map(|node| node.span.end))
+            .or_else(|| self.branches.last().map(|br| br.span.end))
+            .unwrap_or(head.span.end);
+
+        Some(head.span.start..tail)
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-        todo!()
+        self
     }
 
     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_ifstmt(&self)
+        visitor.visit_ifstmt(self, self.span())
     }
 }

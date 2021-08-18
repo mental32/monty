@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use montyc_core::utils::SSAMap;
+use montyc_core::{utils::SSAMap, ModuleRef, SpanRef};
 use petgraph::graph::NodeIndex;
 
 use crate::{
@@ -8,18 +8,17 @@ use crate::{
         runtime::{ceval::ConstEvalContext, SharedMutAnyObject},
         HashKeyT, Runtime,
     },
-    ObjectGraph, ObjectGraphIndex, Value,
+    CallableSignature, ObjectGraph, ObjectGraphIndex, Value,
 };
 
 use super::{ObjAllocId, PyDictRaw, PyObject, PyResult, RawObject};
 
 type NativeFn = for<'rt> fn(&'rt ConstEvalContext, &[ObjAllocId]) -> PyResult<ObjAllocId>;
 
-#[allow(dead_code)] // TODO: Remove once it is used.
 pub(crate) enum Callable {
     Native(NativeFn),
     BoxedDyn(Box<dyn Fn(&ConstEvalContext, &[ObjAllocId]) -> PyResult<ObjAllocId>>),
-    SourceDef(usize),
+    SourceDef(ModuleRef, usize),
     Object(ObjAllocId),
 }
 
@@ -33,8 +32,11 @@ object! {
     struct Function {
         inner: Callable,
         name: String,
+        returns: ObjAllocId,
+        params: CallableSignature<ObjAllocId>,
         annotations: PyDictRaw<(ObjAllocId, ObjAllocId)>
     }
+
     fn into_value(
         &self,
         object_graph: &mut ObjectGraph,
@@ -44,6 +46,23 @@ object! {
             return idx;
         }
 
+        let ret_t = self.returns.into_value(object_graph, objects);
+        let args_t = self.params.as_ref().map(|(recv, params)| {
+            let mut out = Vec::with_capacity(params.len());
+
+            for (name, ann) in params.iter() {
+                let ann = ann.map(|alloc| alloc.into_value(object_graph, objects));
+                out.push((name.clone(), ann));
+            }
+
+            (recv.clone(), out.into_boxed_slice())
+        }).clone();
+
+        let source = match self.inner {
+            Callable::SourceDef(a, b) => Some((a, b)),
+            _ => None,
+        };
+
         object_graph.insert_node_traced(
             self.alloc_id(),
             |object_graph, _| {
@@ -51,10 +70,14 @@ object! {
 
                 Value::Function {
                     name,
-                    annotations: Default::default(),
+                    source,
+                    ret_t,
+                    args_t,
                     properties: Default::default(),
+                    annotations: Default::default(),
                 }
             },
+
             |object_graph, value| {
                 let p = self.header.into_value_dict(object_graph, objects);
 

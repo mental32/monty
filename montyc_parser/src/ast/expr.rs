@@ -128,7 +128,22 @@ impl AstObject for Expr {
     }
 
     fn span(&self) -> Option<Span> {
-        None
+        Some(match self {
+            Expr::BinOp { left, right, .. }
+            | Expr::If {
+                body: left,
+                orelse: right,
+                ..
+            } => left.span.start..right.span.end,
+
+            Expr::Named {
+                target: left,
+                value: right,
+            } => left.span.start..right.span.start,
+
+            Expr::Unary { value: inner, .. } => inner.span.clone(),
+            Expr::Primary(inner) => inner.span.clone(),
+        })
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
@@ -140,10 +155,10 @@ impl AstObject for Expr {
         Self: Sized,
     {
         match self {
-            Expr::If { .. } => visitor.visit_ternary(self),
-            Expr::BinOp { .. } => visitor.visit_binop(self),
-            Expr::Unary { .. } => visitor.visit_unary(self),
-            Expr::Named { .. } => visitor.visit_named_expr(self),
+            Expr::If { .. } => visitor.visit_ternary(self, self.span()),
+            Expr::BinOp { .. } => visitor.visit_binop(self, self.span()),
+            Expr::Unary { .. } => visitor.visit_unary(self, self.span()),
+            Expr::Named { .. } => visitor.visit_named_expr(self, self.span()),
             Expr::Primary(primary) => primary.visit_with(visitor),
         }
     }

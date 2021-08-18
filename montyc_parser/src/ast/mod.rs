@@ -2,6 +2,7 @@
 
 mod atom;
 mod expr;
+mod funcdef;
 mod ifstmt;
 mod import;
 mod primary;
@@ -146,55 +147,55 @@ where
 pub trait AstVisitor<T = ()> {
     fn visit_any(&mut self, _: &dyn AstObject) -> T;
 
-    fn visit_funcdef(&mut self, fndef: &FunctionDef) -> T {
+    fn visit_funcdef(&mut self, fndef: &FunctionDef, _span: Option<Span>) -> T {
         self.visit_any(fndef)
     }
 
-    fn visit_expr(&mut self, expr: &Expr) -> T {
+    fn visit_expr(&mut self, expr: &Expr, _span: Option<Span>) -> T {
         self.visit_any(expr)
     }
 
-    fn visit_int(&mut self, int: &Atom) -> T {
+    fn visit_int(&mut self, int: &Atom, _span: Option<Span>) -> T {
         self.visit_any(int)
     }
 
-    fn visit_float(&mut self, node: &Atom) -> T {
+    fn visit_float(&mut self, node: &Atom, _span: Option<Span>) -> T {
         self.visit_any(node)
     }
 
-    fn visit_str(&mut self, node: &Atom) -> T {
+    fn visit_str(&mut self, node: &Atom, _span: Option<Span>) -> T {
         self.visit_any(node)
     }
 
-    fn visit_none(&mut self, node: &Atom) -> T {
+    fn visit_none(&mut self, node: &Atom, _span: Option<Span>) -> T {
         self.visit_any(node)
     }
 
-    fn visit_name(&mut self, node: &Atom) -> T {
+    fn visit_name(&mut self, node: &Atom, _span: Option<Span>) -> T {
         self.visit_any(node)
     }
 
-    fn visit_tuple(&mut self, node: &Atom) -> T {
+    fn visit_tuple(&mut self, node: &Atom, _span: Option<Span>) -> T {
         self.visit_any(node)
     }
 
-    fn visit_ellipsis(&mut self, node: &Atom) -> T {
+    fn visit_ellipsis(&mut self, node: &Atom, _span: Option<Span>) -> T {
         self.visit_any(node)
     }
 
-    fn visit_bool(&mut self, node: &Atom) -> T {
+    fn visit_bool(&mut self, node: &Atom, _span: Option<Span>) -> T {
         self.visit_any(node)
     }
 
-    fn visit_import(&mut self, import: &Import) -> T {
+    fn visit_import(&mut self, import: &Import, _span: Option<Span>) -> T {
         self.visit_any(import)
     }
 
-    fn visit_classdef(&mut self, classdef: &ClassDef) -> T {
+    fn visit_classdef(&mut self, classdef: &ClassDef, _span: Option<Span>) -> T {
         self.visit_any(classdef)
     }
 
-    fn visit_ifstmt(&mut self, ifch: &IfChain) -> T {
+    fn visit_ifstmt(&mut self, ifch: &IfChain, _span: Option<Span>) -> T {
         self.visit_any(ifch)
     }
 
@@ -202,43 +203,43 @@ pub trait AstVisitor<T = ()> {
         self.visit_any(&Statement::Pass)
     }
 
-    fn visit_assign(&mut self, asn: &Assign) -> T {
+    fn visit_assign(&mut self, asn: &Assign, _span: Option<Span>) -> T {
         self.visit_any(asn)
     }
 
-    fn visit_return(&mut self, ret: &Return) -> T {
+    fn visit_return(&mut self, ret: &Return, _span: Option<Span>) -> T {
         self.visit_any(ret)
     }
 
-    fn visit_while(&mut self, while_: &While) -> T {
+    fn visit_while(&mut self, while_: &While, _span: Option<Span>) -> T {
         self.visit_any(while_)
     }
 
-    fn visit_binop(&mut self, expr: &Expr) -> T {
+    fn visit_binop(&mut self, expr: &Expr, _span: Option<Span>) -> T {
         self.visit_any(expr)
     }
 
-    fn visit_unary(&mut self, unary: &Expr) -> T {
+    fn visit_unary(&mut self, unary: &Expr, _span: Option<Span>) -> T {
         self.visit_any(unary)
     }
 
-    fn visit_ternary(&mut self, ternary: &Expr) -> T {
+    fn visit_ternary(&mut self, ternary: &Expr, _span: Option<Span>) -> T {
         self.visit_any(ternary)
     }
 
-    fn visit_named_expr(&mut self, expr: &Expr) -> T {
+    fn visit_named_expr(&mut self, expr: &Expr, _span: Option<Span>) -> T {
         self.visit_any(expr)
     }
 
-    fn visit_call(&mut self, call: &Primary) -> T {
+    fn visit_call(&mut self, call: &Primary, _span: Option<Span>) -> T {
         self.visit_any(call)
     }
 
-    fn visit_subscript(&mut self, call: &Primary) -> T {
+    fn visit_subscript(&mut self, call: &Primary, _span: Option<Span>) -> T {
         self.visit_any(call)
     }
 
-    fn visit_module(&mut self, module: &Module) -> T {
+    fn visit_module(&mut self, module: &Module, _span: Option<Span>) -> T {
         self.visit_any(module)
     }
 }

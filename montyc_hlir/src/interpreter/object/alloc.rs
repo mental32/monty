@@ -33,16 +33,6 @@ impl Default for ObjAllocId {
 }
 
 impl ObjAllocId {
-    pub(in crate::interpreter) fn setattr_static(
-        &mut self,
-        rt: &mut Runtime,
-        key: impl Hash,
-        value: ObjAllocId,
-    ) {
-        let hash = rt.hash(key);
-        self.set_attribute_direct(rt, hash, value, value);
-    }
-
     pub(in crate::interpreter) fn getattr_static(
         &self,
         rt: &Runtime,
