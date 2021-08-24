@@ -14,8 +14,8 @@
 
 mod grapher;
 
-pub mod code;
-pub mod flatcode;
+mod flatcode;
+mod func;
 pub mod interpreter;
 pub mod module_object;
 pub mod typing;
@@ -23,6 +23,13 @@ pub mod typing;
 use montyc_core::{ModuleRef, SpanRef, TypeId};
 
 use crate::interpreter::PyDictRaw;
+
+pub use flatcode::{
+    raw_inst::{Const, Dunder, RawInst},
+    FlatCode, FlatInst, FlatSeq,
+};
+
+pub use func::Function;
 
 pub use interpreter::runtime::object_graph::{ObjectGraph, ObjectGraphIndex};
 pub use interpreter::{HostGlue, ObjAllocId};

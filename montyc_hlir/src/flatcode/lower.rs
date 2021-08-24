@@ -545,8 +545,14 @@ impl AstVisitor<usize> for FlatCode {
         let object = value.visit_with(self);
         let index = index.visit_with(self);
 
-        let get_item = self.inst(RawInst::GetItem { object, index });
+        let get_item = self.inst(RawInst::GetDunder {
+            object,
+            dunder: Dunder::GetItem,
+        });
 
-        get_item
+        self.inst(RawInst::Call {
+            callable: get_item,
+            arguments: vec![object, index],
+        })
     }
 }

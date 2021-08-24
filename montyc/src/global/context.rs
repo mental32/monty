@@ -508,10 +508,10 @@ impl GlobalContext {
 
     /// From a given `entry` path, recursively lower all used functions into HLIR code.
     #[inline]
-    pub fn lower_functions_to_ir_starting_from(
+    pub fn lower_code_starting_from(
         &mut self,
         entry_path: String,
-    ) -> MontyResult<Vec<montyc_hlir::code::Function>> {
+    ) -> MontyResult<Vec<montyc_hlir::Function>> {
         if !entry_path.contains(":") {
             panic!("entry path must speciful at least one module.");
         }

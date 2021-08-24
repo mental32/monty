@@ -9,6 +9,8 @@ use montyc_parser::ast::{InfixOp, UnaryOp};
 pub enum Dunder {
     Unary(UnaryOp),
     Infix(InfixOp),
+    GetItem,
+    SetItem,
     DocComment,
 }
 
@@ -18,6 +20,8 @@ impl Display for Dunder {
             Dunder::Unary(_) => todo!(),
             Dunder::Infix(infix) => write!(f, "__{}__", infix.as_ref()),
             Dunder::DocComment => write!(f, "__doc__"),
+            Dunder::GetItem => write!(f, "__getitem__"),
+            Dunder::SetItem => write!(f, "__setitem__"),
         }
     }
 }
@@ -98,17 +102,16 @@ pub enum RawInst<V = usize, R = SpanRef> {
         value: V,
     },
 
-    GetItem {
-        object: V,
-        index: V,
-    },
+    // GetItem {
+    //     object: V,
+    //     index: V,
+    // },
 
-    SetItem {
-        object: V,
-        index: V,
-        value: V,
-    },
-
+    // SetItem {
+    //     object: V,
+    //     index: V,
+    //     value: V,
+    // },
     Import {
         path: Box<[R]>,
         relative: usize,
@@ -211,16 +214,15 @@ impl Display for RawInst {
                 value,
             } => write!(f, "set-dunder %{:?} {:?} %{:?}", object, dunder, value),
 
-            RawInst::GetItem { object, index } => {
-                write!(f, "get-item %{:?} %{:?}", object, index)
-            }
+            // RawInst::GetItem { object, index } => {
+            //     write!(f, "get-item %{:?} %{:?}", object, index)
+            // }
 
-            RawInst::SetItem {
-                object,
-                index,
-                value,
-            } => write!(f, "set-item {:?} %{:?} %{:?}", object, index, value),
-
+            // RawInst::SetItem {
+            //     object,
+            //     index,
+            //     value,
+            // } => write!(f, "set-item {:?} %{:?} %{:?}", object, index, value),
             RawInst::Import { path, relative: _ } => write!(f, "import {:?}", path),
             RawInst::Const(c) => write!(f, "const {}", c),
             RawInst::Nop => write!(f, "nop"),

@@ -424,18 +424,19 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                             let (key, hash) = self.string("__doc__")?;
                             object.set_attribute_direct(&mut self.runtime, hash, key, value)
                         }
+                        Dunder::GetItem => todo!(),
+                        Dunder::SetItem => todo!(),
                     }
 
                     inst_ix += 1;
                 }
 
-                RawInst::GetItem { object, index } => todo!(),
-                RawInst::SetItem {
-                    object,
-                    index,
-                    value,
-                } => todo!(),
-
+                // RawInst::GetItem { object, index } => todo!(),
+                // RawInst::SetItem {
+                //     object,
+                //     index,
+                //     value,
+                // } => todo!(),
                 RawInst::Return { value } => {
                     let value = values.get(*value).unwrap();
 

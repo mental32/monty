@@ -71,6 +71,15 @@ class str:
 
 
 @extern
+class tuple:
+    def __getitem__(self, _index: int) -> object:
+        ...
+
+    def __setitem__(self, _index: int, _value: object) -> object:
+        ...
+
+
+@extern
 def id(__obj: object) -> int:
     ...
 

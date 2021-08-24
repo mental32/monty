@@ -36,7 +36,7 @@ pub struct FlatInst<V = usize, R = SpanRef> {
 #[derive(Debug)]
 pub enum SequenceType {
     Module,
-    Class,
+    // Class,
     Function,
 }
 

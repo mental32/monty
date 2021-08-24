@@ -2,6 +2,9 @@
 
 #![allow(non_upper_case_globals)]
 
+use std::iter::FromIterator;
+
+use ahash::AHashSet;
 use montyc_core::{utils::SSAMap, SpanRef, TypeId};
 
 macro_rules! builtins {
@@ -74,7 +77,10 @@ builtins!(
     .8 = Unknown { "unknown", 0 },
     .9 = Type { "type", 8 },
     .10 = Object { "object", 8 },
-    .11 = UntypedFunc { "function", 0 },
+    .11 = TSelf { "self", 8 },
+    .12 = UntypedFunc { "function", 0 },
+    .13 = UntypedTuple { "tuple", 8 },
+    .14 = AnyType { "Any", 0 },
     // Primitive, lower-level types.
     .100 = U8 { "u8", 1 },
     .101 = U17 { "u16", 2 },
@@ -219,5 +225,96 @@ impl TypingContext {
 
             layout: ObjectLayout {},
         })
+    }
+
+    /// Create a typing.Union from an interator of type ids.
+    #[inline]
+    pub fn union_type(&mut self, members: &[TypeId]) -> TypeId {
+        let members = match members {
+            [] => None,
+            types => Some(types.to_owned()),
+        };
+
+        self.inner.insert(Type {
+            kind: PythonType::Union { members },
+            layout: ObjectLayout {},
+        })
+    }
+
+    /// Check if a type is a tuple.
+    #[inline]
+    pub fn is_tuple(&self, type_id: TypeId) -> bool {
+        type_id == Self::UntypedTuple || {
+            self.inner
+                .get(type_id)
+                .map(|ty| matches!(ty.kind, PythonType::Tuple { .. }))
+                .unwrap_or(false)
+        }
+    }
+
+    /// Construct a union type of `left` and `right`
+    #[inline]
+    pub fn make_union(&mut self, left: TypeId, right: TypeId) -> TypeId {
+        let lhs = match self.inner.get(left).unwrap().kind.clone() {
+            PythonType::Union { members } => Ok(members.unwrap_or_default()),
+            _ => Err(left),
+        };
+
+        let rhs = match self.inner.get(right).unwrap().kind.clone() {
+            PythonType::Union { members } => Ok(members.unwrap_or_default()),
+            _ => Err(right),
+        };
+
+        let it: Box<dyn Iterator<Item = TypeId>> = match (lhs, rhs) {
+            (Ok(a), Ok(b)) => Box::new(a.into_iter().chain(b.into_iter())),
+
+            (Err(b), Ok(a)) | (Ok(a), Err(b)) => Box::new(a.into_iter().chain(Some(b).into_iter())),
+
+            (Err(a), Err(b)) => Box::new(vec![a, b].into_iter()),
+        };
+
+        let members: AHashSet<TypeId> = AHashSet::from_iter(it);
+
+        let layout = ObjectLayout {};
+        let kind = PythonType::Union {
+            members: if members.is_empty() {
+                None
+            } else {
+                Some(Vec::from_iter(members.into_iter()))
+            },
+        };
+
+        self.inner.insert(Type { kind, layout })
+    }
+
+    /// Try to unify some callable type with the args and ret types.
+    #[inline]
+    pub fn unify_func(&self, func_t: TypeId, args: &[TypeId], ret: TypeId) -> Option<PythonType> {
+        let func_t = self.inner.get(func_t).unwrap();
+
+        let (params, f_ret) = match func_t.kind.clone() {
+            PythonType::Callable { args, ret } => (args.unwrap_or_default(), ret),
+            _ => return None,
+        };
+
+        if params.len() != args.len() || (ret != Self::Unknown && f_ret != ret) {
+            return None;
+        }
+
+        let (params, args) = match (params.as_slice(), args) {
+            ([Self::TSelf, params @ ..], [_, args @ ..]) => (params, args),
+            (params, args) => (params, args),
+        };
+
+        if params
+            .iter()
+            .cloned()
+            .zip(args.iter().cloned())
+            .all(|(l, r)| (l == Self::Unknown) || (l == r))
+        {
+            Some(func_t.kind.clone())
+        } else {
+            None
+        }
     }
 }

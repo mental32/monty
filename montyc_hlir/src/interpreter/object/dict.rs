@@ -76,13 +76,13 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
             let mut values = ahash::AHashMap::new();
 
             for (key, value) in self.0.values() {
-                log::trace!(
-                    "[PyDictRaw::iter_by_alloc_asc]\n{:?} -> {:#?}\n {:?} -> {:#?}",
-                    key,
-                    graph.node_weight(*key),
-                    value,
-                    graph.node_weight(*value)
-                );
+                // log::trace!(
+                //     "[PyDictRaw::iter_by_alloc_asc]\n{:?} -> {:#?}\n {:?} -> {:#?}",
+                //     key,
+                //     graph.node_weight(*key),
+                //     value,
+                //     graph.node_weight(*value)
+                // );
 
                 values.insert(*value, *key);
             }
