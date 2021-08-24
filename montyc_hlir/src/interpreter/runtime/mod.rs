@@ -8,6 +8,7 @@ use std::{
     rc::Rc,
 };
 
+use ahash::AHashMap;
 use montyc_core::{utils::SSAMap, ModuleRef};
 use montyc_parser::AstObject;
 use petgraph::graph::NodeIndex;
@@ -63,7 +64,7 @@ pub struct Runtime {
     builtins: ObjAllocId,
 
     /// A map of the imported modules <=> their module object.
-    modules: ahash::AHashMap<ModuleRef, ObjAllocId>,
+    modules: AHashMap<ModuleRef, ObjAllocId>,
 
     /// A graph of all the objects that act like as namespaces i.e. modules, classes, functions.
     pub(in crate::interpreter) scope_graph: ScopeGraph,
@@ -78,7 +79,7 @@ pub struct Runtime {
     pub object_graph: ObjectGraph,
 
     /// A map for interned strings.
-    strings: ahash::AHashMap<u64, ObjAllocId>,
+    strings: AHashMap<u64, ObjAllocId>,
 }
 
 impl Runtime {
@@ -236,11 +237,11 @@ impl Runtime {
 
             object_graph.insert_node_traced(
                 __monty,
-                move |graph, index| Value::Module {
+                move || Value::Module {
                     mref: ModuleRef(0),
                     properties: Default::default(),
                 },
-                |graph, value_mut| {
+                |graph, index| {
                     let mut properties = Default::default();
                     let properties = &mut properties;
 
@@ -250,7 +251,7 @@ impl Runtime {
                         .borrow()
                         .properties_into_values(graph, properties, objects);
 
-                    match value_mut(graph) {
+                    match graph.node_weight_mut(index).unwrap() {
                         Value::Module {
                             mref,
                             properties: slot,
@@ -379,7 +380,7 @@ impl Runtime {
 
         let module_index = self.object_graph.insert_node_traced(
             module_object,
-            |_, _| Value::Module {
+            || Value::Module {
                 mref,
                 properties: Default::default(),
             },

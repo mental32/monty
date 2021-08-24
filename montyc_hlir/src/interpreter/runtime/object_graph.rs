@@ -19,11 +19,6 @@ pub type ObjectGraphIndex = NodeIndex<u32>;
 /// A graph of objects in the program.
 #[derive(Debug, Default)]
 pub struct ObjectGraph {
-    /// Subgraphs of the object graph, these are made up of smaller graphs of the bodies of class and function definitions.
-    pub ast_subgraphs: AHashMap<NodeIndex, Rc<AstNodeGraph>>,
-
-    pending_nodes: usize,
-
     pub(crate) graph: DiGraph<Value, ()>,
     pub(crate) strings: AHashMap<u64, ObjectGraphIndex>,
     pub(crate) alloc_to_idx: AHashMap<ObjAllocId, ObjectGraphIndex>,
@@ -51,8 +46,8 @@ impl ObjectGraph {
     pub(crate) fn insert_node_traced(
         &mut self,
         alloc_id: ObjAllocId,
-        mut make_value: impl FnOnce(&mut Self, ObjectGraphIndex) -> Value,
-        mut mutate_value: impl FnOnce(&mut Self, &dyn Fn(&mut Self) -> &mut Value),
+        mut make_value: impl FnOnce() -> Value,
+        mut mutate_value: impl FnOnce(&mut Self, NodeIndex),
     ) -> ObjectGraphIndex {
         if let Some(idx) = self.alloc_to_idx.get(&alloc_id) {
             log::trace!(
@@ -62,26 +57,14 @@ impl ObjectGraph {
             return *idx;
         }
 
-        let current_nodes = self.graph.raw_nodes().len();
+        let value = make_value();
 
-        if self.pending_nodes <= self.graph.raw_nodes().len() {
-            self.pending_nodes = current_nodes;
-        } else {
-            self.pending_nodes += 1;
-        }
-
-        let index = NodeIndex::new(self.pending_nodes);
+        let index = self.graph.add_node(value);
         self.alloc_to_idx.insert(alloc_id, index);
 
-        let value = make_value(self, index);
+        mutate_value(self, index);
 
-        let real_index = self.graph.add_node(value);
-
-        assert_eq!(real_index, index, "Expected index did not match the pre-computed index, was something added to the graph whilst the Value was being created?");
-
-        mutate_value(self, &|s| s.graph.node_weight_mut(real_index).unwrap());
-
-        real_index
+        index
     }
 }
 

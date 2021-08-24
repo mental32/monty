@@ -27,11 +27,10 @@ object! {
         object_graph.strings.get(&hash).cloned().unwrap_or_else(|| {
             object_graph.insert_node_traced(
                 self.alloc_id(),
+                || Value::String(self.value.clone()),
                 |object_graph, index| {
                     object_graph.strings.insert(hash, index);
-                    Value::String(self.value.clone())
                 },
-                |_, _| {},
             )
         })
     }

@@ -17,7 +17,7 @@ object! {
     ) -> ObjectGraphIndex {
         object_graph.insert_node_traced(
             self.alloc_id(),
-            |_, _| Value::Integer(self.value),
+            || Value::Integer(self.value),
             |_, _| {},
         )
     }

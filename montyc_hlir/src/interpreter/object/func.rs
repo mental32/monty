@@ -65,7 +65,7 @@ object! {
 
         object_graph.insert_node_traced(
             self.alloc_id(),
-            |object_graph, _| {
+            || {
                 let name = self.name.clone();
 
                 Value::Function {
@@ -78,7 +78,7 @@ object! {
                 }
             },
 
-            |object_graph, value| {
+            |object_graph, index| {
                 let p = self.header.into_value_dict(object_graph, objects);
 
                 let mut ann: PyDictRaw<_> = Default::default();
@@ -94,7 +94,7 @@ object! {
                     properties,
                     annotations,
                     ..
-                } = value(object_graph)
+                } = object_graph.node_weight_mut(index).unwrap()
                 {
                     (properties, annotations)
                 } else {

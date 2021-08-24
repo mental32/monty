@@ -102,15 +102,15 @@ impl PyObject for RawObject {
         } else {
             object_graph.insert_node_traced(
                 self.alloc_id,
-                |_, _| {
+                || {
                     Value::Object(crate::Object {
                         type_id: TypingContext::Object,
                         properties: Default::default(),
                     })
                 },
-                |object_graph, value| {
+                |object_graph, index| {
                     let props = self.into_value_dict(object_graph, objects);
-                    if let Value::Object(object) = value(object_graph) {
+                    if let Value::Object(object) = object_graph.node_weight_mut(index).unwrap() {
                         object.properties = props;
                     } else {
                         unreachable!()

@@ -57,14 +57,15 @@ impl PyObject for ClassObj {
 
             object_graph.insert_node_traced(
                 self.alloc_id(),
-                move |_, _| crate::Value::Class {
+                move || crate::Value::Class {
                     name: name.clone(),
                     properties: Default::default(),
                 },
-                |object_graph, value| {
+                |object_graph, index| {
                     let props = self.header.into_value_dict(object_graph, objects);
+                    let value = object_graph.node_weight_mut(index).unwrap();
 
-                    match value(object_graph) {
+                    match value {
                         crate::Value::Class { properties, .. } => {
                             *properties = props;
                         }

@@ -45,9 +45,3 @@ impl From<(u32, u32)> for SpanRef {
         Self(l, r)
     }
 }
-
-impl From<u32> for SpanRef {
-    fn from(i: u32) -> Self {
-        Self(i, i)
-    }
-}

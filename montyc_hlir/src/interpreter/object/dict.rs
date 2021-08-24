@@ -76,14 +76,6 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
             let mut values = ahash::AHashMap::new();
 
             for (key, value) in self.0.values() {
-                // log::trace!(
-                //     "[PyDictRaw::iter_by_alloc_asc]\n{:?} -> {:#?}\n {:?} -> {:#?}",
-                //     key,
-                //     graph.node_weight(*key),
-                //     value,
-                //     graph.node_weight(*value)
-                // );
-
                 values.insert(*value, *key);
             }
 
@@ -155,16 +147,18 @@ impl PyObject for PyDict {
 
         object_graph.insert_node_traced(
             self.alloc_id(),
-            |_, _| Value::Dict {
+            || Value::Dict {
                 object: Default::default(),
                 data: Default::default(),
             },
-            |object_graph, v| {
+            |object_graph, index| {
                 let mut obj = self.header.into_value(object_graph, objects);
                 let mut dat = Default::default();
                 self.properties_into_values(object_graph, &mut dat, objects);
 
-                let (object, data) = if let Value::Dict { object, data } = v(object_graph) {
+                let (object, data) = if let Value::Dict { object, data } =
+                    object_graph.node_weight_mut(index).unwrap()
+                {
                     (object, data)
                 } else {
                     unreachable!();
