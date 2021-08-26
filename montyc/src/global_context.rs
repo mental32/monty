@@ -9,13 +9,12 @@ use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef};
 use montyc_hlir::{
     interpreter::{self, HostGlue},
     typing::{PythonType, TypingContext},
+    value_store::GlobalValueStore,
     ModuleData, ModuleObject, Value,
 };
 use montyc_parser::SpanInterner;
 
 use crate::{prelude::*, value_context::ValueContext};
-
-use super::value_store::GlobalValueStore;
 
 /// Statically known identifiers used to seed the span interner.
 const MAGICAL_NAMES: &[&'static str] = &[
@@ -248,13 +247,18 @@ pub struct GlobalContext {
     pub(crate) typing_context: RefCell<TypingContext>,
 
     /// A global caching store for all processed values.
-    pub(crate) value_store: RefCell<GlobalValueStore>,
+    pub(crate) value_store: Rc<RefCell<GlobalValueStore>>,
 }
 
 impl GlobalContext {
     /// Initiate a new context with the given, verified, options.
     pub fn initialize(VerifiedCompilerOptions(opts): &VerifiedCompilerOptions) -> Self {
-        let const_runtime = Rc::new(RefCell::new(interpreter::Runtime::new(0x1000)));
+        let value_store = Rc::new(RefCell::new(GlobalValueStore::default()));
+        let const_runtime = Rc::new(RefCell::new(interpreter::Runtime::new(
+            0x1000,
+            Rc::clone(&value_store) as Rc<_>,
+        )));
+
         let mut gcx = Self {
             opts: opts.clone(),
             spanner: SpanInterner::new(),
@@ -263,7 +267,7 @@ impl GlobalContext {
             module_sources: Default::default(),
             const_runtime: Rc::clone(&const_runtime),
             typing_context: RefCell::new(TypingContext::initialized()),
-            value_store: RefCell::new(GlobalValueStore::default()),
+            value_store,
         };
 
         gcx.modules.insert(RefCell::new(ModuleObject {
@@ -383,28 +387,18 @@ impl GlobalContext {
             let const_rt = gcx.const_runtime.clone();
 
             let (module_index, module_code) = const_rt.borrow_mut().consteval(mref, gcx).unwrap();
-            let object_graph = &const_rt.borrow().object_graph;
+            // let runtime = const_rt.borrow();
+            let mut store = gcx.value_store.borrow_mut();
 
-            let (mref, properties) = match object_graph
-                .node_weight(module_index)
-                .expect("missing module index.")
-            {
-                Value::Module { mref, properties } => (*mref, properties),
-                _ => unreachable!(),
-            };
-
-            let _module_alloc_id = object_graph.alloc_id_of(module_index).unwrap();
-            let module_value_id = gcx
-                .value_store
-                .borrow_mut()
-                .insert_module(module_index, &object_graph);
+            let _module_alloc_id = store.alloc_id_of(module_index).unwrap();
 
             let mut rib = {
-                let parent = object_graph.node_weight(module_index).unwrap();
+                let parent = store.value_graph.node_weight(module_index).unwrap();
                 let mut names = ahash::AHashMap::new();
 
                 for (_, (key, _)) in parent.iter() {
-                    let key = object_graph
+                    let key = store
+                        .value_graph
                         .node_weight(*key)
                         .map(|weight| match weight {
                             Value::String(st) => montyc_hlir::HostGlue::str_to_spanref(gcx, &st),
@@ -418,34 +412,40 @@ impl GlobalContext {
                 names
             };
 
-            gcx.value_store
-                .borrow_mut()
-                .set_rib_data_of(module_value_id, Some(rib.clone()));
+            store.metadata(module_index).rib.replace(rib.clone());
 
-            for (key_idx, value_idx) in properties.iter_by_alloc_asc(&object_graph) {
-                let value = object_graph.node_weight(value_idx).unwrap();
+            let (mref, properties) = match store
+                .value_graph
+                .node_weight(module_index)
+                .expect("missing module index.")
+            {
+                Value::Module { mref, properties } => (*mref, properties),
+                _ => unreachable!(),
+            };
+
+            for (key_idx, value_idx) in properties.iter_by_alloc_asc(&store) {
+                let value = &store.value_graph.node_weight(value_idx).unwrap().clone();
 
                 let value_type = ValueContext {
                     mref,
                     gcx,
-                    object_graph,
+                    value_store: &mut *store,
                     code: &module_code,
                     value,
                     value_idx,
                 }
                 .typecheck()?;
 
-                if let Some(key) = object_graph
+                if let Some(key) = store
+                    .value_graph
                     .node_weight(key_idx)
                     .map(|weight| match weight {
-                        Value::String(st) => montyc_hlir::HostGlue::str_to_spanref(gcx, st),
+                        Value::String(st) => montyc_hlir::HostGlue::str_to_spanref(gcx, &st),
                         _ => unreachable!(),
                     })
                 {
                     rib.insert(key.group(), value_type);
-                    gcx.value_store
-                        .borrow_mut()
-                        .set_rib_data_of(module_value_id, Some(rib.clone()));
+                    store.metadata(module_index).rib.replace(rib.clone());
                 }
             }
 
@@ -516,41 +516,31 @@ impl GlobalContext {
             panic!("entry path must speciful at least one module.");
         }
 
-        let store = self.value_store.borrow();
-        let (module_value_id, _mref) = match self
+        let mut store = self.value_store.borrow_mut();
+        let (module_value, _mref) = match self
             .resolve_fancy_path_to_modules(entry_path.as_str())
             .as_slice()
         {
             [] => todo!("could not find a module matching the path {:?}", entry_path),
-            [mref] => (store.get_module_value(mref.clone()), mref.clone()),
+            [mref] => (store.get(mref.clone()), mref.clone()),
             [_, ..] => todo!("ambiguity in resolving module."),
         };
 
         let entry_function = entry_path.split(":").last().unwrap();
-        let module_object_graph = &self.const_runtime.borrow().object_graph;
 
-        let entry_function_value_index =
-            store.with(module_value_id, module_object_graph, |module| {
-                let entry_function_hash = self.const_runtime.borrow().hash(entry_function);
-                let module_globals = module.properties();
+        let entry_function_value_index = {
+            let entry_function_hash = self.const_runtime.borrow().hash(entry_function);
 
-                let (_, entry_function_index) = module_globals.get(entry_function_hash).unwrap();
+            let module = module_value.unwrap();
+            let module_globals = module.properties();
 
-                entry_function_index
-            });
+            let (_, entry_function_index) = module_globals.get(entry_function_hash).unwrap();
 
-        let entry_function_alloc_id = module_object_graph
-            .alloc_id_of(entry_function_value_index)
-            .unwrap();
-
-        let _entry_function_value = module_object_graph
-            .node_weight(entry_function_value_index)
-            .unwrap();
-
-        let entry_function_value_id = store.get_value_from_alloc(entry_function_alloc_id).unwrap();
+            entry_function_index
+        };
 
         let tcx = self.typing_context.borrow();
-        let type_id = store.type_of(entry_function_value_id).unwrap();
+        let type_id = store.metadata(entry_function_value_index).type_id.unwrap();
 
         {
             let local_type_id = tcx.contextualize(type_id).unwrap();

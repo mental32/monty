@@ -1,29 +1,30 @@
 pub mod ceval;
-pub mod object_graph;
 pub mod scope_graph;
 
-use std::{
-    cell::RefCell,
-    hash::{BuildHasher, Hasher},
-    rc::Rc,
-};
+use std::cell::RefCell;
+use std::fmt::Debug;
+use std::hash::{BuildHasher, Hasher};
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 use ahash::AHashMap;
-use montyc_core::{utils::SSAMap, ModuleRef};
+use montyc_core::patma;
+use montyc_core::{utils::SSAMap, value, ModuleRef};
 use montyc_parser::AstObject;
 use petgraph::graph::NodeIndex;
 
 use self::scope_graph::{ScopeGraph, ScopeIndex};
 
+use super::object::ToValue;
 use super::{
     object::{
-        alloc::ObjAllocId, class::ClassObj, int::IntObj, string::StrObj, PyObject, RawObject,
+        self, alloc::ObjAllocId, class::ClassObj, int::IntObj, string::StrObj, PyObject, RawObject,
     },
     PyDictRaw, PyResult,
 };
 use crate::{
-    flatcode::FlatCode, interpreter::runtime::ceval::ConstEvalContext, HostGlue, ModuleData,
-    ModuleObject, ObjectGraph, ObjectGraphIndex, Value,
+    flatcode::FlatCode, interpreter::runtime::ceval::ConstEvalContext,
+    value_store::GlobalValueStore, HostGlue, ModuleData, ModuleObject, Value, ValueGraphIx,
 };
 
 pub(in crate::interpreter) type SharedMutAnyObject = Rc<RefCell<Rc<dyn PyObject>>>;
@@ -32,17 +33,18 @@ pub(in crate::interpreter) type ObjectMap = SSAMap<ObjAllocId, SharedMutAnyObjec
 #[derive(Debug, Default, Clone)]
 pub(in crate::interpreter) struct Singletons {
     // Modules
-    builtins: ObjAllocId,
-    monty: ObjAllocId,
+    pub(in crate::interpreter) builtins: ObjAllocId,
+    pub(in crate::interpreter) monty: ObjAllocId,
 
     // Classes
-    function_class: ObjAllocId,
-    module_class: ObjAllocId,
+    pub(in crate::interpreter) function_class: ObjAllocId,
+    pub(in crate::interpreter) module_class: ObjAllocId,
+    pub(in crate::interpreter) string_class: ObjAllocId,
 
     // Constants
-    none_v: ObjAllocId,
-    false_v: ObjAllocId,
-    true_v: ObjAllocId,
+    pub(in crate::interpreter) none_v: ObjAllocId,
+    pub(in crate::interpreter) false_v: ObjAllocId,
+    pub(in crate::interpreter) true_v: ObjAllocId,
 }
 
 /// An interpreter runtime capable of executing some Python.
@@ -75,8 +77,8 @@ pub struct Runtime {
     /// Easy access global singletons.
     pub(in crate::interpreter) singletons: Singletons,
 
-    /// A single output object graph is maintained in the runtime.
-    pub object_graph: ObjectGraph,
+    /// A reference to the shared global store where produced values are kept.
+    value_store: Rc<RefCell<GlobalValueStore>>,
 
     /// A map for interned strings.
     strings: AHashMap<u64, ObjAllocId>,
@@ -90,7 +92,7 @@ impl Runtime {
     /// for proper evaluation.
     ///
     #[inline]
-    pub fn new(op_ticks: usize) -> Self {
+    pub fn new(op_ticks: usize, value_store: Rc<RefCell<GlobalValueStore>>) -> Self {
         let mut objects = SSAMap::new();
         let mut internals = objects.reserve();
 
@@ -99,12 +101,12 @@ impl Runtime {
             internals,
             builtins: internals,
             objects,
-            singletons: Default::default(),
-            object_graph: Default::default(),
-            modules: Default::default(),
+            value_store,
             hash_state: ahash::RandomState::new(),
+            modules: Default::default(),
+            singletons: Default::default(),
             scope_graph: Default::default(),
-            builtins_scope: ScopeIndex::default(),
+            builtins_scope: Default::default(),
             strings: Default::default(),
         };
 
@@ -185,7 +187,8 @@ impl Runtime {
         let false_v = runtime.new_object_from_class(bool_class);
         runtime.singletons.false_v = false_v;
 
-        static_class!(str(object_class): ...);
+        runtime.singletons.string_class = static_class!(str(object_class): ...);
+
         static_class!(float(object_class): ...);
         static_class!(dict(object_class): ...);
         static_class!(function(object_class): ...);
@@ -229,38 +232,44 @@ impl Runtime {
                 __monty.set_attribute_direct(self, hash, extern_st, extern_func);
             }
 
-            let Self {
-                object_graph,
-                objects,
-                ..
-            } = self;
+            let mut value_store = self.value_store.borrow_mut();
 
-            object_graph.insert_node_traced(
-                __monty,
-                move || Value::Module {
+            let __monty_ix = {
+                let index = value_store.value_graph.add_node(Value::Module {
                     mref: ModuleRef(0),
                     properties: Default::default(),
-                },
-                |graph, index| {
-                    let mut properties = Default::default();
-                    let properties = &mut properties;
+                });
 
-                    let __monty = objects.get(__monty).unwrap();
+                value_store.alloc_data.insert(__monty, index);
+                value_store.module_data.insert(ModuleRef(0), index);
 
-                    __monty
-                        .borrow()
-                        .properties_into_values(graph, properties, objects);
+                value_store.metadata(index).alloc_id.replace(__monty);
 
-                    match graph.node_weight_mut(index).unwrap() {
-                        Value::Module {
-                            mref,
-                            properties: slot,
-                        } => std::mem::swap(properties, slot),
+                index
+            };
 
-                        _ => unreachable!(),
-                    }
-                },
-            );
+            let mut properties = {
+                let mut raw_value =
+                    <_ as ToValue>::into_raw_value(&(&*self, &__monty), &*value_store);
+
+                <_ as ToValue>::refine_value(
+                    &(&*self, &__monty),
+                    &mut raw_value,
+                    &mut value_store,
+                    __monty_ix,
+                );
+
+                patma!(o.properties, Value::Object(o) in raw_value).unwrap()
+            };
+
+            match value_store.value_graph.node_weight_mut(__monty_ix).unwrap() {
+                Value::Module {
+                    mref,
+                    properties: slot,
+                } => std::mem::swap(&mut properties, slot),
+
+                _ => unreachable!(),
+            }
         }
     }
 
@@ -350,7 +359,7 @@ impl Runtime {
         &'global mut self,
         mref: ModuleRef,
         gcx: &'global mut dyn HostGlue,
-    ) -> PyResult<(ObjectGraphIndex, FlatCode)> {
+    ) -> PyResult<(ValueGraphIx, FlatCode)> {
         let module = gcx
             .module_data(mref)
             .expect("Modules should always have associated data.");
@@ -358,10 +367,12 @@ impl Runtime {
         let mut code = FlatCode::new();
         module.ast.visit_with(&mut code);
 
+        let mut value_store = self.value_store.borrow_mut();
+
         if let Some(index) = self
             .modules
             .get(&mref)
-            .and_then(|alloc| self.object_graph.alloc_to_idx.get(alloc))
+            .and_then(|alloc| value_store.alloc_data.get(alloc))
         {
             return Ok((*index, code));
         }
@@ -378,14 +389,13 @@ impl Runtime {
             self.scope_graph.nest(module_scope, self.builtins_scope);
         }
 
-        let module_index = self.object_graph.insert_node_traced(
-            module_object,
-            || Value::Module {
-                mref,
-                properties: Default::default(),
-            },
-            |_, _| (),
-        );
+        let module_index = value_store.value_graph.add_node(Value::Module {
+            mref,
+            properties: Default::default(),
+        });
+
+        value_store.alloc_data.insert(module_object, module_index);
+        value_store.module_data.insert(mref, module_index);
 
         let module_type = self.singletons.module_class;
 
@@ -400,41 +410,57 @@ impl Runtime {
             )
             .unwrap();
 
+        std::mem::drop(value_store);
+
         let _ = ConstEvalContext::new(self, gcx, &code, module_object, &module)
             .eval()
             .unwrap();
 
-        self.object_graph
-            .alloc_to_idx
-            .insert(module_object, module_index);
+        let mut value_store = self.value_store.borrow_mut();
 
-        let mut properties = Default::default();
+        value_store.alloc_data.insert(module_object, module_index);
 
-        self.objects
-            .get(module_object)
-            .unwrap()
-            .borrow()
-            .properties_into_values(&mut self.object_graph, &mut properties, &self.objects);
+        let raw_value = {
+            let mut raw_value =
+                <_ as ToValue>::into_raw_value(&(&*self, &module_object), &*value_store);
 
-        self.objects
-            .get(module_object)
-            .unwrap()
-            .borrow()
-            .properties_into_values(&mut self.object_graph, &mut properties, &self.objects);
+            {
+                let m = self.objects.get(module_object).unwrap().borrow();
+                let m = m.as_any();
+                let m = m.downcast_ref::<RawObject>().unwrap();
+
+                for (_, (key, _)) in m.__dict__.iter() {
+                    assert_eq!(key.class_alloc_id(self), self.singletons.string_class);
+                }
+
+                <_ as ToValue>::refine_value(
+                    &(&*self, m),
+                    &mut raw_value,
+                    &mut value_store,
+                    module_index,
+                );
+            }
+
+            // <_ as ToValue>::refine_value(
+            //     &(&*self, &module_object),
+            //     &mut raw_value,
+            //     &mut value_store,
+            //     module_index,
+            // );
+
+            raw_value
+        };
 
         if let Some(Value::Module {
             properties: blank_properties,
             ..
-        }) = self.object_graph.node_weight_mut(module_index)
+        }) = value_store.value_graph.node_weight_mut(module_index)
         {
+            let mut properties = patma!(o.properties, Value::Object(o) in raw_value).unwrap();
+
             std::mem::swap(blank_properties, &mut properties);
         }
 
         Ok((module_index, code))
     }
-}
-
-#[cfg_attr(test, test)]
-fn test_runtime_new() {
-    let _ = Runtime::new(0);
 }

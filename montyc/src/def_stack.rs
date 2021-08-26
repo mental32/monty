@@ -3,53 +3,88 @@ use montyc_core::TypeId;
 
 pub type DefScope = AHashMap<u32, TypeId>;
 
+// -- DefKind
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefKind {
+    Empty,
     Builtins,
     Global,
     Parameters,
     Local,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct DefStack(Vec<(DefKind, DefScope)>);
+impl Default for DefKind {
+    fn default() -> Self {
+        Self::Builtins
+    }
+}
 
-impl DefStack {
+// -- ScopeChainIter
+
+pub struct ScopeChainIter<'a> {
+    name: u32,
+    kind: DefKind,
+    source: &'a ScopeChain,
+}
+
+impl<'a> Iterator for ScopeChainIter<'a> {
+    type Item = (TypeId, DefKind);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let kind = self.kind;
+
+        let namespace = match kind {
+            DefKind::Empty => return None,
+            DefKind::Builtins => &self.source.builtins,
+            DefKind::Global => &self.source.globals,
+            DefKind::Parameters => &self.source.parameters,
+            DefKind::Local => &self.source.locals,
+        };
+
+        self.kind = match kind {
+            DefKind::Empty => unreachable!(),
+            DefKind::Builtins => DefKind::Empty,
+            DefKind::Global => DefKind::Builtins,
+            DefKind::Parameters => DefKind::Global,
+            DefKind::Local => DefKind::Parameters,
+        };
+
+        match namespace.get(&self.name) {
+            Some(type_id) => {
+                return Some((*type_id, kind));
+            }
+
+            None => self.next(),
+        }
+    }
+}
+
+// -- ScopeChain
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ScopeChain {
+    pub builtins: DefScope,
+    pub globals: DefScope,
+    pub parameters: DefScope,
+    pub locals: DefScope,
+}
+
+impl ScopeChain {
     #[inline]
-    pub fn new(initial: Option<DefScope>, kind: Option<DefKind>) -> Self {
-        let initial = initial
-            .map(|r| vec![(kind.unwrap_or(DefKind::Global), r)])
-            .unwrap_or_default();
-
-        Self(initial)
+    pub fn new(builtins: DefScope) -> Self {
+        Self {
+            builtins,
+            ..Default::default()
+        }
     }
 
-    /// Associate a name's span group with a type.
     #[inline]
-    pub fn add(&mut self, key: u32, value: TypeId) {
-        log::trace!("[DefStack::add] adding unqiue key={:?} as {:?}", key, value);
-
-        self.0.push({
-            let mut rib = AHashMap::new();
-            rib.insert(key, value);
-            (DefKind::Local, rib)
-        });
-    }
-
-    /// Extend by adding multiple entries into one level.
-    #[inline]
-    pub fn extend(&mut self, kind: DefKind, it: impl Iterator<Item = (u32, TypeId)>) {
-        let rib: AHashMap<_, _> = it.collect();
-        log::trace!("[DefStack::add] extending rib={:?}", rib);
-        self.0.push((kind, rib));
-    }
-
-    /// Get the type associated with a name's span group.
-    #[inline]
-    pub fn get(&self, key: u32) -> Option<(TypeId, DefKind)> {
-        self.0
-            .iter()
-            .rev()
-            .find_map(|(kind, data)| data.get(&key).map(|v| (*v, *kind)))
+    pub fn lookup<'a>(&'a self, name: u32) -> impl Iterator<Item = (TypeId, DefKind)> + 'a {
+        ScopeChainIter {
+            name,
+            source: self,
+            kind: DefKind::Local,
+        }
     }
 }

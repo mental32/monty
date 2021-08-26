@@ -34,14 +34,6 @@ pub(in crate::interpreter) mod macros {
                     self.header.get_attribute_direct(rt, hash, key)
                 }
 
-                fn for_each(
-                    &self,
-                    rt: &mut ObjectGraph,
-                    f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
-                ) {
-                    self.header.for_each(rt, f)
-                }
-
                 fn as_any(&self) -> &dyn std::any::Any {
                     self
                 }
@@ -66,7 +58,7 @@ pub(in crate::interpreter) use raw::RawObject;
 
 pub use dict::PyDictRaw;
 
-use crate::{ObjectGraph, ObjectGraphIndex};
+use crate::value_store::{GlobalValueStore, ValueGraphIx};
 
 use super::{
     runtime::{ceval::ConstEvalContext, SharedMutAnyObject},
@@ -74,6 +66,22 @@ use super::{
 };
 
 pub use alloc::ObjAllocId;
+
+/// Used to handle conversions of PyObject's to Values
+pub(crate) trait ToValue {
+    fn contains(&self, store: &GlobalValueStore) -> Option<ValueGraphIx>;
+
+    fn into_raw_value(&self, store: &GlobalValueStore) -> crate::Value;
+
+    fn refine_value(
+        &self,
+        value: &mut crate::Value,
+        store: &mut GlobalValueStore,
+        value_ix: ValueGraphIx,
+    );
+
+    fn set_cache(&self, store: &mut GlobalValueStore, ix: ValueGraphIx);
+}
 
 /// An object safe base trait for all Python "objects".
 pub(in crate::interpreter) trait PyObject:
@@ -84,9 +92,13 @@ pub(in crate::interpreter) trait PyObject:
 
     /// The allocation ID for `self.__class__`.
     fn class_alloc_id(&self, rt: &Runtime) -> ObjAllocId {
-        rt.get_object(self.alloc_id())
-            .expect("non-existent object for alloc id.")
-            .class_alloc_id(rt)
+        if self.as_any().type_id() == core::any::TypeId::of::<ObjAllocId>() {
+            rt.get_object(self.alloc_id())
+                .expect("non-existent object for alloc id.")
+                .class_alloc_id(rt)
+        } else {
+            unimplemented!("class_alloc_id: {:?}", self);
+        }
     }
 
     /// `self.{key} = {value}` with `hash` being a separately-computed result of `key.__hash__()`.
@@ -121,35 +133,6 @@ pub(in crate::interpreter) trait PyObject:
         None
     }
 
-    /// Iterate through this objects `__dict__` and call `f` with the hash, key, and value of every entry.
-    fn for_each(
-        &self,
-        graph: &mut ObjectGraph,
-        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
-    );
-
-    /// Produce a `crate::Value` from this interpreter object.
-    fn into_value(
-        &self,
-        graph: &mut ObjectGraph,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) -> ObjectGraphIndex;
-
-    #[inline]
-    fn properties_into_values(
-        &self,
-        graph: &mut ObjectGraph,
-        properties: &mut PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) {
-        self.for_each(graph, &mut |graph, hash, key, value| {
-            let key = key.into_value(graph, objects);
-            let value = value.into_value(graph, objects);
-
-            properties.insert(hash, (key, value));
-        });
-    }
-
     /// Support for `obj[x] = y` or `obj.__setitem__(x, y)`
     fn set_item(
         &self,
@@ -175,5 +158,3 @@ pub(in crate::interpreter) trait PyObject:
 
     fn as_any(&self) -> &dyn std::any::Any;
 }
-
-pub(in crate::interpreter) trait PyObjectEx: PyObject {}

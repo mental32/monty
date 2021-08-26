@@ -8,10 +8,11 @@ use montyc_core::utils::SSAMap;
 
 use crate::{
     interpreter::{runtime::SharedMutAnyObject, HashKeyT, Runtime},
-    ObjectGraph, ObjectGraphIndex, Value,
+    value_store::GlobalValueStore,
+    Value, ValueGraphIx,
 };
 
-use super::{alloc::ObjAllocId, PyObject, RawObject};
+use super::{alloc::ObjAllocId, PyObject, RawObject, ToValue};
 
 /// A Python dict-like object that stores its values by a pre-computed hash.
 #[derive(Debug, Clone)]
@@ -66,12 +67,12 @@ where
     }
 }
 
-impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
+impl PyDictRaw<(ValueGraphIx, ValueGraphIx)> {
     /// Return an iterator of object indecies sorted by old to young.
     pub fn iter_by_alloc_asc(
         &self,
-        graph: &ObjectGraph,
-    ) -> impl Iterator<Item = (ObjectGraphIndex, ObjectGraphIndex)> {
+        graph: &GlobalValueStore,
+    ) -> impl Iterator<Item = (ValueGraphIx, ValueGraphIx)> {
         let values = {
             let mut values = ahash::AHashMap::new();
 
@@ -83,7 +84,7 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
         };
 
         let mut allocs: Vec<_> = graph
-            .alloc_to_idx
+            .alloc_data
             .iter()
             .filter_map(|(alloc, index)| values.get(index).map(|key| (*alloc, *index, *key)))
             .collect();
@@ -98,6 +99,74 @@ impl PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
 pub(in crate::interpreter) struct PyDict {
     pub header: RawObject,
     pub data: RefCell<PyDictRaw<(ObjAllocId, ObjAllocId)>>,
+}
+
+impl ToValue for (&Runtime, &PyDict) {
+    fn contains(&self, store: &crate::value_store::GlobalValueStore) -> Option<ValueGraphIx> {
+        todo!()
+    }
+
+    fn into_raw_value(&self, store: &crate::value_store::GlobalValueStore) -> crate::Value {
+        todo!()
+    }
+
+    fn refine_value(
+        &self,
+        value: &mut crate::Value,
+        store: &mut crate::value_store::GlobalValueStore,
+        value_ix: ValueGraphIx,
+    ) {
+        todo!()
+    }
+
+    fn set_cache(&self, store: &mut crate::value_store::GlobalValueStore, ix: ValueGraphIx) {
+        store.alloc_data.insert(self.1.alloc_id(), ix);
+    }
+    // fn for_each(
+    //     &self,
+    //     rt: &GlobalValueStore,
+    //     f: &mut dyn FnMut(&GlobalValueStore, HashKeyT, ObjAllocId, ObjAllocId),
+    // ) {
+    //     self.data
+    //         .borrow_mut()
+    //         .0
+    //         .iter()
+    //         .for_each(|(h, (k, v))| f(rt, *h, *k, *v))
+    // }
+
+    // fn into_value(
+    //     &self,
+    //     object_graph: &GlobalValueStore,
+    //     objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
+    // ) -> ValueGraphIx {
+    //     if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
+    //         return idx;
+    //     }
+
+    //     object_graph.insert_node_traced(
+    //         self.alloc_id(),
+    //         || Value::Dict {
+    //             object: Default::default(),
+    //             data: Default::default(),
+    //         },
+    //         |object_graph, index| {
+    //             let mut obj = self.header.into_value(object_graph, objects);
+    //             let mut dat = Default::default();
+    //             self.properties_into_values(object_graph, &mut dat, objects);
+
+    //             let (object, data) = if let Value::Dict { object, data } =
+    //                 object_graph.node_weight_mut(index).unwrap()
+    //             {
+    //                 (object, data)
+    //             } else {
+    //                 unreachable!();
+    //             };
+
+    //             std::mem::swap(&mut obj, object);
+    //             std::mem::swap(&mut dat, data);
+    //         },
+    //     )
+    // }
 }
 
 impl PyObject for PyDict {
@@ -122,52 +191,6 @@ impl PyObject for PyDict {
         _key: ObjAllocId,
     ) -> Option<ObjAllocId> {
         self.data.borrow_mut().get(hash).map(|kv| kv.0)
-    }
-
-    fn for_each(
-        &self,
-        rt: &mut ObjectGraph,
-        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
-    ) {
-        self.data
-            .borrow_mut()
-            .0
-            .iter()
-            .for_each(|(h, (k, v))| f(rt, *h, *k, *v))
-    }
-
-    fn into_value(
-        &self,
-        object_graph: &mut ObjectGraph,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) -> ObjectGraphIndex {
-        if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
-            return idx;
-        }
-
-        object_graph.insert_node_traced(
-            self.alloc_id(),
-            || Value::Dict {
-                object: Default::default(),
-                data: Default::default(),
-            },
-            |object_graph, index| {
-                let mut obj = self.header.into_value(object_graph, objects);
-                let mut dat = Default::default();
-                self.properties_into_values(object_graph, &mut dat, objects);
-
-                let (object, data) = if let Value::Dict { object, data } =
-                    object_graph.node_weight_mut(index).unwrap()
-                {
-                    (object, data)
-                } else {
-                    unreachable!();
-                };
-
-                std::mem::swap(&mut obj, object);
-                std::mem::swap(&mut dat, data);
-            },
-        )
     }
 
     fn set_item(

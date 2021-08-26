@@ -7,11 +7,11 @@ pub(crate) mod value_context;
 pub mod prelude {
     use super::*;
 
-    pub use global::context::GlobalContext;
+    pub use global_context::GlobalContext;
     pub use opts::{CompilerOptions, VerifiedCompilerOptions};
 }
 
-mod global;
+mod global_context;
 
 // pub(crate) mod utils {
 //     use std::rc::Rc;

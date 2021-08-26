@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use montyc_core::{utils::SSAMap, ModuleRef, SpanRef};
+use montyc_core::{patma, utils::SSAMap, ModuleRef, SpanRef};
 use petgraph::graph::NodeIndex;
 
 use crate::{
@@ -8,10 +8,10 @@ use crate::{
         runtime::{ceval::ConstEvalContext, SharedMutAnyObject},
         HashKeyT, Runtime,
     },
-    CallableSignature, ObjectGraph, ObjectGraphIndex, Value,
+    CallableSignature, Value, ValueGraphIx,
 };
 
-use super::{ObjAllocId, PyDictRaw, PyObject, PyResult, RawObject};
+use super::{ObjAllocId, PyDictRaw, PyObject, PyResult, RawObject, ToValue};
 
 type NativeFn = for<'rt> fn(&'rt ConstEvalContext, &[ObjAllocId]) -> PyResult<ObjAllocId>;
 
@@ -36,74 +36,80 @@ object! {
         params: CallableSignature<ObjAllocId>,
         annotations: PyDictRaw<(ObjAllocId, ObjAllocId)>
     }
+}
 
-    fn into_value(
-        &self,
-        object_graph: &mut ObjectGraph,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) -> ObjectGraphIndex {
-        if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
-            return idx;
-        }
+impl ToValue for (&Runtime, &Function) {
+    fn contains(&self, store: &crate::value_store::GlobalValueStore) -> Option<ValueGraphIx> {
+        store.alloc_data.get(&self.1.alloc_id()).cloned()
+    }
 
-        let ret_t = self.returns.into_value(object_graph, objects);
-        let args_t = self.params.as_ref().map(|(recv, params)| {
-            let mut out = Vec::with_capacity(params.len());
+    fn into_raw_value(&self, store: &crate::value_store::GlobalValueStore) -> crate::Value {
+        let (rt, this) = self;
 
-            for (name, ann) in params.iter() {
-                let ann = ann.map(|alloc| alloc.into_value(object_graph, objects));
-                out.push((name.clone(), ann));
-            }
-
-            (recv.clone(), out.into_boxed_slice())
-        }).clone();
-
-        let source = match self.inner {
+        let source = match this.inner {
             Callable::SourceDef(a, b) => Some((a, b)),
             _ => None,
         };
 
-        object_graph.insert_node_traced(
-            self.alloc_id(),
-            || {
-                let name = self.name.clone();
+        Value::Function {
+            source,
+            name: this.name.clone(),
+            ret_t: Default::default(),
+            args_t: Default::default(),
+            properties: Default::default(),
+            annotations: Default::default(),
+        }
+    }
 
-                Value::Function {
-                    name,
-                    source,
-                    ret_t,
-                    args_t,
-                    properties: Default::default(),
-                    annotations: Default::default(),
+    fn refine_value(
+        &self,
+        value: &mut crate::Value,
+        store: &mut crate::value_store::GlobalValueStore,
+        value_ix: ValueGraphIx,
+    ) {
+        let (rt, this) = self;
+
+        store.metadata(value_ix).alloc_id.replace(this.alloc_id());
+
+        let (props, ann, args, ret) =
+            patma!((p, a, args_t, ret_t), Value::Function { properties: p, annotations: a, args_t, ret_t, .. } in value).unwrap();
+
+        *ret = store.insert(&(*rt, &this.returns));
+
+        *args = this
+            .params
+            .as_ref()
+            .map(|(recv, params)| {
+                let mut out = Vec::with_capacity(params.len());
+
+                for (name, ann) in params.iter() {
+                    let ann = ann.map(|alloc| store.insert(&(*rt, &alloc)));
+                    out.push((name.clone(), ann));
                 }
-            },
 
-            |object_graph, index| {
-                let p = self.header.into_value_dict(object_graph, objects);
+                (recv.clone(), out.into_boxed_slice())
+            })
+            .clone();
 
-                let mut ann: PyDictRaw<_> = Default::default();
+        this.header
+            .__dict__
+            .iter()
+            .for_each(|(hash, (key, value))| {
+                let key = store.insert(&(*rt, key));
+                let value = store.insert(&(*rt, value));
 
-                self.annotations.0.iter().for_each(|(hash, (key, value))| {
-                    let key = key.into_value(object_graph, objects);
-                    let value = value.into_value(object_graph, objects);
+                props.insert(*hash, (key, value));
+            });
 
-                    ann.insert(*hash, (key, value));
-                });
+        this.annotations.0.iter().for_each(|(hash, (key, value))| {
+            let key = store.insert(&(*rt, key));
+            let value = store.insert(&(*rt, value));
 
-                let (properties, annotations) = if let Value::Function {
-                    properties,
-                    annotations,
-                    ..
-                } = object_graph.node_weight_mut(index).unwrap()
-                {
-                    (properties, annotations)
-                } else {
-                    unreachable!()
-                };
+            ann.insert(*hash, (key, value));
+        });
+    }
 
-                *properties = p;
-                *annotations = ann;
-            },
-        )
+    fn set_cache(&self, store: &mut crate::value_store::GlobalValueStore, ix: ValueGraphIx) {
+        store.alloc_data.insert(self.1.alloc_id(), ix);
     }
 }

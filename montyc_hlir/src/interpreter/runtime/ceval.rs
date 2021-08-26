@@ -282,15 +282,17 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     debug_assert_eq!(module, self.module);
 
                     for (group, (hash, key, value)) in frame_object.locals.drain() {
+                        assert_eq!(
+                            key.class_alloc_id(self.runtime),
+                            self.runtime.singletons.string_class
+                        );
+
                         module.set_attribute_direct(&mut self.runtime, hash, key, value);
                     }
 
                     module
                 } else {
-                    self.runtime
-                        .internals
-                        .getattr_static(&self.runtime, "none")
-                        .unwrap()
+                    self.runtime.singletons.none_v
                 };
             }
 
@@ -468,7 +470,7 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     let (mref, sr) = modules.first().unwrap();
 
                     let (object, _) = runtime.consteval(*mref, *host)?;
-                    let object = runtime.object_graph.alloc_id_of(object).unwrap();
+                    let object = runtime.value_store.borrow().alloc_id_of(object).unwrap();
 
                     let (st, hash) = self.string(
                         self.host

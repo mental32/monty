@@ -1,11 +1,14 @@
+use std::iter::FromIterator;
+
 use montyc_core::{ModuleRef, MontyError, MontyResult, TypeError, TypeId};
 use montyc_hlir::{
     typing::{PythonType, TypingContext},
-    Const, Dunder, FlatCode, ObjectGraph, ObjectGraphIndex, RawInst, Value,
+    value_store::{GlobalValueStore, ValueGraphIx},
+    Const, Dunder, FlatCode, RawInst, Value,
 };
 
 use crate::{
-    def_stack::{DefKind, DefScope, DefStack},
+    def_stack::{DefScope, ScopeChain},
     prelude::GlobalContext,
 };
 
@@ -13,18 +16,15 @@ use crate::{
 pub struct ValueContext<'this, 'gcx> {
     pub mref: ModuleRef,
     pub code: &'this FlatCode,
-    pub object_graph: &'gcx ObjectGraph,
+    pub value_store: &'gcx mut GlobalValueStore,
     pub gcx: &'gcx GlobalContext,
     pub value: &'this Value,
-    pub value_idx: ObjectGraphIndex,
+    pub value_idx: ValueGraphIx,
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
-    pub(crate) fn typecheck(&self) -> MontyResult<TypeId> {
-        let cx = self;
-        let object_graph = cx.object_graph;
-
-        match cx.value {
+    pub(crate) fn typecheck(self) -> MontyResult<TypeId> {
+        match self.value {
             Value::Function {
                 ret_t,
                 args_t,
@@ -32,30 +32,20 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                 name,
                 ..
             } => {
-                let value_id = cx.gcx.value_store.borrow_mut().insert_function(
-                    cx.value_idx,
-                    cx.mref,
-                    None,
-                    None,
-                    object_graph,
-                );
-
                 log::debug!("[ValueContext::typecheck] Typechecking function {:?}", name);
 
-                let mut store = cx.gcx.value_store.borrow_mut();
-
-                store.set_type_of(value_id, Some(TypingContext::UntypedFunc));
+                self.value_store
+                    .metadata(self.value_idx)
+                    .type_id
+                    .replace(TypingContext::UntypedFunc);
 
                 let return_type = {
-                    let value = object_graph.node_weight(*ret_t).unwrap();
-
-                    let value_id = store
-                        .get_value_from_alloc(object_graph.alloc_id_of(*ret_t).unwrap())
-                        .unwrap();
+                    let value = self.value_store.value_graph.node_weight(*ret_t).unwrap();
 
                     if let Value::Class { .. } = value {
-                        store
-                            .type_of(value_id)
+                        self.value_store
+                            .metadata(*ret_t)
+                            .type_id
                             .expect("class object does not have a type_id.")
                     } else {
                         panic!(
@@ -88,7 +78,7 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                         // true iff the spanref group was already present in the set.
                         if !seen.insert(arg.group()) {
                             return Err(MontyError::TypeError {
-                                module: cx.mref.clone(),
+                                module: self.mref.clone(),
                                 error: TypeError::DuplicateParameters,
                             });
                         }
@@ -98,12 +88,9 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                         }
 
                         match kind.clone() {
-                            Some(kind_value) => {
-                                let kind_alloc_id = object_graph.alloc_id_of(kind_value).unwrap();
-                                let kind_value_id =
-                                    store.get_value_from_alloc(kind_alloc_id).unwrap();
-
-                                let kind = store.type_of(kind_value_id).unwrap();
+                            Some(kind_value_ix) => {
+                                let kind =
+                                    self.value_store.metadata(kind_value_ix).type_id.unwrap();
 
                                 params.push((arg.group(), kind))
                             }
@@ -127,18 +114,22 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                     None
                 };
 
-                let func_type = cx
+                let func_type = self
                     .gcx
                     .typing_context
                     .borrow_mut()
                     .callable(arg_t, return_type);
 
-                store.set_type_of(value_id, Some(func_type));
+                self.value_store
+                    .metadata(self.value_idx)
+                    .type_id
+                    .replace(func_type);
 
                 // Don't typecheck the bodies of ellipsis-stubbed functions as they are
                 // essentially either "extern" declarations or nops.
                 let source = source.and_then(|(s_mref, seq)| {
-                    (s_mref == cx.mref && !cx.code.is_sequence_ellipsis_stubbed(seq)).then(|| seq)
+                    (s_mref == self.mref && !self.code.is_sequence_ellipsis_stubbed(seq))
+                        .then(|| seq)
                 });
 
                 let s = match source {
@@ -147,25 +138,24 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                 };
 
                 let mut def_stack = {
-                    if cx.mref != ModuleRef(1) {
-                        let module_value_id = store.get_module_value(ModuleRef(1));
-                        let builtin_rib = store.get_rib_data_of(module_value_id).unwrap();
+                    if self.mref != ModuleRef(1) {
+                        let builtin_rib =
+                            self.value_store.metadata(ModuleRef(1)).rib.clone().unwrap();
 
-                        DefStack::new(Some(builtin_rib), Some(DefKind::Builtins))
+                        ScopeChain::new(builtin_rib)
                     } else {
-                        DefStack::new(None, None)
+                        ScopeChain::new(Default::default())
                     }
                 };
 
                 {
-                    let module = store.get_module_value(cx.mref);
-                    let module_rib = store.get_rib_data_of(module).unwrap();
+                    let module_rib = self.value_store.metadata(self.mref).rib.clone().unwrap();
 
-                    def_stack.extend(DefKind::Global, module_rib.into_iter());
-                    def_stack.extend(DefKind::Parameters, params.into_iter());
+                    def_stack.globals.extend(module_rib);
+                    def_stack.parameters.extend(params);
                 }
 
-                let seq = cx.code.sequences().get(s).unwrap();
+                let seq = self.code.sequences().get(s).unwrap();
                 let mut seq_value_types = vec![TypingContext::Unknown; seq.inst().len()];
 
                 for (ix, inst) in seq.inst().iter().enumerate() {
@@ -175,7 +165,7 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                         RawInst::Class { .. } | RawInst::Defn { .. } => todo!(),
 
                         RawInst::UseVar { variable } => {
-                            let (var_t, _) = def_stack.get(variable.group()).unwrap();
+                            let (var_t, _) = def_stack.lookup(variable.group()).next().unwrap();
                             seq_value_types[ix] = var_t;
                         }
 
@@ -195,14 +185,19 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                                 })
                                 .collect::<Vec<_>>();
 
-                            let tcx = cx.gcx.typing_context.borrow();
+                            let tcx = self.gcx.typing_context.borrow();
 
                             if let Some(PythonType::Callable { ret, .. }) =
                                 tcx.unify_func(callable_type_id, &args, TypingContext::Unknown)
                             {
                                 seq_value_types[ix] = ret;
                             } else {
-                                todo!();
+                                todo!(
+                                    "{:?}",
+                                    tcx.contextualize(callable_type_id)
+                                        .unwrap()
+                                        .as_python_type()
+                                );
                             }
                         }
 
@@ -210,14 +205,17 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             let type_id = seq_value_types[*value];
                             assert_ne!(type_id, TypingContext::Unknown);
 
-                            def_stack.add(variable.group(), type_id);
+                            match def_stack.locals.insert(variable.group(), type_id) {
+                                None => (),
+                                Some(t) => assert_eq!(t, type_id),
+                            }
                         }
 
                         RawInst::GetAttribute { .. } => todo!(),
                         RawInst::SetAttribute { .. } => todo!(),
 
                         RawInst::GetDunder { object, dunder } => {
-                            let mut tcx = cx.gcx.typing_context.borrow_mut();
+                            let mut tcx = self.gcx.typing_context.borrow_mut();
 
                             let type_id = seq_value_types[*object];
                             assert_ne!(type_id, TypingContext::Unknown);
@@ -262,13 +260,12 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                                 continue;
                             }
 
-                            let (_, type_class_value) =
-                                store.class_of(type_id, cx.object_graph).unwrap();
+                            let type_class_value = self.value_store.get(type_id).unwrap();
 
                             let dunder_entry = match type_class_value {
                                 Value::Class { properties, .. } => {
                                     let hash =
-                                        cx.gcx.const_runtime.borrow().hash(format!("{}", dunder));
+                                        self.gcx.const_runtime.borrow().hash(format!("{}", dunder));
 
                                     properties.get(hash)
                                 }
@@ -277,9 +274,8 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             };
 
                             let (_, dunder_index) = dunder_entry.unwrap();
-                            let dunder_alloc = object_graph.alloc_id_of(dunder_index).unwrap();
-                            let dunder_value = store.get_value_from_alloc(dunder_alloc).unwrap();
-                            let dunder_type = store.type_of(dunder_value).unwrap();
+                            let dunder_type =
+                                self.value_store.metadata(dunder_index).type_id.unwrap();
 
                             seq_value_types[ix] = dunder_type;
                         }
@@ -298,18 +294,21 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                         }
 
                         RawInst::Tuple(elements) => {
-                            let mut tcx = cx.gcx.typing_context.borrow_mut();
+                            let mut tcx = self.gcx.typing_context.borrow_mut();
 
                             seq_value_types[ix] = tcx.tuple(
                                 elements.iter().map(|elem| seq_value_types[*elem]).collect(),
                             );
 
-                            let tuple_class = store
-                                .class_of(TypingContext::UntypedTuple, object_graph)
-                                .unwrap()
-                                .0;
+                            let (tuple_class, _) = <_ as montyc_hlir::value_store::GVKey>::resolve(
+                                &TypingContext::UntypedTuple,
+                                &*self.value_store,
+                            )
+                            .unwrap();
 
-                            store.set_class_of(seq_value_types[ix], tuple_class);
+                            self.value_store
+                                .type_data
+                                .insert(seq_value_types[ix], tuple_class);
                         }
 
                         RawInst::PhiJump { recv, value } => {
@@ -323,7 +322,7 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             if phi_t == TypingContext::Unknown {
                                 seq_value_types[recv] = value_t;
                             } else if phi_t != value_t {
-                                seq_value_types[recv] = cx
+                                seq_value_types[recv] = self
                                     .gcx
                                     .typing_context
                                     .borrow_mut()
@@ -335,7 +334,7 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             let type_id = seq_value_types[*value];
                             assert_ne!(type_id, TypingContext::Unknown);
 
-                            let tcx = cx.gcx.typing_context.borrow();
+                            let tcx = self.gcx.typing_context.borrow();
 
                             assert_eq!(
                                 type_id,
@@ -355,12 +354,16 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                     }
                 }
 
-                store.set_type_of(value_id, Some(func_type));
+                let meta = self.value_store.metadata(self.value_idx);
 
-                match store.function_rib_stack(value_id) {
-                    Ok(_) => unreachable!(),
-                    Err(slot) => slot.replace(def_stack),
-                };
+                meta.type_id.replace(func_type);
+                meta.rib
+                    .replace(<_ as FromIterator<(u32, TypeId)>>::from_iter(
+                        def_stack
+                            .parameters
+                            .into_iter()
+                            .chain(def_stack.locals.into_iter()),
+                    ));
 
                 Ok(func_type)
             }
@@ -371,12 +374,10 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                     name
                 );
 
-                let mut store = cx.gcx.value_store.borrow_mut();
+                let class_value_id = self.value_idx;
 
-                let alloc_id = object_graph.alloc_id_of(cx.value_idx).unwrap();
-                let class_value_id = store.insert(cx.value_idx, alloc_id);
                 let type_id = {
-                    if cx.mref == ModuleRef(1) {
+                    if self.mref == ModuleRef(1) {
                         // builtins
 
                         let type_id = match name.as_str() {
@@ -390,9 +391,9 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             name => todo!("custom builtin class is not supported yet {:?}", name),
                         };
 
-                        log::trace!("[Value::typecheck(ValueContext)] Setting value = {:?} as class of type = {:?}", class_value_id, type_id);
+                        log::trace!("[Value::typecheck(ValueContext)] Setting value = {:?} as class of {:?}", class_value_id, type_id);
 
-                        store.set_class_of(type_id, class_value_id);
+                        self.value_store.type_data.insert(type_id, class_value_id);
 
                         type_id
                     } else {
@@ -401,39 +402,48 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                     }
                 };
 
-                store.set_type_of(class_value_id, Some(type_id));
-                std::mem::drop(store);
+                self.value_store
+                    .metadata(class_value_id)
+                    .type_id
+                    .replace(type_id);
 
                 let mut rib = DefScope::default();
 
-                for (key_idx, value_idx) in properties.iter_by_alloc_asc(object_graph) {
-                    let value = object_graph.node_weight(value_idx).unwrap();
+                for (key_idx, value_idx) in properties.iter_by_alloc_asc(&self.value_store) {
+                    let value = &self
+                        .value_store
+                        .value_graph
+                        .node_weight(value_idx)
+                        .unwrap()
+                        .clone();
 
                     let value_type = ValueContext {
-                        mref: cx.mref,
-                        object_graph,
-                        gcx: cx.gcx,
-                        code: cx.code,
+                        mref: self.mref,
+                        value_store: self.value_store,
+                        gcx: self.gcx,
+                        code: self.code,
                         value,
                         value_idx,
                     }
                     .typecheck()?;
 
                     if let Some(key) =
-                        object_graph
+                        self.value_store
+                            .value_graph
                             .node_weight(key_idx)
                             .map(|weight| match weight {
                                 Value::String(st) => {
-                                    montyc_hlir::HostGlue::str_to_spanref(cx.gcx, st)
+                                    montyc_hlir::HostGlue::str_to_spanref(self.gcx, st)
                                 }
                                 _ => unreachable!(),
                             })
                     {
                         rib.insert(key.group(), value_type);
-                        cx.gcx
-                            .value_store
-                            .borrow_mut()
-                            .set_rib_data_of(class_value_id, Some(rib.clone()));
+
+                        self.value_store
+                            .metadata(class_value_id)
+                            .rib
+                            .replace(rib.clone());
                     }
                 }
 

@@ -1,82 +1,53 @@
-use montyc_core::utils::SSAMap;
+use montyc_core::{patma, utils::SSAMap};
 
 use crate::{
     interpreter::{runtime::SharedMutAnyObject, HashKeyT, Runtime},
-    ObjectGraph, ObjectGraphIndex,
+    Value, ValueGraphIx,
 };
 
-use super::{alloc::ObjAllocId, PyObject, RawObject};
+use super::{alloc::ObjAllocId, PyObject, RawObject, ToValue};
 
-#[derive(Debug)]
-pub(in crate::interpreter) struct ClassObj {
-    pub header: RawObject,
-    pub name: String,
+object! {
+    struct ClassObj {
+        name: String
+    }
 }
 
-impl PyObject for ClassObj {
-    fn alloc_id(&self) -> ObjAllocId {
-        self.header.alloc_id
+impl ToValue for (&Runtime, &ClassObj) {
+    fn contains(&self, store: &crate::value_store::GlobalValueStore) -> Option<ValueGraphIx> {
+        store.alloc_data.get(&self.1.alloc_id()).cloned()
     }
 
-    fn set_attribute_direct(
-        &mut self,
-        rt: &Runtime,
-        hash: HashKeyT,
-        key: ObjAllocId,
-        value: ObjAllocId,
-    ) {
-        self.header.set_attribute_direct(rt, hash, key, value)
-    }
-
-    fn get_attribute_direct(
-        &self,
-        rt: &Runtime,
-        hash: HashKeyT,
-        key: ObjAllocId,
-    ) -> Option<ObjAllocId> {
-        self.header.get_attribute_direct(rt, hash, key)
-    }
-
-    fn for_each(
-        &self,
-        object_graph: &mut ObjectGraph,
-        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
-    ) {
-        self.header.for_each(object_graph, f)
-    }
-
-    fn into_value(
-        &self,
-        object_graph: &mut ObjectGraph,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) -> ObjectGraphIndex {
-        if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
-            return idx;
-        } else {
-            let Self { header, name } = self;
-
-            object_graph.insert_node_traced(
-                self.alloc_id(),
-                move || crate::Value::Class {
-                    name: name.clone(),
-                    properties: Default::default(),
-                },
-                |object_graph, index| {
-                    let props = self.header.into_value_dict(object_graph, objects);
-                    let value = object_graph.node_weight_mut(index).unwrap();
-
-                    match value {
-                        crate::Value::Class { properties, .. } => {
-                            *properties = props;
-                        }
-                        v => unreachable!("{:?}", v),
-                    }
-                },
-            )
+    fn into_raw_value(&self, store: &crate::value_store::GlobalValueStore) -> Value {
+        Value::Class {
+            name: self.1.name.clone(),
+            properties: Default::default(),
         }
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn refine_value(
+        &self,
+        value: &mut Value,
+        store: &mut crate::value_store::GlobalValueStore,
+        value_ix: ValueGraphIx,
+    ) {
+        let (rt, this) = self;
+        let properties = patma!(p, Value::Class { properties: p, .. } in value).unwrap();
+
+        store.metadata(value_ix).alloc_id.replace(this.alloc_id());
+
+        this.header
+            .__dict__
+            .iter()
+            .for_each(|(hash, (key, value))| {
+                let key = store.insert(&(*rt, key));
+                let value = store.insert(&(*rt, value));
+
+                properties.insert(*hash, (key, value));
+            });
+    }
+
+    fn set_cache(&self, store: &mut crate::value_store::GlobalValueStore, ix: ValueGraphIx) {
+        store.alloc_data.insert(self.1.alloc_id(), ix);
     }
 }

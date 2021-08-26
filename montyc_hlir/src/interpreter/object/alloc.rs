@@ -13,10 +13,14 @@ use crate::{
         runtime::{ceval::ConstEvalContext, SharedMutAnyObject},
         HashKeyT, Runtime,
     },
-    ObjectGraph, ObjectGraphIndex,
+    ValueGraphIx,
 };
 
-use super::PyObject;
+use super::{
+    class::ClassObj, dict::PyDict, func::Function, int::IntObj, raw::RawObject, string::StrObj,
+};
+
+use super::{PyObject, ToValue};
 
 /// An `ObjAllocId` is a unique identifier for an object which also implements the `PyObject` trait for convenience.
 ///
@@ -69,6 +73,83 @@ impl ObjAllocId {
     }
 }
 
+impl ToValue for (&Runtime, &ObjAllocId) {
+    fn contains(&self, store: &crate::value_store::GlobalValueStore) -> Option<ValueGraphIx> {
+        let (rt, this) = *self;
+
+        this.as_ref(rt, |object| {
+            let any = object.as_any();
+
+            if let Some(st) = any.downcast_ref::<StrObj>() {
+                <_ as ToValue>::contains(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<IntObj>() {
+                <_ as ToValue>::contains(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<RawObject>() {
+                <_ as ToValue>::contains(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<Function>() {
+                <_ as ToValue>::contains(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<ClassObj>() {
+                <_ as ToValue>::contains(&(rt, st), store)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn into_raw_value(&self, store: &crate::value_store::GlobalValueStore) -> crate::Value {
+        let (rt, this) = *self;
+
+        this.as_ref(rt, |object| {
+            let any = object.as_any();
+
+            if let Some(st) = any.downcast_ref::<StrObj>() {
+                <_ as ToValue>::into_raw_value(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<IntObj>() {
+                <_ as ToValue>::into_raw_value(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<RawObject>() {
+                <_ as ToValue>::into_raw_value(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<Function>() {
+                <_ as ToValue>::into_raw_value(&(rt, st), store)
+            } else if let Some(st) = any.downcast_ref::<ClassObj>() {
+                <_ as ToValue>::into_raw_value(&(rt, st), store)
+            } else {
+                todo!();
+            }
+        })
+    }
+
+    fn refine_value(
+        &self,
+        value: &mut crate::Value,
+        store: &mut crate::value_store::GlobalValueStore,
+        value_ix: ValueGraphIx,
+    ) {
+        let (rt, this) = *self;
+
+        this.as_ref(rt, |object| {
+            let any = object.as_any();
+
+            if let Some(st) = any.downcast_ref::<StrObj>() {
+                <_ as ToValue>::refine_value(&(rt, st), value, store, value_ix)
+            } else if let Some(st) = any.downcast_ref::<IntObj>() {
+                <_ as ToValue>::refine_value(&(rt, st), value, store, value_ix)
+            } else if let Some(st) = any.downcast_ref::<RawObject>() {
+                <_ as ToValue>::refine_value(&(rt, st), value, store, value_ix)
+            } else if let Some(st) = any.downcast_ref::<Function>() {
+                <_ as ToValue>::refine_value(&(rt, st), value, store, value_ix)
+            } else if let Some(st) = any.downcast_ref::<ClassObj>() {
+                <_ as ToValue>::refine_value(&(rt, st), value, store, value_ix)
+            } else {
+                todo!();
+            }
+        })
+    }
+
+    fn set_cache(&self, store: &mut crate::value_store::GlobalValueStore, ix: ValueGraphIx) {
+        store.alloc_data.insert(self.1.alloc_id(), ix);
+    }
+}
+
 impl PyObject for ObjAllocId {
     fn alloc_id(&self) -> ObjAllocId {
         self.clone()
@@ -93,26 +174,6 @@ impl PyObject for ObjAllocId {
         rt.get_object(self.alloc_id())
             .unwrap()
             .get_attribute_direct(rt, hash, key)
-    }
-
-    fn for_each(
-        &self,
-        object_graph: &mut ObjectGraph,
-        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
-    ) {
-        unimplemented!("use rt.for_each(self, f)");
-    }
-
-    fn into_value(
-        &self,
-        graph: &mut ObjectGraph,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) -> ObjectGraphIndex {
-        objects
-            .get(self.alloc_id())
-            .expect("allocated objects should always exist.")
-            .borrow()
-            .into_value(graph, objects)
     }
 
     fn set_item(

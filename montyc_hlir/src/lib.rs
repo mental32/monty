@@ -19,8 +19,10 @@ mod func;
 pub mod interpreter;
 pub mod module_object;
 pub mod typing;
+pub mod value_store;
 
 use montyc_core::{ModuleRef, SpanRef, TypeId};
+use value_store::ValueGraphIx;
 
 use crate::interpreter::PyDictRaw;
 
@@ -31,7 +33,6 @@ pub use flatcode::{
 
 pub use func::Function;
 
-pub use interpreter::runtime::object_graph::{ObjectGraph, ObjectGraphIndex};
 pub use interpreter::{HostGlue, ObjAllocId};
 pub use module_object::*;
 
@@ -44,7 +45,7 @@ pub use module_object::*;
 pub struct Object {
     type_id: TypeId,
 
-    properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
+    properties: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
 }
 
 pub(crate) type CallableSignature<T> = Option<(Option<SpanRef>, Box<[(SpanRef, Option<T>)]>)>;
@@ -56,32 +57,32 @@ pub enum Value {
 
     Module {
         mref: ModuleRef,
-        properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
+        properties: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
     },
 
     String(String),
     Integer(i64),
 
     Dict {
-        object: ObjectGraphIndex,
-        data: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
+        object: ValueGraphIx,
+        data: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
     },
 
     Function {
         name: String,
 
-        ret_t: ObjectGraphIndex,
-        args_t: CallableSignature<ObjectGraphIndex>,
+        ret_t: ValueGraphIx,
+        args_t: CallableSignature<ValueGraphIx>,
 
         source: Option<(ModuleRef, usize)>,
 
-        properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
-        annotations: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
+        properties: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
+        annotations: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
     },
 
     Class {
         name: String,
-        properties: PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)>,
+        properties: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
     },
 }
 
@@ -90,12 +91,12 @@ impl Value {
     ///
     /// If `self` is a `Dict` then `iter()` will return an iterator over the hash, keys, and values of the dictionary.
     ///
-    pub fn iter(&self) -> impl Iterator<Item = (&u64, &(ObjectGraphIndex, ObjectGraphIndex))> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (&u64, &(ValueGraphIx, ValueGraphIx))> + '_ {
         self.properties().iter()
     }
 
     /// Get the properties dict of the value.
-    pub fn properties(&self) -> &PyDictRaw<(ObjectGraphIndex, ObjectGraphIndex)> {
+    pub fn properties(&self) -> &PyDictRaw<(ValueGraphIx, ValueGraphIx)> {
         match self {
             Value::Dict {
                 data: properties, ..

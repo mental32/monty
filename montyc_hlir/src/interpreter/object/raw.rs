@@ -1,15 +1,15 @@
 use std::{cell::RefCell, rc::Rc};
 
-use montyc_core::utils::SSAMap;
+use montyc_core::{patma, utils::SSAMap};
 use petgraph::graph::NodeIndex;
 
 use crate::{
     interpreter::{runtime::SharedMutAnyObject, HashKeyT, Runtime},
     typing::TypingContext,
-    ObjectGraph, ObjectGraphIndex, Value,
+    Value, ValueGraphIx,
 };
 
-use super::{dict::PyDictRaw, ObjAllocId, PyObject};
+use super::{dict::PyDictRaw, ObjAllocId, PyObject, ToValue};
 
 /// Fundemental object representation.
 #[derive(Debug)]
@@ -24,18 +24,51 @@ pub(in crate::interpreter) struct RawObject {
     pub __class__: ObjAllocId,
 }
 
-impl RawObject {
-    #[inline]
-    pub fn into_value_dict(
+impl ToValue for (&Runtime, &RawObject) {
+    fn contains(
         &self,
-        graph: &mut ObjectGraph,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) -> PyDictRaw<(NodeIndex, NodeIndex)> {
-        let mut properties: PyDictRaw<_> = Default::default();
+        store: &crate::value_store::GlobalValueStore,
+    ) -> Option<crate::value_store::ValueGraphIx> {
+        store.alloc_data.get(&self.1.alloc_id()).cloned()
+    }
 
-        self.properties_into_values(graph, &mut properties, objects);
+    fn into_raw_value(&self, store: &crate::value_store::GlobalValueStore) -> crate::Value {
+        Value::Object(crate::Object {
+            type_id: TypingContext::Object,
+            properties: Default::default(),
+        })
+    }
 
-        properties
+    fn refine_value(
+        &self,
+        value: &mut crate::Value,
+        store: &mut crate::value_store::GlobalValueStore,
+        value_ix: ValueGraphIx,
+    ) {
+        let (rt, this) = self;
+        let object = patma!(o, Value::Object(o) in value).unwrap();
+
+        store.metadata(value_ix).alloc_id.replace(this.alloc_id());
+
+        this.__dict__.iter().for_each(|(hash, (key, value))| {
+            let key = store.insert(&(*rt, key));
+            let value = store.insert(&(*rt, value));
+
+            {
+                let key_value = store.value_graph.node_weight(key);
+                debug_assert!(
+                    matches!(key_value, Some(Value::String(_))),
+                    "{:?}",
+                    rt.objects.get(store.alloc_id_of(key).unwrap())
+                );
+            }
+
+            object.properties.insert(*hash, (key, value));
+        });
+    }
+
+    fn set_cache(&self, store: &mut crate::value_store::GlobalValueStore, ix: ValueGraphIx) {
+        store.alloc_data.insert(self.1.alloc_id(), ix);
     }
 }
 
@@ -62,6 +95,10 @@ impl PyObject for RawObject {
         self.alloc_id
     }
 
+    fn class_alloc_id(&self, rt: &Runtime) -> ObjAllocId {
+        self.__class__
+    }
+
     fn set_attribute_direct(
         &mut self,
         _rt: &Runtime,
@@ -79,45 +116,6 @@ impl PyObject for RawObject {
         _key: ObjAllocId,
     ) -> Option<ObjAllocId> {
         self.__dict__.get(hash).map(|kv| kv.1)
-    }
-
-    fn for_each(
-        &self,
-        rt: &mut ObjectGraph,
-        f: &mut dyn FnMut(&mut ObjectGraph, HashKeyT, ObjAllocId, ObjAllocId),
-    ) {
-        self.__dict__
-            .0
-            .iter()
-            .for_each(|(h, (k, v))| f(rt, *h, *k, *v))
-    }
-
-    fn into_value(
-        &self,
-        object_graph: &mut ObjectGraph,
-        objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    ) -> ObjectGraphIndex {
-        if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
-            return idx;
-        } else {
-            object_graph.insert_node_traced(
-                self.alloc_id,
-                || {
-                    Value::Object(crate::Object {
-                        type_id: TypingContext::Object,
-                        properties: Default::default(),
-                    })
-                },
-                |object_graph, index| {
-                    let props = self.into_value_dict(object_graph, objects);
-                    if let Value::Object(object) = object_graph.node_weight_mut(index).unwrap() {
-                        object.properties = props;
-                    } else {
-                        unreachable!()
-                    }
-                },
-            )
-        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
