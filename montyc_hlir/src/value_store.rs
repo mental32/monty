@@ -59,6 +59,9 @@ pub struct ValueMetadata {
 
     /// The parent scope of this value.
     pub parent_scope: Option<ValueGraphIx>,
+
+    /// Associated code as a function.
+    pub function: Option<crate::func::Function>,
 }
 
 #[derive(Debug, Default)]

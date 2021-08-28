@@ -21,9 +21,9 @@ fn main() -> std::io::Result<()> {
     }
 
     if let CompilerOptions::Build {
-        output: _,
+        output,
         show_ir,
-        cc: _,
+        cc,
         ld: _,
         cranelift_settings: _,
         entry,
@@ -34,43 +34,21 @@ fn main() -> std::io::Result<()> {
 
         if let Some(_path) = show_ir.as_ref() {
             todo!("show_ir");
-        } else {
-            todo!("submit lowered functions to cranelift and produce a binary.");
         }
+
+        let object = todo!();
+
+        let cc = cc.unwrap_or("cc".into());
+
+        let output = output.unwrap_or_else(|| entry.split(":").last().unwrap().into());
+
+        let output = output.to_str().unwrap();
+
+        std::process::Command::new(cc)
+            .args(&[object, "-o", output, "-no-pie"])
+            .status()
+            .map(|_| ())?;
     }
-
-    //     let mut cctx = global_context.as_codegen_module();
-
-    //     if let Some(name) = show_ir_for {
-    //         cctx.build_pending_functions();
-
-    //         match cctx.get_func_named(name) {
-    //             Some(st) => eprintln!("{}", st),
-    //             None => eprintln!("No function found."),
-    //         }
-
-    //         std::process::exit(0);
-    //     }
-
-    //     let object = cctx.finish(None::<&str>);
-    //     let object = object.to_str().unwrap();
-
-    //     let cc = opts.cc.unwrap_or("cc".into());
-
-    //     let output = opts.output.unwrap_or_else(|| {
-    //         file.file_stem()
-    //             .unwrap()
-    //             .to_string_lossy()
-    //             .to_string()
-    //             .into()
-    //     });
-
-    //     let output = output.to_str().unwrap();
-
-    //     std::process::Command::new(cc)
-    //         .args(&[object, "-o", output, "-no-pie"])
-    //         .status()
-    //         .map(|_| ())
 
     Ok(())
 }

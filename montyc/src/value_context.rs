@@ -4,7 +4,7 @@ use montyc_core::{ModuleRef, MontyError, MontyResult, TypeError, TypeId};
 use montyc_hlir::{
     typing::{PythonType, TypingContext},
     value_store::{GlobalValueStore, ValueGraphIx},
-    Const, Dunder, FlatCode, RawInst, Value,
+    Const, Dunder, FlatCode, FlatSeq, RawInst, Value,
 };
 
 use crate::{
@@ -20,6 +20,195 @@ pub struct ValueContext<'this, 'gcx> {
     pub gcx: &'gcx GlobalContext,
     pub value: &'this Value,
     pub value_idx: ValueGraphIx,
+}
+
+fn typecheck_seq(
+    seq: &FlatSeq,
+    return_type: TypeId,
+    tcx: &mut TypingContext,
+    def_stack: &mut ScopeChain,
+    value_store: &mut GlobalValueStore,
+    rt: &montyc_hlir::interpreter::Runtime,
+) -> Vec<TypeId> {
+    let mut seq_value_types = vec![TypingContext::Unknown; seq.inst().len()];
+
+    for (ix, inst) in seq.inst().iter().enumerate() {
+        log::trace!("[ValueContext::typecheck] {:?}", inst);
+
+        match &inst.op {
+            RawInst::Class { .. } | RawInst::Defn { .. } => todo!(),
+
+            RawInst::UseVar { variable } => {
+                let (var_t, _) = def_stack.lookup(variable.group()).next().unwrap();
+                seq_value_types[ix] = var_t;
+            }
+
+            RawInst::Call {
+                callable,
+                arguments,
+            } => {
+                let callable_type_id = seq_value_types[*callable];
+                assert_ne!(callable_type_id, TypingContext::Unknown);
+
+                let args = arguments
+                    .iter()
+                    .map(|i| {
+                        let ty = seq_value_types[*i];
+                        assert_ne!(callable_type_id, TypingContext::Unknown);
+                        ty
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(PythonType::Callable { ret, .. }) =
+                    tcx.unify_func(callable_type_id, &args, TypingContext::Unknown)
+                {
+                    seq_value_types[ix] = ret;
+                } else {
+                    todo!(
+                        "{:?}",
+                        tcx.contextualize(callable_type_id)
+                            .unwrap()
+                            .as_python_type()
+                    );
+                }
+            }
+
+            RawInst::SetVar { variable, value } => {
+                let type_id = seq_value_types[*value];
+                assert_ne!(type_id, TypingContext::Unknown);
+
+                match def_stack.locals.insert(variable.group(), type_id) {
+                    None => (),
+                    Some(t) => assert_eq!(t, type_id),
+                }
+            }
+
+            RawInst::GetAttribute { .. } => todo!(),
+            RawInst::SetAttribute { .. } => todo!(),
+
+            RawInst::GetDunder { object, dunder } => {
+                let type_id = seq_value_types[*object];
+                assert_ne!(type_id, TypingContext::Unknown);
+
+                if tcx.is_tuple(type_id) {
+                    let ty = tcx.contextualize(type_id).unwrap();
+                    let py_kind = ty.as_python_type();
+
+                    let members = match py_kind {
+                        PythonType::Tuple { members } => members.clone().unwrap_or_default(),
+                        _ => unreachable!(),
+                    };
+
+                    seq_value_types[ix] = match dunder {
+                        Dunder::Unary(_) | Dunder::Infix(_) | Dunder::DocComment => {
+                            todo!()
+                        }
+
+                        Dunder::GetItem => {
+                            let ret = match members.as_slice() {
+                                [] => tcx.union_type(&members),
+                                [first, rest @ ..] => {
+                                    if rest.iter().all(|ty| *ty == *first) {
+                                        *first
+                                    } else {
+                                        tcx.union_type(&members)
+                                    }
+                                }
+                            };
+
+                            tcx.callable(Some(vec![TypingContext::TSelf, TypingContext::Int]), ret)
+                        }
+
+                        Dunder::SetItem => todo!(),
+                    };
+
+                    continue;
+                }
+
+                let type_class_value = value_store.get(type_id).unwrap();
+
+                let dunder_entry = match type_class_value {
+                    Value::Class { properties, .. } => {
+                        let hash = rt.hash(format!("{}", dunder));
+
+                        properties.get(hash)
+                    }
+
+                    _ => unreachable!(),
+                };
+
+                let (_, dunder_index) = dunder_entry.unwrap();
+                let dunder_type = value_store.metadata(dunder_index).type_id.unwrap();
+
+                seq_value_types[ix] = dunder_type;
+            }
+
+            RawInst::SetDunder { .. } | RawInst::Import { .. } => todo!(),
+
+            RawInst::Const(const_) => {
+                seq_value_types[ix] = match const_ {
+                    Const::Int(_) => TypingContext::Int,
+                    Const::Float(_) => TypingContext::Float,
+                    Const::Bool(_) => TypingContext::Bool,
+                    Const::String(_) => TypingContext::Str,
+                    Const::None => TypingContext::None,
+                    Const::Ellipsis => TypingContext::None,
+                };
+            }
+
+            RawInst::Tuple(elements) => {
+                seq_value_types[ix] =
+                    tcx.tuple(elements.iter().map(|elem| seq_value_types[*elem]).collect());
+
+                let (tuple_class, _) = <_ as montyc_hlir::value_store::GVKey>::resolve(
+                    &TypingContext::UntypedTuple,
+                    &*value_store,
+                )
+                .unwrap();
+
+                value_store
+                    .type_data
+                    .insert(seq_value_types[ix], tuple_class);
+            }
+
+            RawInst::PhiJump { recv, value } => {
+                let recv = *recv;
+
+                let value_t = seq_value_types[*value];
+                assert_ne!(value_t, TypingContext::Unknown);
+
+                let phi_t = seq_value_types[recv];
+
+                if phi_t == TypingContext::Unknown {
+                    seq_value_types[recv] = value_t;
+                } else if phi_t != value_t {
+                    seq_value_types[recv] = tcx.make_union(phi_t, value_t);
+                }
+            }
+
+            RawInst::Return { value } => {
+                let type_id = seq_value_types[*value];
+                assert_ne!(type_id, TypingContext::Unknown);
+
+                assert_eq!(
+                    type_id,
+                    return_type,
+                    "{:?}",
+                    tcx.contextualize(type_id).unwrap().as_python_type()
+                );
+
+                seq_value_types[ix] = TypingContext::Never;
+            }
+
+            RawInst::PhiRecv
+            | RawInst::Undefined
+            | RawInst::Nop
+            | RawInst::If { .. }
+            | RawInst::Br { .. } => continue,
+        }
+    }
+
+    seq_value_types
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
@@ -155,204 +344,15 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                     def_stack.parameters.extend(params);
                 }
 
-                let seq = self.code.sequences().get(s).unwrap();
-                let mut seq_value_types = vec![TypingContext::Unknown; seq.inst().len()];
-
-                for (ix, inst) in seq.inst().iter().enumerate() {
-                    log::trace!("[ValueContext::typecheck] {:?}", inst);
-
-                    match &inst.op {
-                        RawInst::Class { .. } | RawInst::Defn { .. } => todo!(),
-
-                        RawInst::UseVar { variable } => {
-                            let (var_t, _) = def_stack.lookup(variable.group()).next().unwrap();
-                            seq_value_types[ix] = var_t;
-                        }
-
-                        RawInst::Call {
-                            callable,
-                            arguments,
-                        } => {
-                            let callable_type_id = seq_value_types[*callable];
-                            assert_ne!(callable_type_id, TypingContext::Unknown);
-
-                            let args = arguments
-                                .iter()
-                                .map(|i| {
-                                    let ty = seq_value_types[*i];
-                                    assert_ne!(callable_type_id, TypingContext::Unknown);
-                                    ty
-                                })
-                                .collect::<Vec<_>>();
-
-                            let tcx = self.gcx.typing_context.borrow();
-
-                            if let Some(PythonType::Callable { ret, .. }) =
-                                tcx.unify_func(callable_type_id, &args, TypingContext::Unknown)
-                            {
-                                seq_value_types[ix] = ret;
-                            } else {
-                                todo!(
-                                    "{:?}",
-                                    tcx.contextualize(callable_type_id)
-                                        .unwrap()
-                                        .as_python_type()
-                                );
-                            }
-                        }
-
-                        RawInst::SetVar { variable, value } => {
-                            let type_id = seq_value_types[*value];
-                            assert_ne!(type_id, TypingContext::Unknown);
-
-                            match def_stack.locals.insert(variable.group(), type_id) {
-                                None => (),
-                                Some(t) => assert_eq!(t, type_id),
-                            }
-                        }
-
-                        RawInst::GetAttribute { .. } => todo!(),
-                        RawInst::SetAttribute { .. } => todo!(),
-
-                        RawInst::GetDunder { object, dunder } => {
-                            let mut tcx = self.gcx.typing_context.borrow_mut();
-
-                            let type_id = seq_value_types[*object];
-                            assert_ne!(type_id, TypingContext::Unknown);
-
-                            if tcx.is_tuple(type_id) {
-                                let ty = tcx.contextualize(type_id).unwrap();
-                                let py_kind = ty.as_python_type();
-
-                                let members = match py_kind {
-                                    PythonType::Tuple { members } => {
-                                        members.clone().unwrap_or_default()
-                                    }
-                                    _ => unreachable!(),
-                                };
-
-                                seq_value_types[ix] = match dunder {
-                                    Dunder::Unary(_) | Dunder::Infix(_) | Dunder::DocComment => {
-                                        todo!()
-                                    }
-
-                                    Dunder::GetItem => {
-                                        let ret = match members.as_slice() {
-                                            [] => tcx.union_type(&members),
-                                            [first, rest @ ..] => {
-                                                if rest.iter().all(|ty| *ty == *first) {
-                                                    *first
-                                                } else {
-                                                    tcx.union_type(&members)
-                                                }
-                                            }
-                                        };
-
-                                        tcx.callable(
-                                            Some(vec![TypingContext::TSelf, TypingContext::Int]),
-                                            ret,
-                                        )
-                                    }
-
-                                    Dunder::SetItem => todo!(),
-                                };
-
-                                continue;
-                            }
-
-                            let type_class_value = self.value_store.get(type_id).unwrap();
-
-                            let dunder_entry = match type_class_value {
-                                Value::Class { properties, .. } => {
-                                    let hash =
-                                        self.gcx.const_runtime.borrow().hash(format!("{}", dunder));
-
-                                    properties.get(hash)
-                                }
-
-                                _ => unreachable!(),
-                            };
-
-                            let (_, dunder_index) = dunder_entry.unwrap();
-                            let dunder_type =
-                                self.value_store.metadata(dunder_index).type_id.unwrap();
-
-                            seq_value_types[ix] = dunder_type;
-                        }
-
-                        RawInst::SetDunder { .. } | RawInst::Import { .. } => todo!(),
-
-                        RawInst::Const(const_) => {
-                            seq_value_types[ix] = match const_ {
-                                Const::Int(_) => TypingContext::Int,
-                                Const::Float(_) => TypingContext::Float,
-                                Const::Bool(_) => TypingContext::Bool,
-                                Const::String(_) => TypingContext::Str,
-                                Const::None => TypingContext::None,
-                                Const::Ellipsis => TypingContext::None,
-                            };
-                        }
-
-                        RawInst::Tuple(elements) => {
-                            let mut tcx = self.gcx.typing_context.borrow_mut();
-
-                            seq_value_types[ix] = tcx.tuple(
-                                elements.iter().map(|elem| seq_value_types[*elem]).collect(),
-                            );
-
-                            let (tuple_class, _) = <_ as montyc_hlir::value_store::GVKey>::resolve(
-                                &TypingContext::UntypedTuple,
-                                &*self.value_store,
-                            )
-                            .unwrap();
-
-                            self.value_store
-                                .type_data
-                                .insert(seq_value_types[ix], tuple_class);
-                        }
-
-                        RawInst::PhiJump { recv, value } => {
-                            let recv = *recv;
-
-                            let value_t = seq_value_types[*value];
-                            assert_ne!(value_t, TypingContext::Unknown);
-
-                            let phi_t = seq_value_types[recv];
-
-                            if phi_t == TypingContext::Unknown {
-                                seq_value_types[recv] = value_t;
-                            } else if phi_t != value_t {
-                                seq_value_types[recv] = self
-                                    .gcx
-                                    .typing_context
-                                    .borrow_mut()
-                                    .make_union(phi_t, value_t);
-                            }
-                        }
-
-                        RawInst::Return { value } => {
-                            let type_id = seq_value_types[*value];
-                            assert_ne!(type_id, TypingContext::Unknown);
-
-                            let tcx = self.gcx.typing_context.borrow();
-
-                            assert_eq!(
-                                type_id,
-                                return_type,
-                                "{:?}",
-                                tcx.contextualize(type_id).unwrap().as_python_type()
-                            );
-
-                            seq_value_types[ix] = TypingContext::Never;
-                        }
-
-                        RawInst::PhiRecv
-                        | RawInst::Undefined
-                        | RawInst::Nop
-                        | RawInst::If { .. }
-                        | RawInst::Br { .. } => continue,
-                    }
-                }
+                let seq = self.code.sequences()[s].clone();
+                let code_value_types = typecheck_seq(
+                    &seq,
+                    return_type,
+                    &mut *self.gcx.typing_context.borrow_mut(),
+                    &mut def_stack,
+                    self.value_store,
+                    &*self.gcx.const_runtime.borrow(),
+                );
 
                 let meta = self.value_store.metadata(self.value_idx);
 
@@ -364,6 +364,12 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             .into_iter()
                             .chain(def_stack.locals.into_iter()),
                     ));
+
+                meta.function.replace(montyc_hlir::Function {
+                    type_id: func_type,
+                    code: seq,
+                    code_value_types,
+                });
 
                 Ok(func_type)
             }

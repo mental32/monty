@@ -8,5 +8,9 @@ pub struct Function {
     /// The type signature of the function.
     pub type_id: TypeId,
 
-    code: FlatSeq,
+    /// The flatcode sequence of this function.
+    pub code: FlatSeq,
+
+    /// The types for the values in the code.
+    pub code_value_types: Vec<TypeId>,
 }

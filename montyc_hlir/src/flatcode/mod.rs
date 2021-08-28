@@ -33,7 +33,7 @@ pub struct FlatInst<V = usize, R = SpanRef> {
 }
 
 #[allow(missing_docs)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SequenceType {
     Module,
     // Class,
@@ -41,7 +41,7 @@ pub enum SequenceType {
 }
 
 /// A sequence of flatcode.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FlatSeq {
     pub(crate) inst: Vec<FlatInst>,
     kind: SequenceType,

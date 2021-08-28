@@ -556,6 +556,12 @@ impl GlobalContext {
             }
         }
 
+        let entry_function = store
+            .metadata(entry_function_value_index)
+            .function
+            .as_mut()
+            .unwrap();
+
         todo!("emit hlir::Function's that wrap FlatSeq's with semantic metadata.");
     }
 }
