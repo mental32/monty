@@ -14,6 +14,7 @@
 pub mod error;
 pub mod span;
 pub mod utils;
+pub mod glue;
 
 pub mod module {
     use std::convert::{TryFrom, TryInto};

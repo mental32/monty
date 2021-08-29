@@ -1,3 +1,5 @@
+use ahash::AHashSet;
+
 use montyc_core::TypeId;
 
 use crate::flatcode::FlatSeq;
@@ -13,4 +15,7 @@ pub struct Function {
 
     /// The types for the values in the code.
     pub code_value_types: Vec<TypeId>,
+
+    /// References to global data, i.e. other functions, static/const data, etc...
+    pub refs: AHashSet<ValueGraphIx>,
 }

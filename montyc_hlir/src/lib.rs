@@ -36,24 +36,15 @@ pub use func::Function;
 pub use interpreter::{HostGlue, ObjAllocId};
 pub use module_object::*;
 
-/// HLIR objects are dynamic/reflective representations of objects that we can typecheck and compile.
-///
-/// They represent an object during compilation and keep track of
-/// properties such as the object's type or attributes.
-///
-#[derive(Debug, Clone)]
-pub struct Object {
-    type_id: TypeId,
-
-    properties: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
-}
-
 pub(crate) type CallableSignature<T> = Option<(Option<SpanRef>, Box<[(SpanRef, Option<T>)]>)>;
 
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum Value {
-    Object(self::Object),
+    Object {
+        type_id: TypeId,
+        properties: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
+    },
 
     Module {
         mref: ModuleRef,

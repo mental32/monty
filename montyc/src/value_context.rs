@@ -1,5 +1,7 @@
 use std::iter::FromIterator;
 
+use ahash::AHashSet;
+
 use montyc_core::{ModuleRef, MontyError, MontyResult, TypeError, TypeId};
 use montyc_hlir::{
     typing::{PythonType, TypingContext},
@@ -23,24 +25,57 @@ pub struct ValueContext<'this, 'gcx> {
 }
 
 fn typecheck_seq(
-    seq: &FlatSeq,
+    mut seq: FlatSeq,
     return_type: TypeId,
     tcx: &mut TypingContext,
     def_stack: &mut ScopeChain,
     value_store: &mut GlobalValueStore,
     rt: &montyc_hlir::interpreter::Runtime,
-) -> Vec<TypeId> {
+    mref: ModuleRef,
+    value_ix: ValueGraphIx,
+    spanner: SpanInterner,
+) -> (FlatSeq, Vec<TypeId>) {
     let mut seq_value_types = vec![TypingContext::Unknown; seq.inst().len()];
+    let mut inst_iter = seq.inst().to_owned().into_iter().enumerate();
+    let mut refs = AHashSet::default();
 
-    for (ix, inst) in seq.inst().iter().enumerate() {
+    for (ix, inst) in inst_iter {
         log::trace!("[ValueContext::typecheck] {:?}", inst);
 
         match &inst.op {
+            RawInst::Privileged(_) => unreachable!("privileged instructions are already present in this sequence (they shouldn't be.)"),
             RawInst::Class { .. } | RawInst::Defn { .. } => todo!(),
 
             RawInst::UseVar { variable } => {
-                let (var_t, _) = def_stack.lookup(variable.group()).next().unwrap();
+                let (var_t, var_def) = def_stack.lookup(variable.group()).next().unwrap();
+
                 seq_value_types[ix] = var_t;
+
+                let inst = match var_def {
+                    DefKind::Local | DefKind::Parameters => {
+                        RawInst::Privileged(PrivInst::UseLocal { var: variable }),
+                    },
+
+                    DefKind::Global | DefKind::Builtin => {
+                        let mref = if matches!(var_def, DefKind::Global) { mref } else { ModueRef(1) };
+                        let val = if let Some(Value::Module { properties, .. }) = value_store.get(mref) {
+                            let hash = rt.hash({ spanner.str_to_spanref(variable.clone()) });
+                            let (_, val) = properties.get(hash).unwrap();
+
+                            val
+                        } else {
+                            unreachable!()
+                        };
+
+                        let _ = refs.insert(val);
+
+                        PrivInst::UseVar { val )
+                    }
+
+                    DefKind::Empty => unreachable!(),
+                }
+
+                seq.inst_mut()[ix] = RawInst::Privileged(inst);
             }
 
             RawInst::Call {
@@ -127,17 +162,22 @@ fn typecheck_seq(
 
                 let type_class_value = value_store.get(type_id).unwrap();
 
-                let dunder_entry = match type_class_value {
+                let (_, dunder_index) = match type_class_value {
                     Value::Class { properties, .. } => {
                         let hash = rt.hash(format!("{}", dunder));
-
-                        properties.get(hash)
+                        properties.get(hash).unwrap();
                     }
 
                     _ => unreachable!(),
                 };
 
-                let (_, dunder_index) = dunder_entry.unwrap();
+                seq.inst_mut()[ix] = {
+                    let val = dunder_index;
+                    let _ = refs.insert(val);
+
+                    RawInst::Privileged(PrivInst::RefVal { val })
+                };
+
                 let dunder_type = value_store.metadata(dunder_index).type_id.unwrap();
 
                 seq_value_types[ix] = dunder_type;
@@ -345,13 +385,16 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                 }
 
                 let seq = self.code.sequences()[s].clone();
-                let code_value_types = typecheck_seq(
-                    &seq,
+                let (code, code_value_types, refs) = typecheck_seq(
+                    seq,
                     return_type,
                     &mut *self.gcx.typing_context.borrow_mut(),
                     &mut def_stack,
                     self.value_store,
                     &*self.gcx.const_runtime.borrow(),
+                    cx.mref,
+                    cx.value_idx
+                    cx.gcx.span_interner.clone(),
                 );
 
                 let meta = self.value_store.metadata(self.value_idx);
@@ -367,8 +410,9 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
 
                 meta.function.replace(montyc_hlir::Function {
                     type_id: func_type,
-                    code: seq,
+                    code,
                     code_value_types,
+                    refs
                 });
 
                 Ok(func_type)

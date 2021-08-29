@@ -33,10 +33,10 @@ impl ToValue for (&Runtime, &RawObject) {
     }
 
     fn into_raw_value(&self, store: &crate::value_store::GlobalValueStore) -> crate::Value {
-        Value::Object(crate::Object {
+        Value::Object {
             type_id: TypingContext::Object,
             properties: Default::default(),
-        })
+        }
     }
 
     fn refine_value(

@@ -295,7 +295,7 @@ impl AstVisitor<usize> for FlatCode {
             .branches
             .iter()
             .map(|branch| {
-                let body_entry = self.inst(RawInst::Nop);
+                let body_entry = self.inst(RawInst::JumpTarget);
 
                 for node in branch.inner.body.iter() {
                     node.visit_with(self);
@@ -329,7 +329,7 @@ impl AstVisitor<usize> for FlatCode {
             }
         }
 
-        let after_if_ch = self.inst(RawInst::Nop);
+        let after_if_ch = self.inst(RawInst::JumpTarget);
 
         {
             let seq = self.sequences.get_mut(self.sequence_index).unwrap();
@@ -394,7 +394,7 @@ impl AstVisitor<usize> for FlatCode {
     }
 
     fn visit_while(&mut self, while_: &While, _: Option<Span>) -> usize {
-        let start = self.inst(RawInst::Nop);
+        let start = self.inst(RawInst::JumpTarget);
         let test = while_.test.inner.visit_with(self);
 
         let jump = self.inst(RawInst::If {
@@ -408,7 +408,7 @@ impl AstVisitor<usize> for FlatCode {
         }
 
         self.inst(RawInst::Br { to: start });
-        let or_else = self.inst(RawInst::Nop);
+        let or_else = self.inst(RawInst::JumpTarget);
 
         let seq = self.sequences.get_mut(self.sequence_index).unwrap();
 
@@ -467,8 +467,8 @@ impl AstVisitor<usize> for FlatCode {
         let true_value = body.visit_with(self);
         let after_value_jump_true = self.inst(RawInst::Br { to: INVALID_VALUE });
 
-        // dummy nop used as a jump target by the jump after the test.
-        let false_header = self.inst(RawInst::Nop);
+        // jump target by the jump after the test.
+        let false_header = self.inst(RawInst::JumpTarget);
 
         let false_value = orelse.visit_with(self);
         let after_value_jump_false = self.inst(RawInst::Br { to: INVALID_VALUE });

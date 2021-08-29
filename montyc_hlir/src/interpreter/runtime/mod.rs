@@ -207,12 +207,11 @@ impl Runtime {
     }
 
     /// Initialize the runtime with the builtin `__monty` module.
-    pub fn initialize_monty_module(&mut self, host: &mut dyn HostGlue) {
+    pub fn initialize_monty_module(&mut self, host: &mut dyn HostGlue, module_object: &ModuleData) {
         let mut __monty = self.singletons.monty;
 
         if __monty.getattr_static(self, "initialized").is_none() {
             {
-                let module_object = host.module_data(ModuleRef(0)).unwrap();
                 let code = FlatCode::default();
                 let mut cx = ConstEvalContext::new(self, host, &code, __monty, &module_object);
 
@@ -358,12 +357,9 @@ impl Runtime {
     pub fn consteval<'global, 'module>(
         &'global mut self,
         mref: ModuleRef,
+        module: &ModuleData,
         gcx: &'global mut dyn HostGlue,
     ) -> PyResult<(ValueGraphIx, FlatCode)> {
-        let module = gcx
-            .module_data(mref)
-            .expect("Modules should always have associated data.");
-
         let mut code = FlatCode::new();
         module.ast.visit_with(&mut code);
 

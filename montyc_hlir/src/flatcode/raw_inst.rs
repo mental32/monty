@@ -49,8 +49,23 @@ impl Display for Const {
     }
 }
 
+/// A "privileged" instruction is one that is used for specialization when analysis is perform on a FlatSeq.
+#[derive(Debug, Clone)]
+pub enum PrivInst<V = usize, R = SpanRef> {
+    /// Use a local variable named "var".
+    UseLocal { var: R },
+
+    /// Reference a global value by its value index.
+    RefVal { val: ValueGraphIx},
+
+    /// Emit a direct call to a value which is a callable such as a function.
+    CallVal { val: ValueGraphIx },
+}
+
 #[derive(Debug, Clone)]
 pub enum RawInst<V = usize, R = SpanRef> {
+    Privileged(PrivInst),
+
     /// Define a function like: `def {name}({params}) -> {returns}`
     Defn {
         name: R,
@@ -102,16 +117,6 @@ pub enum RawInst<V = usize, R = SpanRef> {
         value: V,
     },
 
-    // GetItem {
-    //     object: V,
-    //     index: V,
-    // },
-
-    // SetItem {
-    //     object: V,
-    //     index: V,
-    //     value: V,
-    // },
     Import {
         path: Box<[R]>,
         relative: usize,
@@ -141,6 +146,8 @@ pub enum RawInst<V = usize, R = SpanRef> {
         recv: V,
         value: V,
     },
+
+    JumpTarget,
 
     PhiRecv,
 
@@ -214,15 +221,6 @@ impl Display for RawInst {
                 value,
             } => write!(f, "set-dunder %{:?} {:?} %{:?}", object, dunder, value),
 
-            // RawInst::GetItem { object, index } => {
-            //     write!(f, "get-item %{:?} %{:?}", object, index)
-            // }
-
-            // RawInst::SetItem {
-            //     object,
-            //     index,
-            //     value,
-            // } => write!(f, "set-item {:?} %{:?} %{:?}", object, index, value),
             RawInst::Import { path, relative: _ } => write!(f, "import {:?}", path),
             RawInst::Const(c) => write!(f, "const {}", c),
             RawInst::Nop => write!(f, "nop"),

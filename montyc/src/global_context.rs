@@ -270,17 +270,19 @@ impl GlobalContext {
             value_store,
         };
 
+        let monty_mdata = Rc::new(ModuleData {
+            mref: ModuleRef(0),
+            ast: Default::default(),
+            path: PathBuf::default(),
+            name: String::from("__monty"),
+        });
+
         gcx.modules.insert(RefCell::new(ModuleObject {
             mref: ModuleRef(0),
-            data: Rc::new(ModuleData {
-                mref: ModuleRef(0),
-                ast: Default::default(),
-                path: PathBuf::default(),
-                name: String::from("__monty"),
-            }),
+            data: Rc::clone(&monty_mdata),
         }));
 
-        const_runtime.borrow_mut().initialize_monty_module(&mut gcx);
+        const_runtime.borrow_mut().initialize_monty_module(&mut gcx, monty_mdata.as_ref());
 
         log::debug!("[global_context:initialize] {:?}", opts);
         log::debug!("[global_context:initialize] stdlib := {:?}", opts.libstd());
@@ -385,12 +387,10 @@ impl GlobalContext {
         #[allow(unreachable_code)]
         self.load_module_with(path, name, |gcx, mref| -> MontyResult<ModuleRef> {
             let const_rt = gcx.const_runtime.clone();
+            let mdata = gcx.modules.get(mref).unwrap().data.clone();
 
-            let (module_index, module_code) = const_rt.borrow_mut().consteval(mref, gcx).unwrap();
-            // let runtime = const_rt.borrow();
+            let (module_index, module_code) = const_rt.borrow_mut().consteval(mref, mdata, gcx).unwrap();
             let mut store = gcx.value_store.borrow_mut();
-
-            let _module_alloc_id = store.alloc_id_of(module_index).unwrap();
 
             let mut rib = {
                 let parent = store.value_graph.node_weight(module_index).unwrap();
@@ -645,22 +645,5 @@ impl HostGlue for GlobalContext {
                 todo!("{:?}", import);
             }
         }
-    }
-
-    fn with_module_mut(
-        &self,
-        mref: ModuleRef,
-        f: &mut dyn FnMut(&mut montyc_hlir::ModuleObject) -> interpreter::PyResult<()>,
-    ) -> interpreter::PyResult<()> {
-        let module = self.modules.get(mref).unwrap();
-        let mut module = module.borrow_mut();
-
-        f(&mut *module)
-    }
-
-    fn module_data(&self, mref: ModuleRef) -> Option<montyc_hlir::ModuleData> {
-        Some(montyc_hlir::ModuleData::clone(
-            self.modules.get(mref)?.borrow().data.as_ref(),
-        ))
     }
 }
