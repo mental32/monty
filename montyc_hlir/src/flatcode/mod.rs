@@ -52,7 +52,7 @@ impl FlatSeq {
         self.inst.as_slice()
     }
 
-    pub fn inst_mut(&self) -> &mut [FlatInst] {
+    pub fn inst_mut(&mut self) -> &mut [FlatInst] {
         self.inst.as_mut_slice()
     }
 }

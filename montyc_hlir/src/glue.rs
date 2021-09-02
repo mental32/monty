@@ -1,11 +1,17 @@
-use std::fmt;
-use std::path::Path;
+//! A "glue" trait to be used by users of this crate for the interpreter.
 
-use crate::{span::SpanRef, module::ModuleRef};
+use std::path::Path;
+use std::{cell::RefCell, fmt};
+
+use montyc_core::{ModuleRef, SpanRef};
+
+use crate::value_store::ValueGraphIx;
+use crate::{typing::TypingContext, ModuleObject};
 
 /// A trait to be implemented by the owner of a runtime.
 pub trait HostGlue {
-    fn debug_fmt(&self, f: fmt::Formatter<'_>) -> fmt::Result {
+    /// The debug formatter hook.
+    fn debug_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HostGlue").finish()
     }
 
@@ -27,9 +33,18 @@ pub trait HostGlue {
         path: &[SpanRef],
         base: Option<(usize, &Path)>,
     ) -> Vec<(ModuleRef, SpanRef)>;
+
+    /// Try and get the associated module object to the supplied `mref`
+    fn get_module(&self, mref: ModuleRef) -> Option<ModuleObject>;
+
+    /// get a refcell to the typing context.
+    fn tcx(&self) -> &RefCell<TypingContext>;
+
+    /// get the fully qualified name for this function.
+    fn get_qualname(&self, func_ix: ValueGraphIx) -> Vec<String>;
 }
 
-impl fmt::Debug for dyn HostGlue {
+impl<'a> fmt::Debug for &'a mut dyn HostGlue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.debug_fmt(f)
     }

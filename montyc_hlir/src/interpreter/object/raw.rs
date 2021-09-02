@@ -46,7 +46,7 @@ impl ToValue for (&Runtime, &RawObject) {
         value_ix: ValueGraphIx,
     ) {
         let (rt, this) = self;
-        let object = patma!(o, Value::Object(o) in value).unwrap();
+        let properties = patma!(properties, Value::Object { properties, .. } in value).unwrap();
 
         store.metadata(value_ix).alloc_id.replace(this.alloc_id());
 
@@ -63,7 +63,7 @@ impl ToValue for (&Runtime, &RawObject) {
                 );
             }
 
-            object.properties.insert(*hash, (key, value));
+            properties.insert(*hash, (key, value));
         });
     }
 

@@ -31,7 +31,7 @@ impl std::fmt::Debug for Callable {
 object! {
     struct Function {
         inner: Callable,
-        name: String,
+        name: (String, Option<SpanRef>),
         returns: ObjAllocId,
         params: CallableSignature<ObjAllocId>,
         annotations: PyDictRaw<(ObjAllocId, ObjAllocId)>
@@ -51,13 +51,16 @@ impl ToValue for (&Runtime, &Function) {
             _ => None,
         };
 
+        let (string, spanref) = &this.name;
+
         Value::Function {
             source,
-            name: this.name.clone(),
+            name: spanref.ok_or(string.clone()),
             ret_t: Default::default(),
             args_t: Default::default(),
             properties: Default::default(),
             annotations: Default::default(),
+            class: Default::default(),
         }
     }
 

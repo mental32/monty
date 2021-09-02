@@ -16,6 +16,7 @@ mod grapher;
 
 mod flatcode;
 mod func;
+pub mod glue;
 pub mod interpreter;
 pub mod module_object;
 pub mod typing;
@@ -27,13 +28,13 @@ use value_store::ValueGraphIx;
 use crate::interpreter::PyDictRaw;
 
 pub use flatcode::{
-    raw_inst::{Const, Dunder, RawInst},
+    raw_inst::{Const, Dunder, PrivInst, RawInst},
     FlatCode, FlatInst, FlatSeq,
 };
 
 pub use func::Function;
 
-pub use interpreter::{HostGlue, ObjAllocId};
+pub use interpreter::ObjAllocId;
 pub use module_object::*;
 
 pub(crate) type CallableSignature<T> = Option<(Option<SpanRef>, Box<[(SpanRef, Option<T>)]>)>;
@@ -60,12 +61,14 @@ pub enum Value {
     },
 
     Function {
-        name: String,
+        name: Result<SpanRef, String>,
 
         ret_t: ValueGraphIx,
         args_t: CallableSignature<ValueGraphIx>,
 
         source: Option<(ModuleRef, usize)>,
+
+        class: Option<ValueGraphIx>,
 
         properties: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
         annotations: PyDictRaw<(ValueGraphIx, ValueGraphIx)>,
@@ -94,9 +97,8 @@ impl Value {
             }
             | Value::Module { properties, .. }
             | Value::Function { properties, .. }
+            | Value::Object { properties, .. }
             | Value::Class { properties, .. } => properties,
-
-            Value::Object(obj) => &obj.properties,
 
             Value::String(_) => todo!(),
             Value::Integer(_) => todo!(),

@@ -6,6 +6,7 @@ fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let opts = CompilerOptions::from_args();
+    let opts_cg = opts.codegen_settings();
     let opts2 = opts.clone().verify();
 
     let mut gcx = GlobalContext::initialize(&opts2);
@@ -30,22 +31,31 @@ fn main() -> std::io::Result<()> {
         ..
     } = opts
     {
-        let _functions = gcx.lower_code_starting_from(entry).unwrap();
+        let mut funcs = gcx.compute_dependency_graph(&entry).unwrap();
 
         if let Some(_path) = show_ir.as_ref() {
             todo!("show_ir");
         }
 
-        let object = todo!();
+        let object = {
+            let mut cg = montyc_codegen::prelude::CodegenModule::new();
+
+            for func in funcs.drain(..) {
+                cg.include_function(&mut gcx, func);
+            }
+
+            cg.finish(&mut gcx, None::<&str>, opts_cg)?
+        };
 
         let cc = cc.unwrap_or("cc".into());
 
-        let output = output.unwrap_or_else(|| entry.split(":").last().unwrap().into());
+        let object_path = &*object.to_string_lossy();
 
+        let output = output.unwrap_or_else(|| entry.split(":").last().unwrap().into());
         let output = output.to_str().unwrap();
 
         std::process::Command::new(cc)
-            .args(&[object, "-o", output, "-no-pie"])
+            .args(&[object_path, "-o", output, "-no-pie"])
             .status()
             .map(|_| ())?;
     }

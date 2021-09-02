@@ -1,6 +1,6 @@
-use super::*;
+use crate::pointer::{Pointer, PointerBase};
 
-use cranelift_codegen::ir::{Self, InstBuilder};
+use cranelift_codegen::ir::{self, InstBuilder};
 use cranelift_frontend::FunctionBuilder;
 
 use montyc_core::TypeId;
@@ -24,19 +24,19 @@ impl TValue {
 
         match place {
             ValuePlace::ByVal(val) => val,
-            ValuePlace::ByRef(ptr) => ptr.load_as(ir_type, 0, fx),
+            ValuePlace::ByRef(ptr) => ptr.load(ir_type, 0, fx),
         }
     }
 
-    pub fn addr(&self, fx: &mut FunctionBuilder) -> Value {
+    pub fn addr(&self, fx: &mut FunctionBuilder) -> ir::Value {
         let Self { place, ir_type, .. } = self;
-        
+
         match place {
             ValuePlace::ByVal(_) => unimplemented!("can not take the address of a direct value."),
             ValuePlace::ByRef(Pointer { base, .. }) => match base {
-                PointerBase::Address(addr) => addr,
-                PointerBase::Stack(stack_slot) => fx.ins().stack_addr(ir_type, stack_slot, 0)
-            }
+                PointerBase::Address(addr) => *addr,
+                PointerBase::Stack(stack_slot) => fx.ins().stack_addr(*ir_type, *stack_slot, 0),
+            },
         }
     }
 }

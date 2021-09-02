@@ -5,12 +5,13 @@ use std::{
     rc::Rc,
 };
 
-use montyc_core::{utils::SSAMap, ModuleRef, MontyError, MontyResult, SpanRef};
+use montyc_core::{patma, utils::SSAMap, ModuleData, ModuleRef, MontyError, MontyResult, SpanRef};
 use montyc_hlir::{
-    interpreter::{self, HostGlue},
+    glue::HostGlue,
+    interpreter,
     typing::{PythonType, TypingContext},
-    value_store::GlobalValueStore,
-    ModuleData, ModuleObject, Value,
+    value_store::{GlobalValueStore, ValueGraphIx},
+    ModuleObject, Value,
 };
 use montyc_parser::SpanInterner;
 
@@ -229,7 +230,7 @@ pub struct GlobalContext {
     opts: CompilerOptions,
 
     /// A Span interner shared between all parsing sessions.
-    spanner: SpanInterner,
+    pub(crate) spanner: SpanInterner,
 
     /// Static names that get loaded at startup.
     static_names: StaticNames,
@@ -272,17 +273,20 @@ impl GlobalContext {
 
         let monty_mdata = Rc::new(ModuleData {
             mref: ModuleRef(0),
-            ast: Default::default(),
             path: PathBuf::default(),
             name: String::from("__monty"),
+            qualname: vec![String::from("__monty")],
         });
 
         gcx.modules.insert(RefCell::new(ModuleObject {
             mref: ModuleRef(0),
             data: Rc::clone(&monty_mdata),
+            ast: Default::default(),
         }));
 
-        const_runtime.borrow_mut().initialize_monty_module(&mut gcx, monty_mdata.as_ref());
+        const_runtime
+            .borrow_mut()
+            .initialize_monty_module(&mut gcx, monty_mdata.as_ref());
 
         log::debug!("[global_context:initialize] {:?}", opts);
         log::debug!("[global_context:initialize] stdlib := {:?}", opts.libstd());
@@ -365,6 +369,7 @@ impl GlobalContext {
             module,
             mref,
             module_name.as_ref().to_string(),
+            vec![path.file_stem().unwrap().to_string_lossy().to_string()],
         );
 
         let _ = self.module_sources.insert(mref, source);
@@ -387,9 +392,10 @@ impl GlobalContext {
         #[allow(unreachable_code)]
         self.load_module_with(path, name, |gcx, mref| -> MontyResult<ModuleRef> {
             let const_rt = gcx.const_runtime.clone();
-            let mdata = gcx.modules.get(mref).unwrap().data.clone();
+            let mdata = gcx.modules.get(mref).unwrap().borrow().clone();
 
-            let (module_index, module_code) = const_rt.borrow_mut().consteval(mref, mdata, gcx).unwrap();
+            let (module_index, module_code) = const_rt.borrow_mut().consteval(&mdata, gcx).unwrap();
+
             let mut store = gcx.value_store.borrow_mut();
 
             let mut rib = {
@@ -401,7 +407,7 @@ impl GlobalContext {
                         .value_graph
                         .node_weight(*key)
                         .map(|weight| match weight {
-                            Value::String(st) => montyc_hlir::HostGlue::str_to_spanref(gcx, &st),
+                            Value::String(st) => HostGlue::str_to_spanref(gcx, &st),
                             _ => unreachable!(),
                         })
                         .unwrap();
@@ -440,7 +446,7 @@ impl GlobalContext {
                     .value_graph
                     .node_weight(key_idx)
                     .map(|weight| match weight {
-                        Value::String(st) => montyc_hlir::HostGlue::str_to_spanref(gcx, &st),
+                        Value::String(st) => HostGlue::str_to_spanref(gcx, &st),
                         _ => unreachable!(),
                     })
                 {
@@ -508,18 +514,16 @@ impl GlobalContext {
 
     /// From a given `entry` path, recursively lower all used functions into HLIR code.
     #[inline]
-    pub fn lower_code_starting_from(
+    pub fn compute_dependency_graph(
         &mut self,
-        entry_path: String,
+        entry_path: &str,
     ) -> MontyResult<Vec<montyc_hlir::Function>> {
         if !entry_path.contains(":") {
             panic!("entry path must speciful at least one module.");
         }
 
         let mut store = self.value_store.borrow_mut();
-        let (module_value, _mref) = match self
-            .resolve_fancy_path_to_modules(entry_path.as_str())
-            .as_slice()
+        let (module_value, _mref) = match self.resolve_fancy_path_to_modules(entry_path).as_slice()
         {
             [] => todo!("could not find a module matching the path {:?}", entry_path),
             [mref] => (store.get(mref.clone()), mref.clone()),
@@ -543,7 +547,7 @@ impl GlobalContext {
         let type_id = store.metadata(entry_function_value_index).type_id.unwrap();
 
         {
-            let local_type_id = tcx.contextualize(type_id).unwrap();
+            let local_type_id = tcx.get(type_id).unwrap();
 
             match local_type_id.as_python_type() {
                 PythonType::Callable { args, ret } => match (args, ret.clone()) {
@@ -556,13 +560,56 @@ impl GlobalContext {
             }
         }
 
-        let entry_function = store
-            .metadata(entry_function_value_index)
-            .function
-            .as_mut()
-            .unwrap();
+        let mut collected_functions = ahash::AHashMap::with_capacity(1024);
+        let mut functions_to_process = vec![entry_function_value_index];
 
-        todo!("emit hlir::Function's that wrap FlatSeq's with semantic metadata.");
+        loop {
+            let func_ix = match functions_to_process.pop() {
+                Some(func_ix) => func_ix,
+                None => break,
+            };
+
+            if collected_functions.contains_key(&func_ix) {
+                continue;
+            }
+
+            let refs = match &store.metadata(func_ix).function {
+                Some(f) => f.refs.clone(),
+                None => unreachable!(),
+            };
+
+            for value_ref in refs.iter().cloned() {
+                let is_function = store
+                    .get(value_ref)
+                    .map(|func| matches!(func, Value::Function { .. }))
+                    .unwrap_or(false);
+
+                let metadata = store.metadata(value_ref);
+                let func = match (is_function, &metadata.function) {
+                    (true, None) => {
+                        unimplemented!(
+                            "function value should have code metadata: {:#?}",
+                            store.get(value_ref)
+                        )
+                    }
+
+                    (true, Some(func)) => func.clone(),
+                    (false, _) => continue,
+                };
+
+                collected_functions.insert(value_ref, func);
+            }
+        }
+
+        collected_functions.insert(entry_function_value_index, {
+            store
+                .metadata(entry_function_value_index)
+                .function
+                .clone()
+                .unwrap()
+        });
+
+        Ok(collected_functions.drain().map(|(_, v)| v).collect())
     }
 }
 
@@ -644,6 +691,58 @@ impl HostGlue for GlobalContext {
 
                 todo!("{:?}", import);
             }
+        }
+    }
+
+    fn get_module(&self, mref: ModuleRef) -> Option<ModuleObject> {
+        let data = &*self.modules.get(mref)?.borrow();
+
+        Some(data.clone())
+    }
+
+    fn tcx(&self) -> &RefCell<TypingContext> {
+        &self.typing_context
+    }
+
+    fn get_qualname(&self, func_ix: ValueGraphIx) -> Vec<String> {
+        let store = self.value_store.borrow();
+        let (func_source, func_name, func_class) =
+            patma!((source, name, class), Some(Value::Function { source, name, class, .. }) in store.get(func_ix))
+                .expect("not a function.");
+
+        let func_name = match func_name {
+            Ok(sref) => self.spanref_to_str(sref.clone()).to_owned(),
+            Err(st) => st.to_owned(),
+        };
+
+        let func_class = match func_class {
+            Some(class_ix) => {
+                let name =
+                    patma!(name, Some(Value::Class { name, .. }) in store.get(*class_ix)).unwrap();
+
+                name.to_owned()
+            }
+
+            None => String::default(),
+        };
+
+        match func_source {
+            Some((mref, _)) => {
+                let mut qualname = vec![];
+                let mdata = Rc::clone(&self.modules.get(*mref).unwrap().borrow().data);
+
+                qualname.extend_from_slice(mdata.qualname.as_slice());
+
+                if !func_class.is_empty() {
+                    qualname.push(func_class);
+                }
+
+                qualname.push(func_name);
+
+                qualname
+            }
+
+            None => vec![String::from("__monty_builtins"), func_name],
         }
     }
 }

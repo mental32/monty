@@ -43,6 +43,10 @@ impl ToValue for (&Runtime, &ClassObj) {
                 let key = store.insert(&(*rt, key));
                 let value = store.insert(&(*rt, value));
 
+                if let Value::Function { class, .. } = store.get_mut(value).unwrap() {
+                    class.replace(value_ix);
+                }
+
                 properties.insert(*hash, (key, value));
             });
     }

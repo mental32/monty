@@ -14,10 +14,12 @@
 pub mod error;
 pub mod span;
 pub mod utils;
-pub mod glue;
 
 pub mod module {
-    use std::convert::{TryFrom, TryInto};
+    use std::{
+        convert::{TryFrom, TryInto},
+        path::PathBuf,
+    };
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[repr(transparent)]
@@ -37,6 +39,22 @@ pub mod module {
         fn try_from(n: usize) -> Result<Self, Self::Error> {
             Ok(Self(n.try_into()?))
         }
+    }
+
+    #[derive(Debug, Clone)]
+    /// Associated data of a module.
+    pub struct ModuleData {
+        /// The path of the module on disk.
+        pub path: PathBuf,
+
+        /// equivalent to `__name__`
+        pub name: String,
+
+        /// The module reference, used to refer to the module.
+        pub mref: ModuleRef,
+
+        // The modules qualified name.
+        pub qualname: Vec<String>,
     }
 }
 

@@ -401,12 +401,10 @@ dependencies = [
  "codespan",
  "codespan-reporting",
  "cranelift-codegen",
- "cranelift-frontend",
- "cranelift-module",
- "cranelift-object",
  "derive_more",
  "env_logger",
  "log",
+ "montyc_codegen",
  "montyc_core",
  "montyc_hlir",
  "montyc_parser",
@@ -415,6 +413,24 @@ dependencies = [
  "target-lexicon",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "montyc_codegen"
+version = "0.99.0"
+dependencies = [
+ "ahash",
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-module",
+ "cranelift-object",
+ "env_logger",
+ "log",
+ "montyc_core",
+ "montyc_hlir",
+ "petgraph",
+ "target-lexicon",
+ "tempfile",
 ]
 
 [[package]]
@@ -427,9 +443,11 @@ dependencies = [
 
 [[package]]
 name = "montyc_hlir"
-version = "0.0.0"
+version = "0.99.0"
 dependencies = [
  "ahash",
+ "cranelift-codegen",
+ "cranelift-module",
  "derive_more",
  "log",
  "montyc_core",

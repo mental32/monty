@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use ahash::AHashMap;
-use montyc_core::{patma, SpanRef};
+use montyc_core::{patma, ModuleData, SpanRef};
 use montyc_parser::ast::UnaryOp;
 use petgraph::graph::NodeIndex;
 
@@ -10,6 +10,7 @@ use crate::{
         raw_inst::{Const, Dunder, RawInst},
         FlatCode, FlatInst,
     },
+    glue::HostGlue,
     interpreter::{
         object::{
             frame::FrameObject,
@@ -19,7 +20,7 @@ use crate::{
         },
         HashKeyT, PyResult,
     },
-    HostGlue, ModuleData, ModuleObject, ObjAllocId,
+    ModuleObject, ObjAllocId,
 };
 
 use super::Runtime;
@@ -306,7 +307,8 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
             );
 
             match &inst.op {
-                RawInst::Nop => inst_ix += 1,
+                RawInst::Privileged(_) => unreachable!(),
+                RawInst::JumpTarget | RawInst::Nop => inst_ix += 1,
 
                 RawInst::Br { to: dest } => inst_ix = *dest,
 
@@ -433,12 +435,6 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     inst_ix += 1;
                 }
 
-                // RawInst::GetItem { object, index } => todo!(),
-                // RawInst::SetItem {
-                //     object,
-                //     index,
-                //     value,
-                // } => todo!(),
                 RawInst::Return { value } => {
                     let value = values.get(*value).unwrap();
 
@@ -468,8 +464,9 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
 
                     let modules = host.import_module(&*path, base);
                     let (mref, sr) = modules.first().unwrap();
+                    let mdata = host.get_module(mref.clone()).unwrap();
 
-                    let (object, _) = runtime.consteval(*mref, *host)?;
+                    let (object, _) = runtime.consteval(&mdata, *host)?;
                     let object = runtime.value_store.borrow().alloc_id_of(object).unwrap();
 
                     let (st, hash) = self.string(
@@ -504,12 +501,12 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                 } => todo!(),
 
                 RawInst::Defn {
-                    name,
+                    name: spanref_name,
                     params,
                     returns,
                     sequence_id,
                 } => {
-                    let name = self.host.spanref_to_str(name.clone()).to_string();
+                    let name = self.host.spanref_to_str(spanref_name.clone()).to_string();
 
                     let params = match params.as_slice() {
                         [] => None,
@@ -552,7 +549,7 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                                 returns,
                                 params,
                                 inner: Callable::SourceDef(cx.module_object.mref, *sequence_id),
-                                name,
+                                name: (name, Some(spanref_name.clone())),
                                 annotations: Default::default(),
                             };
 

@@ -19,4 +19,4 @@ pub use {object::PyDictRaw, runtime::Runtime};
 
 pub use object::alloc::ObjAllocId;
 
-use crate::{ModuleData, ModuleObject};
+use crate::ModuleObject;

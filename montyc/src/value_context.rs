@@ -2,15 +2,17 @@ use std::iter::FromIterator;
 
 use ahash::AHashSet;
 
-use montyc_core::{ModuleRef, MontyError, MontyResult, TypeError, TypeId};
+use montyc_core::{ModuleRef, MontyError, MontyResult, SpanRef, TypeError, TypeId};
 use montyc_hlir::{
+    glue::HostGlue,
     typing::{PythonType, TypingContext},
     value_store::{GlobalValueStore, ValueGraphIx},
-    Const, Dunder, FlatCode, FlatSeq, RawInst, Value,
+    Const, Dunder, FlatCode, FlatSeq, PrivInst, RawInst, Value,
 };
+use montyc_parser::{AstObject, SpanInterner};
 
 use crate::{
-    def_stack::{DefScope, ScopeChain},
+    def_stack::{DefKind, DefScope, ScopeChain},
     prelude::GlobalContext,
 };
 
@@ -24,7 +26,7 @@ pub struct ValueContext<'this, 'gcx> {
     pub value_idx: ValueGraphIx,
 }
 
-fn typecheck_seq(
+fn typecheck_seq<'a>(
     mut seq: FlatSeq,
     return_type: TypeId,
     tcx: &mut TypingContext,
@@ -33,17 +35,19 @@ fn typecheck_seq(
     rt: &montyc_hlir::interpreter::Runtime,
     mref: ModuleRef,
     value_ix: ValueGraphIx,
-    spanner: SpanInterner,
-) -> (FlatSeq, Vec<TypeId>) {
+    string_resolver: impl Fn(SpanRef) -> &'a str,
+) -> (FlatSeq, Vec<TypeId>, AHashSet<ValueGraphIx>) {
     let mut seq_value_types = vec![TypingContext::Unknown; seq.inst().len()];
-    let mut inst_iter = seq.inst().to_owned().into_iter().enumerate();
+    let inst_iter = seq.inst().to_owned().into_iter().enumerate();
     let mut refs = AHashSet::default();
 
     for (ix, inst) in inst_iter {
         log::trace!("[ValueContext::typecheck] {:?}", inst);
 
         match &inst.op {
-            RawInst::Privileged(_) => unreachable!("privileged instructions are already present in this sequence (they shouldn't be.)"),
+            RawInst::Privileged(_) => unreachable!(
+                "privileged instructions are already present in this sequence (they shouldn't be.)"
+            ),
             RawInst::Class { .. } | RawInst::Defn { .. } => todo!(),
 
             RawInst::UseVar { variable } => {
@@ -52,30 +56,36 @@ fn typecheck_seq(
                 seq_value_types[ix] = var_t;
 
                 let inst = match var_def {
-                    DefKind::Local | DefKind::Parameters => {
-                        RawInst::Privileged(PrivInst::UseLocal { var: variable }),
+                    DefKind::Local | DefKind::Parameters => PrivInst::UseLocal {
+                        var: variable.clone(),
                     },
 
-                    DefKind::Global | DefKind::Builtin => {
-                        let mref = if matches!(var_def, DefKind::Global) { mref } else { ModueRef(1) };
-                        let val = if let Some(Value::Module { properties, .. }) = value_store.get(mref) {
-                            let hash = rt.hash({ spanner.str_to_spanref(variable.clone()) });
-                            let (_, val) = properties.get(hash).unwrap();
-
-                            val
+                    DefKind::Global | DefKind::Builtins => {
+                        let mref = if matches!(var_def, DefKind::Global) {
+                            mref
                         } else {
-                            unreachable!()
+                            ModuleRef(1)
                         };
+                        let val =
+                            if let Some(Value::Module { properties, .. }) = value_store.get(mref) {
+                                let hash = rt.hash(string_resolver(variable.clone()));
+
+                                let (_, val) = properties.get(hash).unwrap();
+
+                                val
+                            } else {
+                                unreachable!()
+                            };
 
                         let _ = refs.insert(val);
 
-                        PrivInst::UseVar { val )
+                        PrivInst::RefVal { val }
                     }
 
                     DefKind::Empty => unreachable!(),
-                }
+                };
 
-                seq.inst_mut()[ix] = RawInst::Privileged(inst);
+                seq.inst_mut()[ix].op = RawInst::Privileged(inst);
             }
 
             RawInst::Call {
@@ -99,12 +109,7 @@ fn typecheck_seq(
                 {
                     seq_value_types[ix] = ret;
                 } else {
-                    todo!(
-                        "{:?}",
-                        tcx.contextualize(callable_type_id)
-                            .unwrap()
-                            .as_python_type()
-                    );
+                    todo!("{:?}", tcx.get(callable_type_id).unwrap().as_python_type());
                 }
             }
 
@@ -126,7 +131,7 @@ fn typecheck_seq(
                 assert_ne!(type_id, TypingContext::Unknown);
 
                 if tcx.is_tuple(type_id) {
-                    let ty = tcx.contextualize(type_id).unwrap();
+                    let ty = tcx.get(type_id).unwrap();
                     let py_kind = ty.as_python_type();
 
                     let members = match py_kind {
@@ -165,13 +170,13 @@ fn typecheck_seq(
                 let (_, dunder_index) = match type_class_value {
                     Value::Class { properties, .. } => {
                         let hash = rt.hash(format!("{}", dunder));
-                        properties.get(hash).unwrap();
+                        properties.get(hash).unwrap()
                     }
 
                     _ => unreachable!(),
                 };
 
-                seq.inst_mut()[ix] = {
+                seq.inst_mut()[ix].op = {
                     let val = dunder_index;
                     let _ = refs.insert(val);
 
@@ -234,7 +239,7 @@ fn typecheck_seq(
                     type_id,
                     return_type,
                     "{:?}",
-                    tcx.contextualize(type_id).unwrap().as_python_type()
+                    tcx.get(type_id).unwrap().as_python_type()
                 );
 
                 seq_value_types[ix] = TypingContext::Never;
@@ -244,15 +249,16 @@ fn typecheck_seq(
             | RawInst::Undefined
             | RawInst::Nop
             | RawInst::If { .. }
-            | RawInst::Br { .. } => continue,
+            | RawInst::Br { .. }
+            | RawInst::JumpTarget => continue,
         }
     }
 
-    seq_value_types
+    (seq, seq_value_types, refs)
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
-    pub(crate) fn typecheck(self) -> MontyResult<TypeId> {
+    pub(crate) fn typecheck(mut self) -> MontyResult<TypeId> {
         match self.value {
             Value::Function {
                 ret_t,
@@ -262,6 +268,10 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                 ..
             } => {
                 log::debug!("[ValueContext::typecheck] Typechecking function {:?}", name);
+
+                let name = name.clone().unwrap_or_else(|st| {
+                    montyc_hlir::glue::HostGlue::str_to_spanref(self.gcx, &st)
+                });
 
                 self.value_store
                     .metadata(self.value_idx)
@@ -354,16 +364,41 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                     .type_id
                     .replace(func_type);
 
-                // Don't typecheck the bodies of ellipsis-stubbed functions as they are
-                // essentially either "extern" declarations or nops.
-                let source = source.and_then(|(s_mref, seq)| {
-                    (s_mref == self.mref && !self.code.is_sequence_ellipsis_stubbed(seq))
-                        .then(|| seq)
-                });
-
                 let s = match source {
-                    Some(seq) => seq,
-                    None => return Ok(func_type),
+                    Some((s_mref, seq)) => {
+                        let seq = *seq;
+
+                        if *s_mref != self.mref {
+                            return Ok(func_type);
+                        }
+
+                        if !self.code.is_sequence_ellipsis_stubbed(seq) {
+                            seq
+                        } else {
+                            let seq = self.code.sequences()[seq].clone();
+                            let meta = self.value_store.metadata(self.value_idx);
+
+                            let mut def_stack = ScopeChain::new(Default::default());
+                            def_stack.parameters.extend(params);
+
+                            meta.type_id.replace(func_type);
+                            meta.rib.replace(def_stack.parameters.into_iter().collect());
+
+                            meta.function.replace(montyc_hlir::Function {
+                                type_id: func_type,
+                                code: seq,
+                                code_value_types: vec![],
+                                refs: Default::default(),
+                                mref: self.mref,
+                                name,
+                                value_ix: self.value_idx,
+                            });
+
+                            return Ok(func_type);
+                        }
+                    }
+
+                    None => todo!(),
                 };
 
                 let mut def_stack = {
@@ -385,17 +420,27 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                 }
 
                 let seq = self.code.sequences()[s].clone();
-                let (code, code_value_types, refs) = typecheck_seq(
-                    seq,
-                    return_type,
-                    &mut *self.gcx.typing_context.borrow_mut(),
-                    &mut def_stack,
-                    self.value_store,
-                    &*self.gcx.const_runtime.borrow(),
-                    cx.mref,
-                    cx.value_idx
-                    cx.gcx.span_interner.clone(),
-                );
+                let (code, code_value_types, refs) = {
+                    let Self {
+                        gcx,
+                        mref,
+                        value_idx: value_ix,
+                        value_store,
+                        ..
+                    } = &mut self;
+
+                    typecheck_seq(
+                        seq,
+                        return_type,
+                        &mut *gcx.typing_context.borrow_mut(),
+                        &mut def_stack,
+                        value_store,
+                        &*gcx.const_runtime.borrow(),
+                        *mref,
+                        *value_ix,
+                        |sref| gcx.spanref_to_str(sref),
+                    )
+                };
 
                 let meta = self.value_store.metadata(self.value_idx);
 
@@ -412,7 +457,10 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                     type_id: func_type,
                     code,
                     code_value_types,
-                    refs
+                    refs,
+                    mref: self.mref,
+                    name,
+                    value_ix: self.value_idx,
                 });
 
                 Ok(func_type)
@@ -483,7 +531,7 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             .node_weight(key_idx)
                             .map(|weight| match weight {
                                 Value::String(st) => {
-                                    montyc_hlir::HostGlue::str_to_spanref(self.gcx, st)
+                                    montyc_hlir::glue::HostGlue::str_to_spanref(self.gcx, st)
                                 }
                                 _ => unreachable!(),
                             })
@@ -505,7 +553,7 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
             Value::Module { .. } => Ok(TypingContext::Module),
             Value::String(_) => Ok(TypingContext::Str),
             Value::Integer(_) => Ok(TypingContext::Int),
-            Value::Object(_) => Ok(TypingContext::Object),
+            Value::Object { .. } => Ok(TypingContext::Object),
         }
     }
 }

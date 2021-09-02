@@ -58,13 +58,13 @@ impl SpanInterner {
     /// Return a new span reference to the given string.
     #[inline]
     pub fn str_to_spanref<const N: u32>(&self, name: &str) -> Result<SpanRef, ()> {
-        let mut bound = self.contextualize(name, ModuleRef(N))?;
+        let mut bound = self.get(name, ModuleRef(N))?;
         Ok(bound.insert(0..name.len()))
     }
 
     /// Create a `BoundMutInterner` from contextual information and a mutable borrow of the interner.
     #[inline]
-    pub fn contextualize<'a, 'b>(
+    pub fn get<'a, 'b>(
         &'b self,
         source: &'a str,
         module: ModuleRef,

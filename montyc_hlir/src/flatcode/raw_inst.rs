@@ -5,6 +5,8 @@ use std::fmt::Display;
 use montyc_core::SpanRef;
 use montyc_parser::ast::{InfixOp, UnaryOp};
 
+use crate::value_store::ValueGraphIx;
+
 #[derive(Debug, Clone)]
 pub enum Dunder {
     Unary(UnaryOp),
@@ -51,12 +53,12 @@ impl Display for Const {
 
 /// A "privileged" instruction is one that is used for specialization when analysis is perform on a FlatSeq.
 #[derive(Debug, Clone)]
-pub enum PrivInst<V = usize, R = SpanRef> {
+pub enum PrivInst<R = SpanRef> {
     /// Use a local variable named "var".
     UseLocal { var: R },
 
     /// Reference a global value by its value index.
-    RefVal { val: ValueGraphIx},
+    RefVal { val: ValueGraphIx },
 
     /// Emit a direct call to a value which is a callable such as a function.
     CallVal { val: ValueGraphIx },
@@ -64,7 +66,7 @@ pub enum PrivInst<V = usize, R = SpanRef> {
 
 #[derive(Debug, Clone)]
 pub enum RawInst<V = usize, R = SpanRef> {
-    Privileged(PrivInst),
+    Privileged(PrivInst<R>),
 
     /// Define a function like: `def {name}({params}) -> {returns}`
     Defn {
@@ -245,6 +247,12 @@ impl Display for RawInst {
             RawInst::PhiRecv => write!(f, "phi-recv"),
             RawInst::Return { value } => write!(f, "return %{:?}", value),
             RawInst::Tuple(inner) => write!(f, "tuple [{}]", format_vec_of_values(inner)),
+            RawInst::Privileged(inst) => match inst {
+                PrivInst::UseLocal { var } => write!(f, "use-local {:?}", var),
+                PrivInst::RefVal { val } => write!(f, "ref-val {:?}", val),
+                PrivInst::CallVal { val } => write!(f, "call-val {:?}", val),
+            },
+            RawInst::JumpTarget => write!(f, "jump-target"),
         }
     }
 }
