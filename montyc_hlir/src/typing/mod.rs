@@ -3,6 +3,7 @@
 #![allow(non_upper_case_globals, warnings)]
 
 use std::iter::FromIterator;
+use std::convert::TryFrom;
 use std::alloc::Layout;
 
 use ahash::AHashSet;
@@ -254,15 +255,17 @@ impl TypingContext {
             PythonType::Any => I64_LAYOUT,
 
             PythonType::Tuple { members } => {
+                let members = members.clone().unwrap_or_default();
                 let (layout, _) = calculate_layout(members.iter().map(|tid| self.layout_of(tid)));
 
                 layout
             },
 
             PythonType::Union { members } => {
-                let member_layouts = members.iter().map(|tid| self.layout_of((tid))).collect::<Vec<_>>();
+                let members = members.clone().unwrap_or_default();
+                let member_layouts = members.iter().map(|tid| self.layout_of(tid)).collect::<Vec<_>>();
 
-                member_layouts.iter().max_by(|left, right| left.size().cmp(right.size()));
+                member_layouts.iter().max_by(|left, right| left.size().cmp(&right.size()))
             },
 
             PythonType::Type { of } => todo!(),
@@ -273,7 +276,7 @@ impl TypingContext {
 
             PythonType::Generic { args } => todo!(),
 
-            PythonType::Builtin { inner } => Layout::array::<u8>::new(inner.size_in_bytes()),
+            PythonType::Builtin { inner } => Layout::array::<u8>(inner.size_in_bytes()),
         }
 
 
