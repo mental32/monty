@@ -256,16 +256,16 @@ impl TypingContext {
 
             PythonType::Tuple { members } => {
                 let members = members.clone().unwrap_or_default();
-                let (layout, _) = calculate_layout(members.iter().map(|tid| self.layout_of(tid)));
+                let (layout, _) = calculate_layout(members.iter().map(|tid| self.layout_of(*tid)));
 
                 layout
             },
 
             PythonType::Union { members } => {
                 let members = members.clone().unwrap_or_default();
-                let member_layouts = members.iter().map(|tid| self.layout_of(tid)).collect::<Vec<_>>();
+                let member_layouts = members.iter().map(|tid| self.layout_of(*tid)).collect::<Vec<_>>();
 
-                member_layouts.iter().max_by(|left, right| left.size().cmp(&right.size()))
+                member_layouts.iter().max_by(|left, right| left.size().cmp(&right.size())).unwrap().clone()
             },
 
             PythonType::Type { of } => todo!(),
@@ -276,7 +276,7 @@ impl TypingContext {
 
             PythonType::Generic { args } => todo!(),
 
-            PythonType::Builtin { inner } => Layout::array::<u8>(inner.size_in_bytes()),
+            PythonType::Builtin { inner } => Layout::array::<u8>(inner.size_in_bytes().try_into().unwrap()),
         }
 
 
