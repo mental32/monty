@@ -28,6 +28,9 @@ class bool:
     The class bool is a subclass of the class int, and cannot be subclassed.
     """
 
+    def __bool__(self) -> bool:
+        ...
+
 
 @extern
 class int:
@@ -41,6 +44,9 @@ class int:
         ...
 
     def __ne__(self, x: int) -> bool:
+        ...
+
+    def __bool__(self) -> bool:
         ...
 
 

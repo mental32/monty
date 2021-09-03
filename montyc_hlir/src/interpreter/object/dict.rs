@@ -122,51 +122,6 @@ impl ToValue for (&Runtime, &PyDict) {
     fn set_cache(&self, store: &mut crate::value_store::GlobalValueStore, ix: ValueGraphIx) {
         store.alloc_data.insert(self.1.alloc_id(), ix);
     }
-    // fn for_each(
-    //     &self,
-    //     rt: &GlobalValueStore,
-    //     f: &mut dyn FnMut(&GlobalValueStore, HashKeyT, ObjAllocId, ObjAllocId),
-    // ) {
-    //     self.data
-    //         .borrow_mut()
-    //         .0
-    //         .iter()
-    //         .for_each(|(h, (k, v))| f(rt, *h, *k, *v))
-    // }
-
-    // fn into_value(
-    //     &self,
-    //     object_graph: &GlobalValueStore,
-    //     objects: &SSAMap<ObjAllocId, SharedMutAnyObject>,
-    // ) -> ValueGraphIx {
-    //     if let Some(idx) = object_graph.alloc_to_idx.get(&self.alloc_id()).cloned() {
-    //         return idx;
-    //     }
-
-    //     object_graph.insert_node_traced(
-    //         self.alloc_id(),
-    //         || Value::Dict {
-    //             object: Default::default(),
-    //             data: Default::default(),
-    //         },
-    //         |object_graph, index| {
-    //             let mut obj = self.header.into_value(object_graph, objects);
-    //             let mut dat = Default::default();
-    //             self.properties_into_values(object_graph, &mut dat, objects);
-
-    //             let (object, data) = if let Value::Dict { object, data } =
-    //                 object_graph.node_weight_mut(index).unwrap()
-    //             {
-    //                 (object, data)
-    //             } else {
-    //                 unreachable!();
-    //             };
-
-    //             std::mem::swap(&mut obj, object);
-    //             std::mem::swap(&mut dat, data);
-    //         },
-    //     )
-    // }
 }
 
 impl PyObject for PyDict {

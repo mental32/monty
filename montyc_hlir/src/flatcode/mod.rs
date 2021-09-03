@@ -10,7 +10,7 @@ pub mod raw_inst;
 
 use std::fmt::Display;
 
-use montyc_core::SpanRef;
+use montyc_core::{SpanRef, TypeId};
 
 use crate::flatcode::raw_inst::Const;
 
@@ -21,7 +21,8 @@ const INVALID_VALUE: usize = std::usize::MAX;
 /// associated attributes of an instruction.
 #[derive(Debug, Clone, Default)]
 pub struct InstAttrs {
-    span: Option<SpanRef>,
+    pub span: Option<SpanRef>,
+    pub type_id: Option<TypeId>,
 }
 
 /// An instruction in a sequence of code and it's output value.
@@ -33,7 +34,7 @@ pub struct FlatInst<V = usize, R = SpanRef> {
 }
 
 #[allow(missing_docs)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SequenceType {
     Module,
     // Class,
@@ -41,7 +42,7 @@ pub enum SequenceType {
 }
 
 /// A sequence of flatcode.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FlatSeq {
     pub(crate) inst: Vec<FlatInst>,
     kind: SequenceType,
@@ -50,6 +51,10 @@ pub struct FlatSeq {
 impl FlatSeq {
     pub fn inst(&self) -> &[FlatInst] {
         self.inst.as_slice()
+    }
+
+    pub fn inst_mut(&mut self) -> &mut [FlatInst] {
+        self.inst.as_mut_slice()
     }
 }
 

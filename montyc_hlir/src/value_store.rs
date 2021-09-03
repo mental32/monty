@@ -14,11 +14,23 @@ pub type RawValueGraph = DiGraph<Value, ()>;
 
 pub trait GVKey {
     fn resolve<'a>(&self, store: &'a GlobalValueStore) -> Option<(ValueGraphIx, &'a Value)>;
+
+    fn resolve_mut<'a>(
+        &self,
+        store: &'a mut GlobalValueStore,
+    ) -> Option<(ValueGraphIx, &'a mut Value)>;
 }
 
 impl GVKey for TypeId {
     fn resolve<'a>(&self, store: &'a GlobalValueStore) -> Option<(ValueGraphIx, &'a Value)> {
         store.type_data.get(self)?.resolve(store)
+    }
+
+    fn resolve_mut<'a>(
+        &self,
+        store: &'a mut GlobalValueStore,
+    ) -> Option<(ValueGraphIx, &'a mut Value)> {
+        store.type_data.get(self)?.clone().resolve_mut(store)
     }
 }
 
@@ -29,11 +41,28 @@ impl GVKey for ValueGraphIx {
             .node_weight(*self)
             .map(|node| (*self, node))
     }
+
+    fn resolve_mut<'a>(
+        &self,
+        store: &'a mut GlobalValueStore,
+    ) -> Option<(ValueGraphIx, &'a mut Value)> {
+        store
+            .value_graph
+            .node_weight_mut(*self)
+            .map(|node| (*self, node))
+    }
 }
 
 impl GVKey for ModuleRef {
     fn resolve<'a>(&self, store: &'a GlobalValueStore) -> Option<(ValueGraphIx, &'a Value)> {
         store.module_data.get(self)?.resolve(store)
+    }
+
+    fn resolve_mut<'a>(
+        &self,
+        store: &'a mut GlobalValueStore,
+    ) -> Option<(ValueGraphIx, &'a mut Value)> {
+        store.module_data.get(self)?.clone().resolve_mut(store)
     }
 }
 
@@ -59,6 +88,9 @@ pub struct ValueMetadata {
 
     /// The parent scope of this value.
     pub parent_scope: Option<ValueGraphIx>,
+
+    /// Associated code as a function.
+    pub function: Option<crate::func::Function>,
 }
 
 #[derive(Debug, Default)]
@@ -77,6 +109,11 @@ impl GlobalValueStore {
     #[inline]
     pub fn get<'a>(&'a self, key: impl GVKey) -> Option<&'a Value> {
         key.resolve(self).map(|(_, node)| node)
+    }
+
+    #[inline]
+    pub fn get_mut<'a>(&'a mut self, key: impl GVKey) -> Option<&'a mut Value> {
+        key.resolve_mut(self).map(|(_, node)| node)
     }
 
     #[inline]

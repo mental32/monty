@@ -1,6 +1,7 @@
 def sanity_check(x: int, y: int) -> bool:
     return x == y
 
+
 def main() -> int:
     x = 1
 

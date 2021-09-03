@@ -1,6 +1,6 @@
 //! Typing-related and management of types logic here.
 
-#![allow(non_upper_case_globals)]
+#![allow(non_upper_case_globals, warnings)]
 
 use std::iter::FromIterator;
 
@@ -28,7 +28,7 @@ macro_rules! builtins {
 
         impl self::BuiltinType {
             /// The size of this type in bytes.
-            pub fn size_in_bytes(&self) -> usize {
+            pub fn size_in_bytes(&self) -> u32 {
                 match self {
                     $(
                         Self::$name => $size
@@ -42,7 +42,7 @@ macro_rules! builtins {
 
                     let bltn = map.insert(Type {
                         kind: self::PythonType::Builtin { inner: Self::$name },
-                        layout: self::ObjectLayout {},
+                        layout: self::ObjectLayout::default(),
                     });
 
                     assert_eq!(bltn, self::TypingContext::$name);
@@ -71,24 +71,24 @@ builtins!(
     .2 = Float { "float", 8 },
     .3 = Str { "str", 8 },
     .4 = Bool { "bool", 8 },
-    .5 = None { "None", 0 },
+    .5 = None { "None", 8 },
     .6 = Ellipsis { "... (ellipsis)", 0 },
     .7 = Module { "module", 8 },
     .8 = Unknown { "unknown", 0 },
     .9 = Type { "type", 8 },
     .10 = Object { "object", 8 },
     .11 = TSelf { "self", 8 },
-    .12 = UntypedFunc { "function", 0 },
+    .12 = UntypedFunc { "function", 8 },
     .13 = UntypedTuple { "tuple", 8 },
-    .14 = AnyType { "Any", 0 },
+    .14 = AnyType { "Any", 8 },
     // Primitive, lower-level types.
     .100 = U8 { "u8", 1 },
-    .101 = U17 { "u16", 2 },
+    .101 = U16 { "u16", 2 },
     .102 = U32 { "u32", 4 },
     .103 = U64 { "u64", 8 },
     // signed variants
     .104 = I8 { "i8", 1 },
-    .105 = I17 { "i17", 2 },
+    .105 = I16 { "i16", 2 },
     .106 = I32 { "i32", 4 },
     .107 = I64 { "i64", 8 },
     // a "never" type.
@@ -137,14 +137,20 @@ pub enum PythonType {
 }
 
 /// Defines an objects in-memory layout.
-#[derive(Debug)]
-pub struct ObjectLayout {}
+#[derive(Debug, Default)]
+#[allow(missing_docs)]
+pub struct ObjectLayout {
+    pub members: Vec<TypeId>,
+    pub linkage: Option<cranelift_module::Linkage>,
+    pub callcov: Option<cranelift_codegen::isa::CallConv>,
+}
 
 /// Represents information about a type.
 #[derive(Debug)]
+#[allow(missing_docs)]
 pub struct Type {
-    kind: PythonType,
-    layout: ObjectLayout,
+    pub kind: PythonType,
+    pub layout: ObjectLayout,
 }
 
 /// A `TypeId` with a bound reference to a `TypingContext`.
@@ -156,24 +162,24 @@ pub struct LocalTypeId<'tcx> {
 }
 
 impl<'tcx> LocalTypeId<'tcx> {
+    #[inline]
+    fn get(&self) -> Option<&Type> {
+        // SAFETY: `TypingContext::get` already checks if `self.type_id` is present within the map.
+        unsafe { self.context.inner.get_unchecked(self.type_id) }
+    }
+
     /// Check if this type is a union type.
     #[inline]
     pub fn is_union(&self) -> bool {
-        // SAFETY: `TypingContext::contextualize` already checks if `self.type_id` is present within the map.
-        unsafe {
-            self.context
-                .inner
-                .get_unchecked(self.type_id)
-                .map(|ty| matches!(ty.kind, PythonType::Union { .. }))
-                .unwrap_or(false)
-        }
+        self.get()
+            .map(|ty| matches!(ty.kind, PythonType::Union { .. }))
+            .unwrap_or(false)
     }
 
     /// Get the Python type associated with this type id.
     #[inline]
     pub fn as_python_type(&self) -> &PythonType {
-        // SAFETY: `TypingContext::contextualize` already checks if `self.type_id` is present within the map.
-        let type_desc = unsafe { self.context.inner.get_unchecked(self.type_id) }.unwrap();
+        let type_desc = self.get().unwrap();
         &type_desc.kind
     }
 }
@@ -197,7 +203,7 @@ impl TypingContext {
 
     /// Convert a `TypeId` to a `LocalTypeId<'tcx>` if it belongs in this type context.
     #[inline]
-    pub fn contextualize<'tcx>(&'tcx self, type_id: TypeId) -> Option<LocalTypeId<'tcx>> {
+    pub fn get<'tcx>(&'tcx self, type_id: TypeId) -> Option<LocalTypeId<'tcx>> {
         let _ = self.inner.get(type_id)?;
 
         Some(LocalTypeId {
@@ -206,6 +212,14 @@ impl TypingContext {
         })
     }
 
+    /// Get a mutable reference to the `Type` representation.
+    #[inline]
+    pub fn get_type_mut<'tcx>(&'tcx mut self, type_id: TypeId) -> Option<&'tcx mut Type> {
+        self.inner.get_mut(type_id)
+    }
+}
+
+impl TypingContext {
     /// Create a tuple from a vector of `TypeId`s.
     #[inline]
     pub fn tuple(&mut self, elements: Vec<TypeId>) -> TypeId {
@@ -213,7 +227,7 @@ impl TypingContext {
             kind: PythonType::Tuple {
                 members: Some(elements),
             },
-            layout: ObjectLayout {},
+            layout: ObjectLayout::default(),
         })
     }
 
@@ -223,7 +237,7 @@ impl TypingContext {
         self.inner.insert(Type {
             kind: PythonType::Callable { args, ret },
 
-            layout: ObjectLayout {},
+            layout: ObjectLayout::default(),
         })
     }
 
@@ -237,7 +251,7 @@ impl TypingContext {
 
         self.inner.insert(Type {
             kind: PythonType::Union { members },
-            layout: ObjectLayout {},
+            layout: ObjectLayout::default(),
         })
     }
 
@@ -249,6 +263,24 @@ impl TypingContext {
                 .get(type_id)
                 .map(|ty| matches!(ty.kind, PythonType::Tuple { .. }))
                 .unwrap_or(false)
+        }
+    }
+
+    /// Get the size of a type (in bytes.)
+    #[inline]
+    pub fn size_of(&self, type_id: TypeId) -> u32 {
+        let ty = self.inner.get(type_id).unwrap();
+
+        match &ty.kind {
+            PythonType::NoReturn => todo!(),
+            PythonType::Any => todo!(),
+            PythonType::Tuple { members } => todo!(),
+            PythonType::Union { members } => todo!(),
+            PythonType::Type { of } => todo!(),
+            PythonType::TypeVar { name } => todo!(),
+            PythonType::Callable { args, ret } => todo!(),
+            PythonType::Generic { args } => todo!(),
+            PythonType::Builtin { inner } => inner.size_in_bytes(),
         }
     }
 
@@ -275,7 +307,7 @@ impl TypingContext {
 
         let members: AHashSet<TypeId> = AHashSet::from_iter(it);
 
-        let layout = ObjectLayout {};
+        let layout = ObjectLayout::default();
         let kind = PythonType::Union {
             members: if members.is_empty() {
                 None

@@ -273,6 +273,17 @@ impl AstVisitor<usize> for FlatCode {
             .iter()
             .map(|branch| {
                 let test = branch.inner.test.visit_with(self);
+
+                let bool_dunder = self.inst(RawInst::GetDunder {
+                    object: test,
+                    dunder: Dunder::AsBool,
+                });
+
+                let test = self.inst(RawInst::Call {
+                    callable: bool_dunder,
+                    arguments: vec![test],
+                });
+
                 self.inst(RawInst::If {
                     test,
                     truthy: Some(INVALID_VALUE),
@@ -281,9 +292,9 @@ impl AstVisitor<usize> for FlatCode {
             })
             .collect();
 
-        let true_const = self.inst(RawInst::Const(Const::Bool(true)));
-
         let or_else_branch = ifch.orelse.as_ref().map(|_| {
+            let true_const = self.inst(RawInst::Const(Const::Bool(true)));
+
             self.inst(RawInst::If {
                 test: true_const,
                 truthy: Some(INVALID_VALUE),
@@ -295,7 +306,7 @@ impl AstVisitor<usize> for FlatCode {
             .branches
             .iter()
             .map(|branch| {
-                let body_entry = self.inst(RawInst::Nop);
+                let body_entry = self.inst(RawInst::JumpTarget);
 
                 for node in branch.inner.body.iter() {
                     node.visit_with(self);
@@ -329,7 +340,7 @@ impl AstVisitor<usize> for FlatCode {
             }
         }
 
-        let after_if_ch = self.inst(RawInst::Nop);
+        let after_if_ch = self.inst(RawInst::JumpTarget);
 
         {
             let seq = self.sequences.get_mut(self.sequence_index).unwrap();
@@ -394,7 +405,7 @@ impl AstVisitor<usize> for FlatCode {
     }
 
     fn visit_while(&mut self, while_: &While, _: Option<Span>) -> usize {
-        let start = self.inst(RawInst::Nop);
+        let start = self.inst(RawInst::JumpTarget);
         let test = while_.test.inner.visit_with(self);
 
         let jump = self.inst(RawInst::If {
@@ -408,7 +419,7 @@ impl AstVisitor<usize> for FlatCode {
         }
 
         self.inst(RawInst::Br { to: start });
-        let or_else = self.inst(RawInst::Nop);
+        let or_else = self.inst(RawInst::JumpTarget);
 
         let seq = self.sequences.get_mut(self.sequence_index).unwrap();
 
@@ -461,14 +472,25 @@ impl AstVisitor<usize> for FlatCode {
 
         // generate the ternary test
         let test = test.visit_with(self);
+
+        let bool_dunder = self.inst(RawInst::GetDunder {
+            object: test,
+            dunder: Dunder::AsBool,
+        });
+
+        let test = self.inst(RawInst::Call {
+            callable: bool_dunder,
+            arguments: vec![test],
+        });
+
         // emit a dummy nop that will be overwritten later with an If.
         let test_jump = self.inst(RawInst::Nop);
 
         let true_value = body.visit_with(self);
         let after_value_jump_true = self.inst(RawInst::Br { to: INVALID_VALUE });
 
-        // dummy nop used as a jump target by the jump after the test.
-        let false_header = self.inst(RawInst::Nop);
+        // jump target by the jump after the test.
+        let false_header = self.inst(RawInst::JumpTarget);
 
         let false_value = orelse.visit_with(self);
         let after_value_jump_false = self.inst(RawInst::Br { to: INVALID_VALUE });

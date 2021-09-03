@@ -8,7 +8,7 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use ahash::AHashMap;
-use montyc_core::patma;
+use montyc_core::{patma, ModuleData};
 use montyc_core::{utils::SSAMap, value, ModuleRef};
 use montyc_parser::AstObject;
 use petgraph::graph::NodeIndex;
@@ -22,9 +22,11 @@ use super::{
     },
     PyDictRaw, PyResult,
 };
+
+use crate::glue::HostGlue;
 use crate::{
     flatcode::FlatCode, interpreter::runtime::ceval::ConstEvalContext,
-    value_store::GlobalValueStore, HostGlue, ModuleData, ModuleObject, Value, ValueGraphIx,
+    value_store::GlobalValueStore, ModuleObject, Value, ValueGraphIx,
 };
 
 pub(in crate::interpreter) type SharedMutAnyObject = Rc<RefCell<Rc<dyn PyObject>>>;
@@ -207,12 +209,11 @@ impl Runtime {
     }
 
     /// Initialize the runtime with the builtin `__monty` module.
-    pub fn initialize_monty_module(&mut self, host: &mut dyn HostGlue) {
+    pub fn initialize_monty_module(&mut self, host: &mut dyn HostGlue, module_object: &ModuleData) {
         let mut __monty = self.singletons.monty;
 
         if __monty.getattr_static(self, "initialized").is_none() {
             {
-                let module_object = host.module_data(ModuleRef(0)).unwrap();
                 let code = FlatCode::default();
                 let mut cx = ConstEvalContext::new(self, host, &code, __monty, &module_object);
 
@@ -259,7 +260,7 @@ impl Runtime {
                     __monty_ix,
                 );
 
-                patma!(o.properties, Value::Object(o) in raw_value).unwrap()
+                patma!(properties, Value::Object { properties, .. } in raw_value).unwrap()
             };
 
             match value_store.value_graph.node_weight_mut(__monty_ix).unwrap() {
@@ -357,15 +358,13 @@ impl Runtime {
     /// Const-evaluate a module.
     pub fn consteval<'global, 'module>(
         &'global mut self,
-        mref: ModuleRef,
+        ModuleObject { ast, data, mref }: &ModuleObject,
         gcx: &'global mut dyn HostGlue,
     ) -> PyResult<(ValueGraphIx, FlatCode)> {
-        let module = gcx
-            .module_data(mref)
-            .expect("Modules should always have associated data.");
-
         let mut code = FlatCode::new();
-        module.ast.visit_with(&mut code);
+        ast.visit_with(&mut code);
+
+        let mref = mref.clone();
 
         let mut value_store = self.value_store.borrow_mut();
 
@@ -412,7 +411,7 @@ impl Runtime {
 
         std::mem::drop(value_store);
 
-        let _ = ConstEvalContext::new(self, gcx, &code, module_object, &module)
+        let _ = ConstEvalContext::new(self, gcx, &code, module_object, &data)
             .eval()
             .unwrap();
 
@@ -456,7 +455,8 @@ impl Runtime {
             ..
         }) = value_store.value_graph.node_weight_mut(module_index)
         {
-            let mut properties = patma!(o.properties, Value::Object(o) in raw_value).unwrap();
+            let mut properties =
+                patma!(properties, Value::Object { properties, .. } in raw_value).unwrap();
 
             std::mem::swap(blank_properties, &mut properties);
         }

@@ -80,7 +80,7 @@ where
     let span_ref = span_ref.unwrap_or_else(|| SpanInterner::new());
 
     let stream = {
-        let bound = span_ref.contextualize(&source, mref).unwrap();
+        let bound = span_ref.get(&source, mref).unwrap();
 
         let token_stream = TokenStreamIter {
             bound,

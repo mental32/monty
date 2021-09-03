@@ -1,5 +1,5 @@
 [workspace]
-members = ["montyc", "montyc_parser", "montyc_core", "montyc_hlir"]
+members = ["montyc", "montyc_parser", "montyc_core", "montyc_hlir", "montyc_codegen"]
 
 [profile.dev]
 codegen-units = 8
