@@ -227,7 +227,7 @@ fn calculate_layout(fields: impl Iterator<Item = Layout>) -> (Layout, Vec<i32>) 
     let mut layout = unsafe { Layout::from_size_align_unchecked(0, 1) };
     let mut offsets = Vec::with_capacity(16);
 
-    for (ix, layout) in fields.enumerate() {
+    for (ix, new_layout) in fields.enumerate() {
         let (new_layout, offset) = layout.extend(layout).expect("arithmetic overflow.");
         let offset = i32::try_from(offset).unwrap();
 
