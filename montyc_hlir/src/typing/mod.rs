@@ -3,7 +3,7 @@
 #![allow(non_upper_case_globals, warnings)]
 
 use std::iter::FromIterator;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::alloc::Layout;
 
 use ahash::AHashSet;
@@ -276,7 +276,7 @@ impl TypingContext {
 
             PythonType::Generic { args } => todo!(),
 
-            PythonType::Builtin { inner } => Layout::array::<u8>(inner.size_in_bytes().try_into().unwrap()),
+            PythonType::Builtin { inner } => Layout::array::<u8>(inner.size_in_bytes().try_into().unwrap()).unwrap(),
         }
 
 
