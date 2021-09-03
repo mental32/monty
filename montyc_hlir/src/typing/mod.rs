@@ -3,6 +3,7 @@
 #![allow(non_upper_case_globals, warnings)]
 
 use std::iter::FromIterator;
+use std::alloc::Layout;
 
 use ahash::AHashSet;
 use montyc_core::{utils::SSAMap, SpanRef, TypeId};
@@ -219,7 +220,65 @@ impl TypingContext {
     }
 }
 
+
+fn calculate_layout(fields: impl Iterator<Item = Layout>) -> (Layout, Vec<i32>) {
+    // SAFETY: The parameters privded to from_size_align satisfy the safety invariants.
+    let mut layout = unsafe { Layout::from_size_align_unchecked(0, 1) };
+    let mut offsets = Vec::with_capacity(16);
+
+    for (ix, layout) in fields.enumerate() {
+        let (new_layout, offset) = layout.extend(layout).expect("arithmetic overflow.");
+        let offset = i32::try_from(offset).unwrap();
+
+        offsets.push(offset);
+
+        layout = new_layout;
+    }
+
+    let layout = layout.pad_to_align();
+
+    (layout, offsets)
+}
+
+const I64_LAYOUT: Layout = Layout::new::<i64>();
+
 impl TypingContext {
+    /// Get a `Layout` of some TypeId
+    #[inline]
+    pub fn layout_of(&self, type_id: TypeId) -> Layout {
+        let ty = self.inner.get(type_id).unwrap();
+
+        match &ty.kind {
+            PythonType::NoReturn => todo!(),
+
+            PythonType::Any => I64_LAYOUT,
+
+            PythonType::Tuple { members } => {
+                let (layout, _) = calculate_layout(members.iter().map(|tid| self.layout_of(tid)));
+
+                layout
+            },
+
+            PythonType::Union { members } => {
+                let member_layouts = members.iter().map(|tid| self.layout_of((tid))).collect::<Vec<_>>();
+
+                member_layouts.iter().max_by(|left, right| left.size().cmp(right.size()));
+            },
+
+            PythonType::Type { of } => todo!(),
+
+            PythonType::TypeVar { name } => todo!(),
+
+            PythonType::Callable { args, ret } => I64_LAYOUT,
+
+            PythonType::Generic { args } => todo!(),
+
+            PythonType::Builtin { inner } => Layout::array::<u8>::new(inner.size_in_bytes()),
+        }
+
+
+    }
+
     /// Create a tuple from a vector of `TypeId`s.
     #[inline]
     pub fn tuple(&mut self, elements: Vec<TypeId>) -> TypeId {

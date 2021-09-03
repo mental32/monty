@@ -35,6 +35,23 @@ impl BuilderContext<'_> {
 
         let mut builder = FunctionBuilder::new(func, &mut builder_cx);
 
+
+        let libc_malloc = builder.import_function(ir::ExtFuncData {
+            name: ir::ExternalName::User {
+                namespace: 0,
+                index: 0,
+            },
+
+            signature: {
+                let mut s = Signature::new(CallConv::SystemV);
+                s.params.push(AbiParam::new(ir::types::I64));
+                s.returns.push(AbiParam::new(ir::types::I64));
+                builder.import_signature(s)
+            },
+
+            colocated: false,
+        });
+
         let mut f_refs: AHashMap<ValueGraphIx, FuncRef> = AHashMap::with_capacity(hlir.refs.len());
         let mut values: AHashMap<usize, ir::Value> = AHashMap::with_capacity(code.inst().len());
         let blocks = code
@@ -133,11 +150,10 @@ impl BuilderContext<'_> {
             debug_assert_eq!(inst.value, ix);
 
             log::trace!("[BuilderContext::build] building block for inst {:?}", inst);
-            log::trace!("[BuilderContext::build] {:?}", builder.func);
 
             let block = blocks[inst.value];
 
-            if !matches!(dbg!(builder.current_block()), Some(b) if b == dbg!(block)) {
+            if builder.current_block() != Some(block) {
                 builder.switch_to_block(block);
             }
 
@@ -252,11 +268,22 @@ impl BuilderContext<'_> {
                     };
 
                     values.insert(inst.value, val);
-                    builder.ins().jump(blocks[inst.value + 1], &[]);
+                    builder.ins().(blocks[inst.value + 1], &[]);
                 }
 
                 RawInst::Tuple(elements) => {
-                    todo!("call malloc, create a StructBuf, and write the fields.");
+                    let tcx = self.host.tcx();
+                    let tcx = tcx.borrow();
+
+                    let layout = tcx.layout_of(inst.attrs.type_id.unwrap());
+                    let size = builder.ins().iconst(ir::types::I64, layout.size().try_into().unwrap());
+
+                    let malloc_inst = buulder.ins().call(libc_malloc, &[size]);
+
+                    let addr = patma!(addr, [addr] in builder.inst_results(malloc_inst)).unwrap();
+
+                    values.insert(inst.value, addr);
+                    builder.ins().(blocks[inst.value + 1], &[]);
                 }
 
                 RawInst::PhiRecv | RawInst::JumpTarget | RawInst::Nop => {
@@ -264,7 +291,7 @@ impl BuilderContext<'_> {
                     builder.ins().jump(blocks[inst.value + 1], &[]);
                 }
 
-                RawInst::Undefined => todo!(),
+                RawInst::Undefined => { builder.ins().trap("unreachable"); },
 
                 RawInst::If {
                     test,
