@@ -10,7 +10,7 @@ pub mod raw_inst;
 
 use std::fmt::Display;
 
-use montyc_core::SpanRef;
+use montyc_core::{SpanRef, TypeId};
 
 use crate::flatcode::raw_inst::Const;
 
@@ -21,7 +21,8 @@ const INVALID_VALUE: usize = std::usize::MAX;
 /// associated attributes of an instruction.
 #[derive(Debug, Clone, Default)]
 pub struct InstAttrs {
-    span: Option<SpanRef>,
+    pub span: Option<SpanRef>,
+    pub type_id: Option<TypeId>,
 }
 
 /// An instruction in a sequence of code and it's output value.

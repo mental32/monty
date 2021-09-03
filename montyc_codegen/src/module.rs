@@ -7,8 +7,10 @@ use std::{
 
 use ahash::AHashMap;
 use cranelift_codegen::{
+    binemit,
     ir::{self, ExternalName, Function, Signature},
     isa::{CallConv, TargetIsa},
+    verify_function, Context,
 };
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -17,24 +19,27 @@ use montyc_hlir::{
     glue::HostGlue,
     typing::{PythonType, TypingContext},
     value_store::ValueGraphIx,
+    Const, RawInst,
 };
 
+use crate::lower::BuilderContext;
+
 #[derive(Debug)]
-struct Func {
-    hlir: Rc<montyc_hlir::Function>,
-    clir: Function,
-    signature: Signature,
+pub(crate) struct Func {
+    pub(crate) hlir: Rc<montyc_hlir::Function>,
+    pub(crate) clir: Function,
+    pub(crate) signature: Signature,
 }
 
 #[derive(Debug, Default)]
 pub struct CodegenModule {
-    types: AHashMap<TypeId, ir::types::Type>,
-    functions: AHashMap<ValueGraphIx, Func>,
+    pub(crate) types: AHashMap<TypeId, ir::types::Type>,
+    pub(crate) functions: AHashMap<ValueGraphIx, Rc<Func>>,
 }
 
 impl CodegenModule {
     #[inline]
-    fn scalar_type_of(&self, tid: &TypeId) -> ir::Type {
+    pub(crate) fn scalar_type_of(&self, tid: &TypeId) -> ir::Type {
         if tid.is_builtin() {
             // builtin types probably have a scalar representation.
             match self.types.get(&tid) {
@@ -52,6 +57,7 @@ impl CodegenModule {
         host: &mut dyn HostGlue,
         isa: Box<dyn TargetIsa>,
     ) -> ObjectModule {
+        let fisa = isa.flags().clone();
         let mut object_module = ObjectModule::new({
             let name = String::from("<empty>");
             let libcall_names = cranelift_module::default_libcall_names();
@@ -59,10 +65,29 @@ impl CodegenModule {
             ObjectBuilder::new(isa, name, libcall_names).unwrap()
         });
 
-        let mut tcx = host.tcx().borrow_mut();
+        let (functions, stubbed) = {
+            let mut f = AHashMap::<ValueGraphIx, Rc<Func>>::default();
+            let mut s = AHashMap::<ValueGraphIx, Rc<Func>>::default();
+
+            for (ix, func) in self.functions.iter() {
+                match func.hlir.code.inst() {
+                    [] => unreachable!(),
+
+                    [one] if matches!(one.op, RawInst::Const(Const::Ellipsis)) => {
+                        s.insert(*ix, func.clone());
+                    }
+
+                    _ => {
+                        f.insert(*ix, func.clone());
+                    }
+                };
+            }
+
+            (f, s)
+        };
 
         let external_names = {
-            let mut names = AHashMap::with_capacity(self.functions.len());
+            let mut names = AHashMap::with_capacity(functions.len());
 
             for (ix, func) in self.functions.iter() {
                 names.insert(
@@ -79,6 +104,7 @@ impl CodegenModule {
 
         let fids = {
             let mut fids = AHashMap::with_capacity(self.functions.len());
+            let mut tcx = host.tcx().borrow_mut();
 
             for (key, func) in self.functions.iter() {
                 let f_type = tcx.get_type_mut(func.hlir.type_id).unwrap();
@@ -95,7 +121,37 @@ impl CodegenModule {
             fids
         };
 
-        todo!();
+        for (func_ix, func) in functions.iter() {
+            let mut func = func.clir.clone();
+            let fid = fids.get(func_ix).unwrap();
+
+            let object_module = &mut object_module;
+
+            let bx = BuilderContext {
+                host,
+                cg_module: self,
+                object_module,
+                func_ix: *func_ix,
+                fid: *fid,
+                fids: &fids,
+            };
+
+            bx.build(&mut func);
+
+            if let Err(err) = verify_function(&func, &fisa) {
+                panic!("{}", err);
+            }
+
+            let mut ctx = Context::for_function(func);
+            let mut ts = binemit::NullTrapSink {};
+            let mut ss = binemit::NullStackMapSink {};
+
+            object_module
+                .define_function(*fid, &mut ctx, &mut ts, &mut ss)
+                .unwrap();
+
+            // let _ = std::mem::replace(&mut self.functions.get_mut(func_ix).unwrap().clir, func);
+        }
 
         object_module
     }
@@ -109,7 +165,7 @@ impl CodegenModule {
             let mut map = AHashMap::with_capacity(64);
 
             map.insert(TypingContext::Int, ir::types::I64);
-            map.insert(TypingContext::Bool, ir::types::I64);
+            map.insert(TypingContext::Bool, ir::types::B64);
             map.insert(TypingContext::Float, ir::types::F64);
             map.insert(TypingContext::TSelf, ir::types::R64);
 
@@ -138,8 +194,9 @@ impl CodegenModule {
     #[inline]
     pub fn include_function(&mut self, host: &mut dyn HostGlue, func: montyc_hlir::Function) {
         log::trace!(
-            "[CodegenModule::include_function] Adding function for codegen: {{ name: {:?} module: {:?} type: {:?} }}",
-            func.name,
+            "[CodegenModule::include_function] Adding function for codegen: {{ name: {:?}, val: {:?}, module: {:?}, type: {:?} }}",
+            host.spanref_to_str(func.name),
+            func.value_ix,
             func.mref,
             func.type_id,
         );
@@ -178,11 +235,11 @@ impl CodegenModule {
 
         self.functions.insert(
             func.value_ix,
-            Func {
+            Rc::new(Func {
                 hlir: Rc::new(func),
                 clir: ir::Function::with_name_signature(name, sig.clone()),
-                signature: dbg!(sig),
-            },
+                signature: sig,
+            }),
         );
     }
 

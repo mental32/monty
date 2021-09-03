@@ -13,9 +13,6 @@ pub struct Function {
     /// The flatcode sequence of this function.
     pub code: FlatSeq,
 
-    /// The types for the values in the code.
-    pub code_value_types: Vec<TypeId>,
-
     /// References to global data, i.e. other functions, static/const data, etc...
     pub refs: AHashSet<ValueGraphIx>,
 

@@ -5,7 +5,7 @@ use cranelift_frontend::FunctionBuilder;
 
 use montyc_core::TypeId;
 
-use crate::{pointer::Pointer, CxArg};
+use crate::{pointer::Pointer, prelude::*};
 
 pub(super) struct Field {
     logical_offset: usize,

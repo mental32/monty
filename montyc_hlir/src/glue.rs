@@ -1,11 +1,12 @@
 //! A "glue" trait to be used by users of this crate for the interpreter.
 
 use std::path::Path;
+use std::rc::Rc;
 use std::{cell::RefCell, fmt};
 
 use montyc_core::{ModuleRef, SpanRef};
 
-use crate::value_store::ValueGraphIx;
+use crate::value_store::{GlobalValueStore, ValueGraphIx};
 use crate::{typing::TypingContext, ModuleObject};
 
 /// A trait to be implemented by the owner of a runtime.
@@ -39,6 +40,9 @@ pub trait HostGlue {
 
     /// get a refcell to the typing context.
     fn tcx(&self) -> &RefCell<TypingContext>;
+
+    /// get a reference to the global value store.
+    fn value_store(&self) -> Rc<RefCell<GlobalValueStore>>;
 
     /// get the fully qualified name for this function.
     fn get_qualname(&self, func_ix: ValueGraphIx) -> Vec<String>;

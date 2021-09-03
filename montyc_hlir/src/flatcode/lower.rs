@@ -273,6 +273,17 @@ impl AstVisitor<usize> for FlatCode {
             .iter()
             .map(|branch| {
                 let test = branch.inner.test.visit_with(self);
+
+                let bool_dunder = self.inst(RawInst::GetDunder {
+                    object: test,
+                    dunder: Dunder::AsBool,
+                });
+
+                let test = self.inst(RawInst::Call {
+                    callable: bool_dunder,
+                    arguments: vec![test],
+                });
+
                 self.inst(RawInst::If {
                     test,
                     truthy: Some(INVALID_VALUE),
@@ -281,9 +292,9 @@ impl AstVisitor<usize> for FlatCode {
             })
             .collect();
 
-        let true_const = self.inst(RawInst::Const(Const::Bool(true)));
-
         let or_else_branch = ifch.orelse.as_ref().map(|_| {
+            let true_const = self.inst(RawInst::Const(Const::Bool(true)));
+
             self.inst(RawInst::If {
                 test: true_const,
                 truthy: Some(INVALID_VALUE),
@@ -461,6 +472,17 @@ impl AstVisitor<usize> for FlatCode {
 
         // generate the ternary test
         let test = test.visit_with(self);
+
+        let bool_dunder = self.inst(RawInst::GetDunder {
+            object: test,
+            dunder: Dunder::AsBool,
+        });
+
+        let test = self.inst(RawInst::Call {
+            callable: bool_dunder,
+            arguments: vec![test],
+        });
+
         // emit a dummy nop that will be overwritten later with an If.
         let test_jump = self.inst(RawInst::Nop);
 

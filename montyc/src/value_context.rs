@@ -36,7 +36,7 @@ fn typecheck_seq<'a>(
     mref: ModuleRef,
     value_ix: ValueGraphIx,
     string_resolver: impl Fn(SpanRef) -> &'a str,
-) -> (FlatSeq, Vec<TypeId>, AHashSet<ValueGraphIx>) {
+) -> (FlatSeq, AHashSet<ValueGraphIx>) {
     let mut seq_value_types = vec![TypingContext::Unknown; seq.inst().len()];
     let inst_iter = seq.inst().to_owned().into_iter().enumerate();
     let mut refs = AHashSet::default();
@@ -160,6 +160,7 @@ fn typecheck_seq<'a>(
                         }
 
                         Dunder::SetItem => todo!(),
+                        Dunder::AsBool => todo!(),
                     };
 
                     continue;
@@ -177,8 +178,8 @@ fn typecheck_seq<'a>(
                 };
 
                 seq.inst_mut()[ix].op = {
-                    let val = dunder_index;
-                    let _ = refs.insert(val);
+                    let val = dbg!(dunder_index);
+                    let _ = refs.insert(dbg!(val));
 
                     RawInst::Privileged(PrivInst::RefVal { val })
                 };
@@ -254,7 +255,13 @@ fn typecheck_seq<'a>(
         }
     }
 
-    (seq, seq_value_types, refs)
+    let seq_m = seq.inst_mut();
+
+    for (ix, ty) in seq_value_types.drain(..).enumerate() {
+        seq_m[ix].attrs.type_id.replace(ty);
+    }
+
+    (seq, dbg!(refs))
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {
@@ -387,7 +394,6 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                             meta.function.replace(montyc_hlir::Function {
                                 type_id: func_type,
                                 code: seq,
-                                code_value_types: vec![],
                                 refs: Default::default(),
                                 mref: self.mref,
                                 name,
@@ -420,7 +426,7 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                 }
 
                 let seq = self.code.sequences()[s].clone();
-                let (code, code_value_types, refs) = {
+                let (code, refs) = {
                     let Self {
                         gcx,
                         mref,
@@ -456,7 +462,6 @@ impl<'this, 'gcx> ValueContext<'this, 'gcx> {
                 meta.function.replace(montyc_hlir::Function {
                     type_id: func_type,
                     code,
-                    code_value_types,
                     refs,
                     mref: self.mref,
                     name,

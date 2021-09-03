@@ -424,12 +424,14 @@ impl<'code, 'gcx, 'rt> ConstEvalContext<'code, 'gcx, 'rt> {
                     match dunder {
                         Dunder::Unary(_) => todo!(),
                         Dunder::Infix(_) => todo!(),
+
                         Dunder::DocComment => {
                             let (key, hash) = self.string("__doc__")?;
                             object.set_attribute_direct(&mut self.runtime, hash, key, value)
                         }
                         Dunder::GetItem => todo!(),
                         Dunder::SetItem => todo!(),
+                        Dunder::AsBool => todo!(),
                     }
 
                     inst_ix += 1;

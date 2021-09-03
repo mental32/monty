@@ -745,4 +745,8 @@ impl HostGlue for GlobalContext {
             None => vec![String::from("__monty_builtins"), func_name],
         }
     }
+
+    fn value_store(&self) -> Rc<RefCell<GlobalValueStore>> {
+        Rc::clone(&self.value_store)
+    }
 }

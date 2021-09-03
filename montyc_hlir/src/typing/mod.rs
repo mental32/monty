@@ -1,6 +1,6 @@
 //! Typing-related and management of types logic here.
 
-#![allow(non_upper_case_globals)]
+#![allow(non_upper_case_globals, warnings)]
 
 use std::iter::FromIterator;
 
@@ -28,7 +28,7 @@ macro_rules! builtins {
 
         impl self::BuiltinType {
             /// The size of this type in bytes.
-            pub fn size_in_bytes(&self) -> usize {
+            pub fn size_in_bytes(&self) -> u32 {
                 match self {
                     $(
                         Self::$name => $size
@@ -71,16 +71,16 @@ builtins!(
     .2 = Float { "float", 8 },
     .3 = Str { "str", 8 },
     .4 = Bool { "bool", 8 },
-    .5 = None { "None", 0 },
+    .5 = None { "None", 8 },
     .6 = Ellipsis { "... (ellipsis)", 0 },
     .7 = Module { "module", 8 },
     .8 = Unknown { "unknown", 0 },
     .9 = Type { "type", 8 },
     .10 = Object { "object", 8 },
     .11 = TSelf { "self", 8 },
-    .12 = UntypedFunc { "function", 0 },
+    .12 = UntypedFunc { "function", 8 },
     .13 = UntypedTuple { "tuple", 8 },
-    .14 = AnyType { "Any", 0 },
+    .14 = AnyType { "Any", 8 },
     // Primitive, lower-level types.
     .100 = U8 { "u8", 1 },
     .101 = U16 { "u16", 2 },
@@ -263,6 +263,24 @@ impl TypingContext {
                 .get(type_id)
                 .map(|ty| matches!(ty.kind, PythonType::Tuple { .. }))
                 .unwrap_or(false)
+        }
+    }
+
+    /// Get the size of a type (in bytes.)
+    #[inline]
+    pub fn size_of(&self, type_id: TypeId) -> u32 {
+        let ty = self.inner.get(type_id).unwrap();
+
+        match &ty.kind {
+            PythonType::NoReturn => todo!(),
+            PythonType::Any => todo!(),
+            PythonType::Tuple { members } => todo!(),
+            PythonType::Union { members } => todo!(),
+            PythonType::Type { of } => todo!(),
+            PythonType::TypeVar { name } => todo!(),
+            PythonType::Callable { args, ret } => todo!(),
+            PythonType::Generic { args } => todo!(),
+            PythonType::Builtin { inner } => inner.size_in_bytes(),
         }
     }
 

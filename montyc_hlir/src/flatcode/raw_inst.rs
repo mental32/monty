@@ -14,6 +14,8 @@ pub enum Dunder {
     GetItem,
     SetItem,
     DocComment,
+    // dunder __bool__
+    AsBool,
 }
 
 impl Display for Dunder {
@@ -24,6 +26,7 @@ impl Display for Dunder {
             Dunder::DocComment => write!(f, "__doc__"),
             Dunder::GetItem => write!(f, "__getitem__"),
             Dunder::SetItem => write!(f, "__setitem__"),
+            Dunder::AsBool => write!(f, "__bool__"),
         }
     }
 }
