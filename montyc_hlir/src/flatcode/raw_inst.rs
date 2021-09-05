@@ -65,6 +65,12 @@ pub enum PrivInst<R = SpanRef> {
 
     /// Emit a direct call to a value which is a callable such as a function.
     CallVal { val: ValueGraphIx },
+
+    /// Produce a pointer to the `value` which is ready to read members.
+    IntoMemberPointer { value: usize },
+
+    /// Access a member pointer.
+    AccessMemberPointer { value: usize, offset: usize }
 }
 
 #[derive(Debug, Clone)]
@@ -254,6 +260,9 @@ impl Display for RawInst {
                 PrivInst::UseLocal { var } => write!(f, "use-local {:?}", var),
                 PrivInst::RefVal { val } => write!(f, "ref-val {:?}", val),
                 PrivInst::CallVal { val } => write!(f, "call-val {:?}", val),
+                PrivInst::IntoMemberPointer { value } => write!(f, "into-member-pointer {:?}", value),
+                PrivInst::AccessMemberPointer { value, offset } => write!(f, "access-member-pointer {:?} at {:?}", value, offset),
+
             },
             RawInst::JumpTarget => write!(f, "jump-target"),
         }

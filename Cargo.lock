@@ -132,18 +132,18 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "cranelift-bforest"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df3f8dd4f920a422c96c53fb6a91cc7932b865fdb60066ae9df7c329342d303f"
+checksum = "7e6bea67967505247f54fa2c85cf4f6e0e31c4e5692c9b70e4ae58e339067333"
 dependencies = [
  "cranelift-entity",
 ]
 
 [[package]]
 name = "cranelift-codegen"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebe85f9a8dbf3c9dfa47ecb89828a7dc17c0b62015b84b5505fd4beba61c542c"
+checksum = "48194035d2752bdd5bdae429e3ab88676e95f52a2b1355a5d4e809f9e39b1d74"
 dependencies = [
  "cranelift-bforest",
  "cranelift-codegen-meta",
@@ -158,9 +158,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-meta"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12bc4be68da214a56bf9beea4212eb3b9eac16ca9f0b47762f907c4cd4684073"
+checksum = "976efb22fcab4f2cd6bd4e9913764616a54d895c1a23530128d04e03633c555f"
 dependencies = [
  "cranelift-codegen-shared",
  "cranelift-entity",
@@ -168,21 +168,21 @@ dependencies = [
 
 [[package]]
 name = "cranelift-codegen-shared"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0c87b69923825cfbc3efde17d929a68cd5b50a4016b2bd0eb8c3933cc5bd8cd"
+checksum = "9dabb5fe66e04d4652e434195b45ae65b5c8172d520247b8f66d8df42b2b45dc"
 
 [[package]]
 name = "cranelift-entity"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe683e7ec6e627facf44b2eab4b263507be4e7ef7ea06eb8cee5283d9b45370e"
+checksum = "3329733e4d4b8e91c809efcaa4faee80bf66f20164e3dd16d707346bd3494799"
 
 [[package]]
 name = "cranelift-frontend"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5da80025ca214f0118273f8b94c4790add3b776f0dc97afba6b711757497743b"
+checksum = "279afcc0d3e651b773f94837c3d581177b348c8d69e928104b2e9fccb226f921"
 dependencies = [
  "cranelift-codegen",
  "log",
@@ -192,9 +192,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-module"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d69b61b0eef8776d148a88523b9f0805d786a1b5d9dba0adcd52dbc033680ff"
+checksum = "2e241d0b091e80f41cac341fd51a80619b344add0e168e0587ba9e368d01d2c1"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -204,9 +204,9 @@ dependencies = [
 
 [[package]]
 name = "cranelift-object"
-version = "0.75.0"
+version = "0.76.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5b59dedeaaeaa5baea1dd0fed3d596f67d39f3b8bf9469b197335035519d174"
+checksum = "f1f6e5770eff1bd14e442f90d89c9d374f06d244908279d27b3a1a011703f1d9"
 dependencies = [
  "anyhow",
  "cranelift-codegen",
@@ -282,9 +282,9 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.24.0"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4075386626662786ddb0ec9081e7c7eeb1ba31951f447ca780ef9f5d568189"
+checksum = "f0a01e0497841a3b2db4f8afa483cce65f7e96a3498bd6c541734792aeac8fe7"
 dependencies = [
  "indexmap",
 ]
@@ -389,9 +389,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.4.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
+checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
 name = "montyc"
@@ -482,9 +482,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.25.3"
+version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a38f2be3697a57b4060074ff41b44c16870d916ad7877c17696e063257482bc7"
+checksum = "39f37e50073ccad23b6d09bcb5b263f4e76d3bb6038e4a3c08e52162ffa8abc2"
 dependencies = [
  "crc32fast",
  "indexmap",

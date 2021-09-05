@@ -514,10 +514,10 @@ impl GlobalContext {
 
     /// From a given `entry` path, recursively lower all used functions into HLIR code.
     #[inline]
-    pub fn compute_dependency_graph(
+    pub fn collect_function_dependencies(
         &mut self,
         entry_path: &str,
-    ) -> MontyResult<Vec<montyc_hlir::Function>> {
+    ) -> MontyResult<(Vec<montyc_hlir::Function>, ValueGraphIx)> {
         if !entry_path.contains(":") {
             panic!("entry path must speciful at least one module.");
         }
@@ -573,8 +573,8 @@ impl GlobalContext {
                 continue;
             }
 
-            let refs = match &store.metadata(func_ix).function {
-                Some(f) => f.refs.clone(),
+            let (func, refs) = match &store.metadata(func_ix).function {
+                Some(f) => (f.clone(), f.refs.clone()),
                 None => unreachable!(),
             };
 
@@ -585,7 +585,7 @@ impl GlobalContext {
                     .unwrap_or(false);
 
                 let metadata = store.metadata(value_ref);
-                let func = match (is_function, &metadata.function) {
+                match (is_function, &metadata.function) {
                     (true, None) => {
                         unimplemented!(
                             "function value should have code metadata: {:#?}",
@@ -593,12 +593,16 @@ impl GlobalContext {
                         )
                     }
 
-                    (true, Some(func)) => func.clone(),
+                    (true, Some(func)) => (),
                     (false, _) => continue,
                 };
 
-                collected_functions.insert(value_ref, func);
+                log::debug!("[GlobalContext::compute_dependency_graph] adding function value {:?}", value_ref);
+
+                functions_to_process.push(value_ref)
             }
+
+            collected_functions.insert(func_ix, func);
         }
 
         collected_functions.insert(entry_function_value_index, {
@@ -609,7 +613,9 @@ impl GlobalContext {
                 .unwrap()
         });
 
-        Ok(collected_functions.drain().map(|(_, v)| v).collect())
+        let funcs = collected_functions.drain().map(|(_, v)| v).collect();
+
+        Ok((funcs, entry_function_value_index))
     }
 }
 

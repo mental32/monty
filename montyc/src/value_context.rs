@@ -95,6 +95,17 @@ fn typecheck_seq<'a>(
                 let callable_type_id = seq_value_types[*callable];
                 assert_ne!(callable_type_id, TypingContext::Unknown);
 
+                if let RawInst::Privileged(PrivInst::IntoMemberPointer { value }) = seq.inst()[*callable].op {
+                    assert_eq!(arguments.len(), 2);
+
+                    if let [tself, offset] = arguments.as_slice() {
+                        seq.inst_mut()[ix].op = RawInst::Privileged(PrivInst::AccessMemberPointer { value: *tself, offset: *offset });
+                        seq_value_types[ix] = TypingContext::Unknown;
+                    } else {
+                        unreachable!()
+                    }
+                }
+
                 let args = arguments
                     .iter()
                     .map(|i| {
@@ -156,6 +167,10 @@ fn typecheck_seq<'a>(
                                 }
                             };
 
+                            seq.inst_mut()[ix].op = {            
+                                RawInst::Privileged(PrivInst::IntoMemberPointer { value: *object })
+                            };
+
                             tcx.callable(Some(vec![TypingContext::TSelf, TypingContext::Int]), ret)
                         }
 
@@ -178,8 +193,8 @@ fn typecheck_seq<'a>(
                 };
 
                 seq.inst_mut()[ix].op = {
-                    let val = dbg!(dunder_index);
-                    let _ = refs.insert(dbg!(val));
+                    let val = dunder_index;
+                    let _ = refs.insert(val);
 
                     RawInst::Privileged(PrivInst::RefVal { val })
                 };
@@ -261,7 +276,7 @@ fn typecheck_seq<'a>(
         seq_m[ix].attrs.type_id.replace(ty);
     }
 
-    (seq, dbg!(refs))
+    (seq, refs)
 }
 
 impl<'this, 'gcx> ValueContext<'this, 'gcx> {

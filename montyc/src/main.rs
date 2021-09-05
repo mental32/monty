@@ -31,7 +31,7 @@ fn main() -> std::io::Result<()> {
         ..
     } = opts
     {
-        let mut funcs = gcx.compute_dependency_graph(&entry).unwrap();
+        let (mut funcs, entry_ix) = gcx.collect_function_dependencies(&entry).unwrap();
 
         if let Some(_path) = show_ir.as_ref() {
             todo!("show_ir");
@@ -44,14 +44,13 @@ fn main() -> std::io::Result<()> {
                 cg.include_function(&mut gcx, func);
             }
 
-            cg.finish(&mut gcx, None::<&str>, opts_cg)?
+            cg.finish(&mut gcx, None::<&str>, opts_cg, entry_ix)?
         };
 
         let cc = cc.unwrap_or("cc".into());
 
         let object_path = &*object.to_string_lossy();
 
-        let output = output.unwrap_or_else(|| entry.split(":").last().unwrap().into());
         let output = output.to_str().unwrap();
 
         std::process::Command::new(cc)

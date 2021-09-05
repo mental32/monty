@@ -13,5 +13,5 @@ petgraph = "0.6"
 derive_more = "0.99"
 
 # for specifying linkage and callcov in ObjectLayout
-cranelift-module = "0.75.0"
-cranelift-codegen = "0.75.0"
+cranelift-module = "0.76.0"
+cranelift-codegen = "0.76.0"
