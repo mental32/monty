@@ -222,13 +222,13 @@ impl TypingContext {
 }
 
 
-fn calculate_layout(fields: impl Iterator<Item = Layout>) -> (Layout, Vec<i32>) {
+pub fn calculate_layout(fields: impl Iterator<Item = Layout>) -> (Layout, Vec<i32>) {
     // SAFETY: The parameters privded to from_size_align satisfy the safety invariants.
     let mut layout = unsafe { Layout::from_size_align_unchecked(0, 1) };
     let mut offsets = Vec::with_capacity(16);
 
     for (ix, new_layout) in fields.enumerate() {
-        let (new_layout, offset) = layout.extend(layout).expect("arithmetic overflow.");
+        let (new_layout, offset) = layout.extend(new_layout).expect("arithmetic overflow.");
         let offset = i32::try_from(offset).unwrap();
 
         offsets.push(offset);
@@ -237,6 +237,8 @@ fn calculate_layout(fields: impl Iterator<Item = Layout>) -> (Layout, Vec<i32>) 
     }
 
     let layout = layout.pad_to_align();
+
+    assert_ne!(layout.size(), 0);
 
     (layout, offsets)
 }
@@ -255,8 +257,12 @@ impl TypingContext {
             PythonType::Any => I64_LAYOUT,
 
             PythonType::Tuple { members } => {
-                let members = members.clone().unwrap_or_default();
-                let (layout, _) = calculate_layout(members.iter().map(|tid| self.layout_of(*tid)));
+                let members = members.clone().unwrap();
+                let members = members.iter().map(|tid| self.layout_of(*tid)).collect::<Vec<_>>();
+
+                dbg!(&members);
+
+                let (layout, _) = calculate_layout(members.into_iter());
 
                 layout
             },
@@ -276,10 +282,13 @@ impl TypingContext {
 
             PythonType::Generic { args } => todo!(),
 
-            PythonType::Builtin { inner } => Layout::array::<u8>(inner.size_in_bytes().try_into().unwrap()).unwrap(),
+            PythonType::Builtin { inner } => {
+                let size = inner.size_in_bytes();
+                assert_ne!(size, 0, "{:?}", inner);
+
+                Layout::array::<u8>(size as usize).unwrap().pad_to_align()
+            }
         }
-
-
     }
 
     /// Create a tuple from a vector of `TypeId`s.
@@ -331,19 +340,7 @@ impl TypingContext {
     /// Get the size of a type (in bytes.)
     #[inline]
     pub fn size_of(&self, type_id: TypeId) -> u32 {
-        let ty = self.inner.get(type_id).unwrap();
-
-        match &ty.kind {
-            PythonType::NoReturn => todo!(),
-            PythonType::Any => todo!(),
-            PythonType::Tuple { members } => todo!(),
-            PythonType::Union { members } => todo!(),
-            PythonType::Type { of } => todo!(),
-            PythonType::TypeVar { name } => todo!(),
-            PythonType::Callable { args, ret } => todo!(),
-            PythonType::Generic { args } => todo!(),
-            PythonType::Builtin { inner } => inner.size_in_bytes(),
-        }
+        self.layout_of(type_id).size().try_into().unwrap()
     }
 
     /// Construct a union type of `left` and `right`

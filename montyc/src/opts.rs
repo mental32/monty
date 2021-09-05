@@ -48,7 +48,7 @@ pub enum CompilerOptions {
 
         // The name of the output binary, defaults to the input file's name.
         #[structopt(parse(from_os_str))]
-        output: Option<PathBuf>,
+        output: PathBuf,
 
         /// Show the Cranelift IR for the specified function.
         #[structopt(long)]

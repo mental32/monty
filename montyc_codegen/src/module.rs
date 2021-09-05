@@ -1,26 +1,16 @@
 use std::{
-    convert::TryInto,
     io,
     path::{Path, PathBuf},
     rc::Rc,
 };
 
 use ahash::AHashMap;
-use cranelift_codegen::{
-    binemit,
-    ir::{self, ExternalName, Function, Signature},
-    isa::{CallConv, TargetIsa},
-    verify_function, Context,
-};
+use cranelift_codegen::{Context, binemit, ir::{self, AbiParam, ExtFuncData, ExternalName, Function, Signature}, isa::{CallConv, TargetIsa}, verify_function};
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use montyc_core::{patma, TypeId};
-use montyc_hlir::{
-    glue::HostGlue,
-    typing::{PythonType, TypingContext},
-    value_store::ValueGraphIx,
-    Const, RawInst,
-};
+use montyc_hlir::{Const, RawInst, Value, glue::HostGlue, typing::{PythonType, TypingContext}, value_store::ValueGraphIx};
 
 use crate::lower::BuilderContext;
 
@@ -35,6 +25,7 @@ pub(crate) struct Func {
 pub struct CodegenModule {
     pub(crate) types: AHashMap<TypeId, ir::types::Type>,
     pub(crate) functions: AHashMap<ValueGraphIx, Rc<Func>>,
+    pub(crate) stable_funcs: Vec<Rc<Func>>,
 }
 
 impl CodegenModule {
@@ -56,7 +47,10 @@ impl CodegenModule {
         &mut self,
         host: &mut dyn HostGlue,
         isa: Box<dyn TargetIsa>,
+        entry_ix: ValueGraphIx,
     ) -> ObjectModule {
+        use cranelift_codegen::ir::InstBuilder;
+
         let fisa = isa.flags().clone();
         let mut object_module = ObjectModule::new({
             let name = String::from("<empty>");
@@ -65,7 +59,7 @@ impl CodegenModule {
             ObjectBuilder::new(isa, name, libcall_names).unwrap()
         });
 
-        let (functions, stubbed) = {
+        let (functions, mut stubbed) = {
             let mut f = AHashMap::<ValueGraphIx, Rc<Func>>::default();
             let mut s = AHashMap::<ValueGraphIx, Rc<Func>>::default();
 
@@ -86,22 +80,6 @@ impl CodegenModule {
             (f, s)
         };
 
-        let external_names = {
-            let mut names = AHashMap::with_capacity(functions.len());
-
-            for (ix, func) in self.functions.iter() {
-                names.insert(
-                    *ix,
-                    ExternalName::User {
-                        namespace: func.hlir.mref.0,
-                        index: ix.index().try_into().unwrap(),
-                    },
-                );
-            }
-
-            names
-        };
-
         let fids = {
             let mut fids = AHashMap::with_capacity(self.functions.len());
             let mut tcx = host.tcx().borrow_mut();
@@ -109,13 +87,55 @@ impl CodegenModule {
             for (key, func) in self.functions.iter() {
                 let f_type = tcx.get_type_mut(func.hlir.type_id).unwrap();
                 let f_linkage = f_type.layout.linkage.unwrap_or(Linkage::Local);
-                let f_name = dbg!(host.get_qualname(func.hlir.value_ix).join("_"));
+                let f_name = host.get_qualname(func.hlir.value_ix).join("_");
 
                 let fid = object_module
                     .declare_function(&f_name, f_linkage, &func.clir.signature)
                     .unwrap();
 
+                log::info!("Declaring user function {:?} {:?} -> {}", key, f_name, fid);
+
                 fids.insert(*key, fid);
+            }
+
+            let bltns = crate::builtins::install_builtins(self, &mut object_module);
+            let store = host.value_store();
+            let mut store = store.borrow_mut();
+
+            for (ix, _) in stubbed.drain() {
+                if let Value::Function { name, class: Some(class_ix), .. } = store.get(ix).cloned().unwrap() {
+                    let klass_t = store.metadata(class_ix).type_id.unwrap();
+
+                    let name = match name.clone().map(|sref| host.spanref_to_str(sref).to_owned()) {
+                        Ok(st) => st,
+                        Err(st) => st,
+                    };
+
+                    let key = (klass_t, name.as_str());
+
+                    let func = match bltns.get(&key) {
+                        Some(func) => func,
+                        None => panic!("Missing builtin function for type {:?} method {}", tcx.get(klass_t).unwrap().as_python_type(), name),
+                    };
+
+                    if let Err(err) = verify_function(&func, &fisa) {
+                        panic!("{}", err);
+                    }
+
+                    let mut ctx = Context::for_function(func.clone());
+                    let mut ts = binemit::NullTrapSink {};
+                    let mut ss = binemit::NullStackMapSink {};
+
+                    let fid = fids.get(&ix).unwrap();
+
+                    log::info!("Defining {:?} {} -> {}", tcx.get(klass_t).unwrap().as_python_type(), name, fid);
+
+                    object_module
+                        .define_function(*fid, &mut ctx, &mut ts, &mut ss)
+                        .unwrap();
+                } else {
+                    unimplemented!()
+                }
             }
 
             fids
@@ -139,18 +159,62 @@ impl CodegenModule {
             bx.build(&mut func);
 
             if let Err(err) = verify_function(&func, &fisa) {
-                panic!("{}", err);
+                panic!("\n{}\n{}", func, err);
             }
 
-            let mut ctx = Context::for_function(func);
+            log::info!("Defining user function {:?} -> {}", func_ix, fid);
+
+            let mut ctx = Context::for_function(dbg!(func));
             let mut ts = binemit::NullTrapSink {};
             let mut ss = binemit::NullStackMapSink {};
 
             object_module
                 .define_function(*fid, &mut ctx, &mut ts, &mut ss)
                 .unwrap();
+        }
 
-            // let _ = std::mem::replace(&mut self.functions.get_mut(func_ix).unwrap().clir, func);
+        // build main and point it at the entry.
+        {
+            let mut main_fn = Function::with_name_signature(ExternalName::User { namespace: 0, index : self.stable_funcs.len() as u32 }, {
+                let mut sig = Signature::new(CallConv::SystemV);
+                sig.returns.push(AbiParam::new(ir::types::I64));
+                sig
+            });
+
+
+            let entry =  functions.get(&entry_ix).unwrap();
+
+            let fid = object_module
+                .declare_function(&"main", Linkage::Export, &entry.signature.clone())
+                .unwrap();
+
+
+            {
+                let mut cx = FunctionBuilderContext::new();
+                let mut fx = FunctionBuilder::new(&mut main_fn, &mut cx);
+
+                let data = ExtFuncData { name: entry.clir.name.clone(), signature: fx.import_signature(entry.signature.clone()), colocated: true };
+
+                let entry_ref = fx.import_function(data);
+
+                let start = fx.create_block();
+
+                fx.switch_to_block(start);
+
+                let ret = fx.ins().call(entry_ref, &[]);
+                let ret = fx.inst_results(ret)[0];
+                fx.ins().return_(&[ret]);
+
+                fx.seal_all_blocks();
+            }
+
+            let mut ctx = Context::for_function(main_fn);
+            let mut ts = binemit::NullTrapSink {};
+            let mut ss = binemit::NullStackMapSink {};
+
+            object_module
+                .define_function(fid, &mut ctx, &mut ts, &mut ss)
+                .unwrap();
         }
 
         object_module
@@ -165,9 +229,9 @@ impl CodegenModule {
             let mut map = AHashMap::with_capacity(64);
 
             map.insert(TypingContext::Int, ir::types::I64);
-            map.insert(TypingContext::Bool, ir::types::B64);
+            map.insert(TypingContext::Bool, ir::types::I64);
             map.insert(TypingContext::Float, ir::types::F64);
-            map.insert(TypingContext::TSelf, ir::types::R64);
+            map.insert(TypingContext::TSelf, ir::types::I64);
 
             map.insert(TypingContext::I8, ir::types::I8);
             map.insert(TypingContext::U8, ir::types::I8);
@@ -202,8 +266,8 @@ impl CodegenModule {
         );
 
         let name = ExternalName::User {
-            namespace: func.mref.0,
-            index: func.value_ix.index().try_into().unwrap(),
+            namespace: 0,
+            index: self.functions.len() as u32,
         };
 
         let sig = {
@@ -233,14 +297,19 @@ impl CodegenModule {
             sig
         };
 
+        let func_ix = func.value_ix;
+        let func = Rc::new(Func {
+            hlir: Rc::new(func),
+            clir: ir::Function::with_name_signature(name, sig.clone()),
+            signature: sig,
+        });
+
         self.functions.insert(
-            func.value_ix,
-            Rc::new(Func {
-                hlir: Rc::new(func),
-                clir: ir::Function::with_name_signature(name, sig.clone()),
-                signature: sig,
-            }),
+            func_ix,
+            Rc::clone(&func),
         );
+
+        self.stable_funcs.push(func);
     }
 
     /// Submit all included functions for codegen and write the output object to the specified `output` argument or a temporary file.
@@ -249,11 +318,12 @@ impl CodegenModule {
         host: &mut dyn HostGlue,
         output: Option<P>,
         isa: Box<dyn TargetIsa>,
+        entry: ValueGraphIx,
     ) -> io::Result<PathBuf>
     where
         P: AsRef<Path>,
     {
-        let object_module = self.build_functions(host, isa);
+        let object_module = self.build_functions(host, isa, entry);
 
         let product = object_module.finish();
         let bytes = product.emit().unwrap();
