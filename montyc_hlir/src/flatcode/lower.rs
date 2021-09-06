@@ -271,7 +271,8 @@ impl AstVisitor<usize> for FlatCode {
         let branch_indices: Vec<_> = ifch
             .branches
             .iter()
-            .map(|branch| {
+            .enumerate()
+            .map(|(ix, branch)| {
                 let test = branch.inner.test.visit_with(self);
 
                 let bool_dunder = self.inst(RawInst::GetDunder {
@@ -284,22 +285,30 @@ impl AstVisitor<usize> for FlatCode {
                     arguments: vec![test],
                 });
 
-                self.inst(RawInst::If {
+                let br = self.inst(RawInst::If {
                     test,
                     truthy: Some(INVALID_VALUE),
                     falsey: None,
-                })
+                });
+
+                if ix != ifch.branches.len() - 1 {
+                    self.inst(RawInst::JumpTarget);
+                }
+
+                br
             })
             .collect();
 
         let or_else_branch = ifch.orelse.as_ref().map(|_| {
             let true_const = self.inst(RawInst::Const(Const::Bool(true)));
 
-            self.inst(RawInst::If {
+            let br = self.inst(RawInst::If {
                 test: true_const,
                 truthy: Some(INVALID_VALUE),
                 falsey: None,
-            })
+            });
+
+            br
         });
 
         let body_indices: Vec<_> = ifch
@@ -414,6 +423,8 @@ impl AstVisitor<usize> for FlatCode {
             falsey: None,
         });
 
+        self.inst(RawInst::JumpTarget);
+
         for node in &while_.body {
             node.visit_with(self);
         }
@@ -485,6 +496,7 @@ impl AstVisitor<usize> for FlatCode {
 
         // emit a dummy nop that will be overwritten later with an If.
         let test_jump = self.inst(RawInst::Nop);
+        self.inst(RawInst::JumpTarget);
 
         let true_value = body.visit_with(self);
         let after_value_jump_true = self.inst(RawInst::Br { to: INVALID_VALUE });

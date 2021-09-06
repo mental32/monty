@@ -260,8 +260,6 @@ impl TypingContext {
                 let members = members.clone().unwrap();
                 let members = members.iter().map(|tid| self.layout_of(*tid)).collect::<Vec<_>>();
 
-                dbg!(&members);
-
                 let (layout, _) = calculate_layout(members.into_iter());
 
                 layout

@@ -1,12 +1,23 @@
-use std::{any::Any, convert::TryInto, iter::FromIterator};
+use std::convert::TryInto;
 
 use ahash::AHashMap;
-use cranelift_codegen::{ir::{self, AbiParam, FuncRef, Function, InstBuilder, MemFlags, Signature, StackSlotData, StackSlotKind}, isa::CallConv};
+use cranelift_codegen::{
+    ir::{
+        self, AbiParam, FuncRef, Function, InstBuilder, MemFlags, Signature, StackSlotData,
+        StackSlotKind,
+    },
+    isa::CallConv,
+};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
 use montyc_core::patma;
-use montyc_hlir::{Const, PrivInst, RawInst, Value, glue::HostGlue, typing::{BuiltinType, PythonType, TypingContext}, value_store::ValueGraphIx};
+use montyc_hlir::{
+    glue::HostGlue,
+    typing::{BuiltinType, PythonType, TypingContext},
+    value_store::ValueGraphIx,
+    Const, PrivInst, RawInst, Value,
+};
 
 use crate::{module::Func, pointer::Pointer, prelude::CodegenModule, structbuf::StructBuf};
 
@@ -30,7 +41,6 @@ impl BuilderContext<'_> {
 
         let mut builder = FunctionBuilder::new(func, &mut builder_cx);
 
-
         let libc_malloc = {
             let name = ir::ExternalName::User {
                 namespace: 0,
@@ -44,18 +54,17 @@ impl BuilderContext<'_> {
                 builder.import_signature(s)
             };
 
-            let data = ir::ExtFuncData { name, signature, colocated: false };
+            let data = ir::ExtFuncData {
+                name,
+                signature,
+                colocated: false,
+            };
 
             builder.import_function(data)
         };
 
         let mut f_refs: AHashMap<ValueGraphIx, FuncRef> = AHashMap::with_capacity(hlir.refs.len());
         let mut values: AHashMap<usize, ir::Value> = AHashMap::with_capacity(code.inst().len());
-        let blocks = code
-            .inst()
-            .iter()
-            .map(|_| builder.create_block())
-            .collect::<Vec<_>>();
 
         let store = self.host.value_store();
         let mut store = store.borrow_mut();
@@ -84,7 +93,18 @@ impl BuilderContext<'_> {
 
         let mut locals = AHashMap::with_capacity(func_rib.len());
 
-        let start = blocks[0];
+        let start = builder.create_block();
+        let blocks = code
+            .inst()
+            .iter()
+            .filter(|inst| {
+                matches!(
+                    inst.op,
+                    RawInst::JumpTarget | RawInst::PhiRecv | RawInst::If { .. }
+                )
+            })
+            .map(|inst| (inst.value, builder.create_block()))
+            .collect::<AHashMap<_, _>>();
 
         builder.append_block_params_for_function_params(start);
         builder.switch_to_block(start);
@@ -134,19 +154,23 @@ impl BuilderContext<'_> {
             locals.insert(*name, (stack_slot, *tid, scalar_ty));
         }
 
+        let mut block = start;
+
         for (ix, inst) in code.inst().iter().enumerate() {
             debug_assert_eq!(inst.value, ix);
 
             log::trace!("[BuilderContext::build] building block for inst {:?}", inst);
 
-            let block = blocks[inst.value];
-
             if builder.current_block() != Some(block) {
+                assert!(builder.is_filled(), "{:?}", builder.func);
                 builder.switch_to_block(block);
             }
 
             match inst.op.clone() {
-                RawInst::Import { .. } | RawInst::Class { .. } | RawInst::Defn { .. } => continue,
+                RawInst::Nop
+                | RawInst::Import { .. }
+                | RawInst::Class { .. }
+                | RawInst::Defn { .. } => continue,
 
                 RawInst::Privileged(p) => {
                     let val = match p {
@@ -182,57 +206,61 @@ impl BuilderContext<'_> {
                                 Value::Class { name, properties } => todo!(),
                             };
 
-                            builder.ins().jump(blocks[inst.value + 1], &[]);
                             continue;
                         }
 
                         PrivInst::CallVal { val } => todo!(),
 
                         PrivInst::IntoMemberPointer { value } => {
-                            builder.ins().jump(blocks[inst.value + 1], &[]);
                             continue;
-                        },
+                        }
 
-                        PrivInst::AccessMemberPointer { value, offset: logical_offset } => {
-                            let mut base_ptr = values[&value];
+                        PrivInst::AccessMemberPointer {
+                            value,
+                            offset: logical_offset,
+                        } => {
+                            let base_ptr = values[&value];
 
                             let tcx = self.host.tcx();
                             let tcx = tcx.borrow();
 
-                            let ptr = if let RawInst::Const(Const::Int(n)) = code.inst()[logical_offset].op {
-                                let (layout, offsets) = if let PythonType::Tuple { members } = tcx.get(code.inst()[value].attrs.type_id.unwrap()).unwrap().as_python_type() {
+                            let ptr = if let RawInst::Const(Const::Int(n)) =
+                                code.inst()[logical_offset].op
+                            {
+                                let (layout, offsets) = if let PythonType::Tuple { members } = tcx
+                                    .get(code.inst()[value].attrs.type_id.unwrap())
+                                    .unwrap()
+                                    .as_python_type()
+                                {
                                     let members = members.clone().unwrap_or_default();
-                                    montyc_hlir::typing::calculate_layout(members.iter().map(|tid| tcx.layout_of(*tid)))    
+                                    montyc_hlir::typing::calculate_layout(
+                                        members.iter().map(|tid| tcx.layout_of(*tid)),
+                                    )
                                 } else {
                                     todo!();
-                                };    
+                                };
 
-                                let byte_offset = *offsets.get(n as usize).unwrap();
-                                let offset: i64 = byte_offset.try_into().unwrap();
-                                let byte_offset = builder.ins().iconst(ir::types::I64, offset);
+                                let n = if n < 0 { (-n) as usize } else { n as usize };
 
-                                if builder.func.dfg.value_type(base_ptr) == ir::types::R64 {
-                                    base_ptr = builder.ins().raw_bitcast(ir::types::I64, base_ptr);
-                                }
+                                let byte_offset = offsets[n];
 
-                                let ptr = builder.ins().iadd(base_ptr, byte_offset);
-
-                                builder.ins().load(ir::types::I64, MemFlags::new(), ptr, 0)
+                                builder.ins().load(
+                                    ir::types::I64,
+                                    MemFlags::new(),
+                                    base_ptr,
+                                    byte_offset,
+                                )
                             } else {
                                 todo!()
                             };
 
-
                             values.insert(inst.value, ptr);
-                            builder.ins().jump(blocks[inst.value + 1], &[]);
 
                             continue;
                         }
-                        
                     };
 
                     values.insert(inst.value, val);
-                    builder.ins().jump(blocks[inst.value + 1], &[]);
                 }
 
                 RawInst::Call {
@@ -267,8 +295,6 @@ impl BuilderContext<'_> {
                         }
                         _ => (),
                     };
-
-                    builder.ins().jump(blocks[inst.value + 1], &[]);
                 }
 
                 RawInst::SetVar { variable, value } => {
@@ -278,14 +304,12 @@ impl BuilderContext<'_> {
                     let val = values[&value];
 
                     ptr.store(val, 0, &mut builder);
-                    builder.ins().jump(blocks[inst.value + 1], &[]);
                 }
 
-                RawInst::UseVar { variable } => todo!(),
+                RawInst::UseVar { .. } => unreachable!(),
+                RawInst::GetDunder { .. } => unreachable!(),
 
                 RawInst::GetAttribute { object, name } => todo!(),
-
-                RawInst::GetDunder { object, dunder } => todo!(),
 
                 RawInst::SetAttribute {
                     object,
@@ -310,43 +334,78 @@ impl BuilderContext<'_> {
                     };
 
                     values.insert(inst.value, val);
-                    builder.ins().jump(blocks[inst.value + 1], &[]);
                 }
 
                 RawInst::Tuple(elements) => {
                     let tcx = self.host.tcx();
                     let tcx = tcx.borrow();
 
-                    let layout = tcx.layout_of(inst.attrs.type_id.unwrap());
-                    assert_ne!(0, layout.size(), "{:?}", tcx.get(inst.attrs.type_id.unwrap()).unwrap().as_python_type());
+                    let (layout, offsets) = if let PythonType::Tuple { members } = tcx
+                        .get(code.inst()[inst.value].attrs.type_id.unwrap())
+                        .unwrap()
+                        .as_python_type()
+                    {
+                        let members = members.clone().unwrap_or_default();
+                        montyc_hlir::typing::calculate_layout(
+                            members.iter().map(|tid| tcx.layout_of(*tid)),
+                        )
+                    } else {
+                        todo!();
+                    };
 
-                    let size = builder.ins().iconst(ir::types::I64, <_ as TryInto<i64>>::try_into(layout.size()).unwrap());
+                    assert_ne!(
+                        0,
+                        layout.size(),
+                        "{:?}",
+                        tcx.get(inst.attrs.type_id.unwrap())
+                            .unwrap()
+                            .as_python_type()
+                    );
+
+                    let size = builder.ins().iconst(
+                        ir::types::I64,
+                        <_ as TryInto<i64>>::try_into(layout.size()).unwrap(),
+                    );
 
                     let malloc_inst = builder.ins().call(libc_malloc, &[size]);
 
-                    let addr = patma!(addr, [addr] in builder.inst_results(malloc_inst)).unwrap();
+                    let addr = patma!(*addr, [addr] in builder.inst_results(malloc_inst)).unwrap();
 
-                    values.insert(inst.value, *addr);
-                    builder.ins().jump(blocks[inst.value + 1], &[]);
+                    for (ix, elem) in elements.iter().enumerate() {
+                        let offset = offsets[ix];
+
+                        builder.ins().store(MemFlags::new(), values[elem], addr, offset);
+                    }
+
+                    values.insert(inst.value, addr);
                 }
 
                 RawInst::PhiRecv => {
-                    let arg = match builder.block_params(block) {
+                    block = blocks[&inst.value];
+
+                    if !builder.is_filled() {
+                        builder.ins().jump(block, &[]);
+                    }
+
+                    let arg = match builder.block_params(blocks[&inst.value]) {
                         [arg] => *arg,
                         _ => unreachable!(),
                     };
 
                     values.insert(inst.value, arg);
-
-                    builder.ins().jump(blocks[inst.value + 1], &[]);                    
                 }
 
-                RawInst::JumpTarget | RawInst::Nop => {
-                    builder.ins().nop();
-                    builder.ins().jump(blocks[inst.value + 1], &[]);
+                RawInst::JumpTarget => {
+                    block = blocks[&inst.value];
+
+                    if !builder.is_filled() {
+                        builder.ins().jump(block, &[]);
+                    }
                 }
 
-                RawInst::Undefined => { todo!(); },
+                RawInst::Undefined => {
+                    todo!();
+                }
 
                 RawInst::If {
                     test,
@@ -356,33 +415,46 @@ impl BuilderContext<'_> {
                     assert_eq!(code.inst()[test].attrs.type_id, Some(TypingContext::Bool));
 
                     let test = values[&test];
-                    let truthy = truthy.map(|ix| blocks[ix]).unwrap_or(blocks[ix + 1]);
-                    let falsey = falsey.map(|ix| blocks[ix]).unwrap_or(blocks[ix + 1]);
 
-                    builder.ins().brnz(test, truthy, &[]);
-                    builder.ins().jump(falsey, &[]);
+                    let fx = match (truthy, falsey) {
+                        (None, None) => continue,
+                        (None, Some(ix)) => {
+                            builder.ins().brz(test, blocks[&ix], &[]);
+                            inst.value + 1
+                        }
+
+                        (Some(ix), None) => {
+                            builder.ins().brnz(test, blocks[&ix], &[]);
+                            inst.value + 1
+                        }
+
+                        (Some(tx), Some(fx)) => {
+                            builder.ins().brnz(test, blocks[&tx], &[]);
+                            fx
+                        }
+                    };
+
+                    builder.ins().jump(blocks[&fx], &[]);
                 }
 
                 RawInst::Br { to } => {
-                    builder.ins().jump(blocks[to], &[]);
+                    builder.ins().jump(blocks[&to], &[]);
                 }
 
                 RawInst::PhiJump { recv, value } => {
                     let ty = code.inst()[value].attrs.type_id.unwrap();
                     let ty = self.cg_module.scalar_type_of(&ty);
 
-                    if builder.block_params(blocks[recv]).is_empty() {
-                        builder.append_block_param(blocks[recv], ty);
+                    if builder.block_params(blocks[&recv]).is_empty() {
+                        builder.append_block_param(blocks[&recv], ty);
                     }
 
                     let input = values[&value];
 
-                    builder.ins().jump(blocks[recv], &[input]);
+                    builder.ins().jump(blocks[&recv], &[input]);
                 }
 
                 RawInst::Return { value } => {
-                    // let ty = code.inst()[value].attrs.type_id.unwrap();
-
                     let rval = *values.get(&value).unwrap();
 
                     builder.ins().return_(&[rval]);

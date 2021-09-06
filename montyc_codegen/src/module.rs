@@ -59,6 +59,7 @@ impl CodegenModule {
             ObjectBuilder::new(isa, name, libcall_names).unwrap()
         });
 
+
         let (functions, mut stubbed) = {
             let mut f = AHashMap::<ValueGraphIx, Rc<Func>>::default();
             let mut s = AHashMap::<ValueGraphIx, Rc<Func>>::default();
@@ -84,7 +85,22 @@ impl CodegenModule {
             let mut fids = AHashMap::with_capacity(self.functions.len());
             let mut tcx = host.tcx().borrow_mut();
 
-            for (key, func) in self.functions.iter() {
+            // libc malloc
+            {
+                let f_linkage = Linkage::Import;
+                let sig = {
+                    let mut s = Signature::new(CallConv::SystemV);
+                    s.params.push(AbiParam::new(ir::types::I64));
+                    s.returns.push(AbiParam::new(ir::types::I64));
+                    s
+                };
+
+                object_module
+                    .declare_function(&"malloc", f_linkage, &sig)
+                    .unwrap();  
+            }
+
+            for func in self.stable_funcs.iter() {
                 let f_type = tcx.get_type_mut(func.hlir.type_id).unwrap();
                 let f_linkage = f_type.layout.linkage.unwrap_or(Linkage::Local);
                 let f_name = host.get_qualname(func.hlir.value_ix).join("_");
@@ -92,6 +108,8 @@ impl CodegenModule {
                 let fid = object_module
                     .declare_function(&f_name, f_linkage, &func.clir.signature)
                     .unwrap();
+
+                let key = &func.hlir.value_ix;
 
                 log::info!("Declaring user function {:?} {:?} -> {}", key, f_name, fid);
 
@@ -102,7 +120,7 @@ impl CodegenModule {
             let store = host.value_store();
             let mut store = store.borrow_mut();
 
-            for (ix, _) in stubbed.drain() {
+            for (ix, f) in stubbed.drain() {
                 if let Value::Function { name, class: Some(class_ix), .. } = store.get(ix).cloned().unwrap() {
                     let klass_t = store.metadata(class_ix).type_id.unwrap();
 
@@ -113,12 +131,14 @@ impl CodegenModule {
 
                     let key = (klass_t, name.as_str());
 
-                    let func = match bltns.get(&key) {
-                        Some(func) => func,
+                    let mut func = match bltns.get(&key) {
+                        Some(func) => func.clone(),
                         None => panic!("Missing builtin function for type {:?} method {}", tcx.get(klass_t).unwrap().as_python_type(), name),
                     };
 
-                    if let Err(err) = verify_function(&func, &fisa) {
+                    func.name = f.clir.name.clone();
+
+                    if let Err(err) = verify_function(&func,  &fisa) {
                         panic!("{}", err);
                     }
 
@@ -163,8 +183,9 @@ impl CodegenModule {
             }
 
             log::info!("Defining user function {:?} -> {}", func_ix, fid);
+            log::info!("{:?}", func);
 
-            let mut ctx = Context::for_function(dbg!(func));
+            let mut ctx = Context::for_function(func);
             let mut ts = binemit::NullTrapSink {};
             let mut ss = binemit::NullStackMapSink {};
 
@@ -175,7 +196,7 @@ impl CodegenModule {
 
         // build main and point it at the entry.
         {
-            let mut main_fn = Function::with_name_signature(ExternalName::User { namespace: 0, index : self.stable_funcs.len() as u32 }, {
+            let mut main_fn = Function::with_name_signature(ExternalName::User { namespace: 0, index : self.stable_funcs.len() as u32 + 1 }, {
                 let mut sig = Signature::new(CallConv::SystemV);
                 sig.returns.push(AbiParam::new(ir::types::I64));
                 sig
@@ -187,7 +208,6 @@ impl CodegenModule {
             let fid = object_module
                 .declare_function(&"main", Linkage::Export, &entry.signature.clone())
                 .unwrap();
-
 
             {
                 let mut cx = FunctionBuilderContext::new();
@@ -206,6 +226,10 @@ impl CodegenModule {
                 fx.ins().return_(&[ret]);
 
                 fx.seal_all_blocks();
+            }
+
+            if let Err(err) = verify_function(&main_fn, &fisa) {
+                panic!("{}", err);
             }
 
             let mut ctx = Context::for_function(main_fn);
@@ -267,7 +291,7 @@ impl CodegenModule {
 
         let name = ExternalName::User {
             namespace: 0,
-            index: self.functions.len() as u32,
+            index: self.functions.len() as u32 + 1,
         };
 
         let sig = {
