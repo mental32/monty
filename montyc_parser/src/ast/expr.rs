@@ -4,7 +4,7 @@ use crate::{spanned::Spanned, AstNode, AstObject, AstVisitor};
 
 use super::{Atom, Primary};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UnaryOp {
     Invert,
     Not,
@@ -23,7 +23,7 @@ impl AsRef<str> for UnaryOp {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum InfixOp {
     Add,
     Sub,
@@ -150,16 +150,16 @@ impl AstObject for Expr {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
         match self {
-            Expr::If { .. } => visitor.visit_ternary(self, self.span()),
-            Expr::BinOp { .. } => visitor.visit_binop(self, self.span()),
-            Expr::Unary { .. } => visitor.visit_unary(self, self.span()),
-            Expr::Named { .. } => visitor.visit_named_expr(self, self.span()),
-            Expr::Primary(primary) => primary.visit_with(visitor),
+            Expr::If { .. } => visitor.visit_ternary(self, span.or(self.span())),
+            Expr::BinOp { .. } => visitor.visit_binop(self, span.or(self.span())),
+            Expr::Unary { .. } => visitor.visit_unary(self, span.or(self.span())),
+            Expr::Named { .. } => visitor.visit_named_expr(self, span.or(self.span())),
+            Expr::Primary(primary) => primary.visit_with(visitor, span.or(primary.span())),
         }
     }
 }

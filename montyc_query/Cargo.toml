@@ -1,0 +1,9 @@
+[package]
+name = "montyc_query"
+version = "0.99.0"
+edition = "2021"
+
+[dependencies]
+montyc_core = { path = "../montyc_core" }
+montyc_parser = { path = "../montyc_parser" }
+montyc_flatcode = { path = "../montyc_flatcode" }

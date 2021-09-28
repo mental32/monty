@@ -1,11 +1,10 @@
 use std::convert::TryFrom;
 
 use cranelift_codegen::ir::{self, InstBuilder};
-use cranelift_frontend::FunctionBuilder;
 
 use montyc_core::TypeId;
 
-use crate::{pointer::Pointer, prelude::*};
+use crate::{pointer::Pointer, CxArg};
 
 pub(super) struct Field {
     logical_offset: usize,
@@ -78,7 +77,7 @@ impl StructBuf {
         self.calculate_layout(|_, _| ())
     }
 
-    pub fn read_field(&self, field_ix: usize, (ctx, fx): CxArg<'_>) -> Option<ir::Value> {
+    pub fn read_field(&self, field_ix: usize, (_ctx, fx): CxArg<'_>) -> Option<ir::Value> {
         let field = self.fields.get(field_ix)?;
         let (_, ir_type) = field.kind;
 
@@ -91,7 +90,7 @@ impl StructBuf {
         &self,
         field_ix: usize,
         value: ir::Value,
-        (ctx, fx): CxArg<'_>,
+        (_ctx, fx): CxArg<'_>,
     ) -> Option<Pointer> {
         let field = self.fields.get(field_ix)?;
         let ptr = self.base_pointer.store(value, field.physical_offset, fx);

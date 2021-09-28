@@ -156,3 +156,5 @@ static
 cpython/
 
 *.out
+
+Cargo.lock

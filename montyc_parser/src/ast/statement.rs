@@ -49,20 +49,20 @@ impl AstObject for Statement {
         }
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
         match self {
-            Statement::Expr(inner) => inner.visit_with(visitor),
-            Statement::FnDef(inner) => inner.visit_with(visitor),
-            Statement::Ret(inner) => inner.visit_with(visitor),
-            Statement::Asn(inner) => inner.visit_with(visitor),
-            Statement::Ann(inner) => inner.visit_with(visitor),
-            Statement::Import(inner) => inner.visit_with(visitor),
-            Statement::Class(inner) => inner.visit_with(visitor),
-            Statement::If(inner) => inner.visit_with(visitor),
-            Statement::While(inner) => inner.visit_with(visitor),
+            Statement::Expr(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::FnDef(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::Ret(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::Asn(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::Ann(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::Import(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::Class(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::If(inner) => inner.visit_with(visitor, span.or(self.span())),
+            Statement::While(inner) => inner.visit_with(visitor, span.or(self.span())),
             Statement::Pass => visitor.visit_pass(),
         }
     }

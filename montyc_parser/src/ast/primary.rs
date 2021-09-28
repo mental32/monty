@@ -37,28 +37,37 @@ impl AstObject for Primary {
             Primary::Atomic(atom) => atom.into_ast_node(),
             Primary::Subscript { .. } => AstNode::Subscript(self.clone()),
             Primary::Call { .. } => AstNode::Call(self.clone()),
-            Primary::Attribute { left: _, attr: _ } => todo!(),
+            Primary::Attribute { .. } => AstNode::Attr(self.clone()),
             Primary::Await(_) => todo!(),
         }
     }
 
     fn span(&self) -> Option<Span> {
-        None
+        match self {
+            Primary::Atomic(s) => s.span(),
+            Primary::Subscript { value, index } => Some(value.span()?.start..index.span()?.end),
+            Primary::Call { func, args } => args
+                .as_ref()
+                .and_then(|args| Some(func.span()?.start..args.last()?.span()?.end)),
+
+            Primary::Attribute { left, attr } => Some(left.span()?.start..attr.span()?.end),
+            Primary::Await(_) => todo!(),
+        }
     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
         match self {
-            Primary::Atomic(atom) => atom.visit_with(visitor),
-            Primary::Subscript { .. } => visitor.visit_subscript(self, self.span()),
-            Primary::Call { .. } => visitor.visit_call(self, self.span()),
-            Primary::Attribute { left: _, attr: _ } => todo!(),
+            Primary::Atomic(atom) => atom.visit_with(visitor, span.or(atom.span())),
+            Primary::Subscript { .. } => visitor.visit_subscript(self, span.or(self.span())),
+            Primary::Call { .. } => visitor.visit_call(self, span.or(self.span())),
+            Primary::Attribute { .. } => visitor.visit_attr(self, span.or(self.span())),
             Primary::Await(_) => todo!(),
         }
     }

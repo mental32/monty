@@ -1,3 +1,5 @@
+# pylint: skip-file
+
 from .__monty import extern
 
 
@@ -18,6 +20,22 @@ class type:
     type(name, bases, dict) -> a new type
     """
 
+@extern
+class function:
+    """
+    Create a function object.
+
+    code
+        a code object
+    globals
+        the globals dictionary
+    name
+        a string that overrides the name from the code object
+    argdefs
+        a tuple that specifies the default argument values
+    closure
+        a tuple that supplies the bindings for free variables
+    """
 
 @extern
 class bool:

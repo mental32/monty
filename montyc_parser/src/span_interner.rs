@@ -10,7 +10,7 @@ use montyc_core::{utils::SSAMap, ModuleRef, SpanData, SpanRef};
 
 #[derive(Debug)]
 struct RawSpanInterner {
-    map: SSAMap<u32, SpanData>,
+    map: SSAMap<SpanData>,
     groups: AHashMap<u64, u32>,
     ahash_rstate: RandomState,
 }
@@ -34,7 +34,7 @@ impl RawSpanInterner {
 // -- struct SpanInterner;
 
 /// A strong reference to a SpanInterner instance.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SpanInterner(Rc<RefCell<RawSpanInterner>>);
 
 impl SpanInterner {
@@ -42,6 +42,33 @@ impl SpanInterner {
     #[inline]
     pub fn new() -> Self {
         Self(Default::default())
+    }
+
+    #[inline]
+    pub fn span_data(&self, sref: SpanRef) -> Option<SpanData> {
+        self.0.borrow().map.get(sref.distinct()).cloned()
+    }
+
+    #[inline]
+    pub fn spangroup_of_hash(&self, hash: u64) -> Option<u32> {
+        self.0.borrow().groups.get(&hash).cloned()
+    }
+
+    #[inline]
+    pub fn spanrefs_of_group<'a>(&self, group: u32) -> Option<impl Iterator<Item = SpanRef>> {
+        let inner = self.0.borrow();
+        let (hash, _) = inner.groups.iter().find(|(_, g)| **g == group)?;
+
+        let it = inner
+            .map
+            .iter()
+            .filter_map(|(idx, data)| (data.hash == *hash).then(|| (idx)))
+            .collect::<Vec<_>>()
+            .into_iter();
+
+        let it = it.map(move |distinct| SpanRef::from((group, distinct as u32)));
+
+        Some(it)
     }
 
     /// Return the string slice of the span's string.

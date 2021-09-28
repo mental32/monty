@@ -32,11 +32,11 @@ impl AstObject for If {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_expr(&self.test.inner, self.span())
+        visitor.visit_expr(&self.test.inner, span.or(self.span()))
     }
 }
 
@@ -67,10 +67,10 @@ impl AstObject for IfChain {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_ifstmt(self, self.span())
+        visitor.visit_ifstmt(self, span.or(self.span()))
     }
 }

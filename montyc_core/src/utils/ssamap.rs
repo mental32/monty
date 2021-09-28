@@ -2,53 +2,43 @@ use std::{
     cell::Cell,
     convert::{TryFrom, TryInto},
     fmt::Debug,
-    marker::PhantomData,
 };
 
 type SSAKey = usize;
 
 /// A helper utility for SSA-like map semantics.
 #[derive(Debug)]
-pub struct SSAMap<K, V>
-where
-    K: TryFrom<SSAKey> + TryInto<SSAKey>,
-{
+pub struct SSAMap<V> {
     inner: Vec<Option<V>>,
     next_free: Cell<SSAKey>,
-    _k: PhantomData<K>,
 }
 
-impl<K, V> Default for SSAMap<K, V>
-where
-    K: TryFrom<SSAKey> + TryInto<SSAKey>,
-    <K as TryFrom<SSAKey>>::Error: Debug,
-{
+impl<V> Default for SSAMap<V> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K, V> SSAMap<K, V>
-where
-    K: TryFrom<SSAKey> + TryInto<SSAKey>,
-    <K as TryFrom<SSAKey>>::Error: Debug,
-{
+impl<V> SSAMap<V> {
     #[inline]
     pub fn new() -> Self {
         Self {
             inner: vec![],
-            _k: PhantomData,
             next_free: Cell::new(0),
         }
     }
 
     #[inline]
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (K, &'a V)> {
-        self.inner.iter().enumerate().filter_map(|(idx, value)| {
-            value
-                .as_ref()
-                .and_then(|v| K::try_from(idx).ok().map(|k| (k, v)))
-        })
+    pub fn is_empty(&self) -> bool {
+        self.iter().next().is_none()
+    }
+
+    #[inline]
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (usize, &'a V)> {
+        self.inner
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, value)| value.as_ref().map(|v| (idx, v)))
     }
 
     #[inline]
@@ -78,16 +68,41 @@ where
     }
 
     #[inline]
-    pub fn reserve(&mut self) -> K {
+    pub fn reserve(&mut self) -> usize {
         let key = self.next_free.replace(self.next_free.get() + 1);
 
         self.inner.push(None);
 
-        K::from(key.try_into().unwrap())
+        key
     }
 
     #[inline]
-    pub fn try_set_value(&mut self, k: K, v: impl Into<V>) -> Result<(), ()>
+    pub fn cancel_reserve<K>(&mut self, k: K) -> Result<(), ()>
+    where
+        K: TryInto<SSAKey>,
+        <K as TryInto<SSAKey>>::Error: Debug,
+    {
+        let k = k.try_into().unwrap();
+
+        if (self.next_free.get() - k) == 1 {
+            let slot = self.inner.get(k).unwrap();
+
+            assert!(
+                slot.is_none(),
+                "can not cancel a reserved slot that has been filled."
+            );
+
+            self.inner.pop();
+            self.next_free.replace(k);
+
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    #[inline]
+    pub fn try_set_value<K>(&mut self, k: K, v: impl Into<V>) -> Result<(), ()>
     where
         K: TryInto<SSAKey>,
         <K as TryInto<SSAKey>>::Error: Debug,
@@ -105,7 +120,12 @@ where
     }
 
     #[inline]
-    pub fn insert(&mut self, value: impl Into<V>) -> K {
+    pub fn insert<K, T>(&mut self, value: T) -> K
+    where
+        K: TryFrom<SSAKey>,
+        <K as TryFrom<SSAKey>>::Error: Debug,
+        T: Into<V>,
+    {
         let value = value.try_into().unwrap();
         let key = self.next_free.replace(self.next_free.get() + 1);
 
@@ -117,15 +137,16 @@ where
     }
 
     #[inline]
-    pub fn get_or_insert(&mut self, key: K, f: impl Fn() -> V) -> &mut V
+    pub fn get_or_insert<K>(&mut self, key: K, f: impl Fn() -> V) -> &mut V
     where
-        K: TryInto<SSAKey>,
+        K: TryInto<SSAKey> + TryFrom<SSAKey>,
         <K as TryInto<SSAKey>>::Error: Debug,
+        <K as TryFrom<SSAKey>>::Error: Debug,
     {
         let key = key.try_into().unwrap();
 
         let key = if self.get_raw(key).is_none() {
-            let key = self.insert(f());
+            let key: K = self.insert(f());
             key.try_into().unwrap()
         } else {
             key
@@ -135,9 +156,12 @@ where
     }
 
     #[inline]
-    pub fn entry(&mut self, value: impl Into<V>) -> K
+    pub fn entry<K>(&mut self, value: impl Into<V>) -> K
     where
         V: PartialEq,
+        K: TryInto<SSAKey> + TryFrom<SSAKey>,
+        <K as TryInto<SSAKey>>::Error: Debug,
+        <K as TryFrom<SSAKey>>::Error: Debug,
     {
         let value = value.into();
 
@@ -157,7 +181,7 @@ where
     }
 
     #[inline]
-    pub fn get(&self, key: K) -> Option<&V>
+    pub fn get<K>(&self, key: K) -> Option<&V>
     where
         K: TryInto<SSAKey>,
         <K as TryInto<SSAKey>>::Error: Debug,
@@ -171,7 +195,7 @@ where
     /// is undefined behavior.
     ///
     #[inline]
-    pub unsafe fn get_unchecked(&self, key: K) -> Option<&V>
+    pub unsafe fn get_unchecked<K>(&self, key: K) -> Option<&V>
     where
         K: TryInto<SSAKey>,
         <K as TryInto<SSAKey>>::Error: Debug,
@@ -180,7 +204,7 @@ where
     }
 
     #[inline]
-    pub fn get_mut(&mut self, key: K) -> Option<&mut V>
+    pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
     where
         K: TryInto<SSAKey>,
         <K as TryInto<SSAKey>>::Error: Debug,

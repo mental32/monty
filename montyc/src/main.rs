@@ -1,62 +1,40 @@
-use montyc::prelude::{CompilerOptions, GlobalContext};
+use montyc_driver::prelude::{CompilerOptions, SessionContext};
 
 use structopt::StructOpt;
 
-fn main() -> std::io::Result<()> {
+fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let opts = CompilerOptions::from_args();
-    let opts_cg = opts.codegen_settings();
-    let opts2 = opts.clone().verify();
+    let opts_verified = match opts.clone().verify() {
+        Ok(i) => i,
+        Err(mut errors) => {
+            for err in errors.drain(..) {
+                eprintln!("error: {}", err);
+            }
 
-    let mut gcx = GlobalContext::initialize(&opts2);
-
-    let (_, input) = match &opts {
-        CompilerOptions::Check { libstd, input } | CompilerOptions::Build { libstd, input, .. } => {
-            (libstd, input)
+            std::process::exit(1);
         }
     };
 
-    if let Err(err) = gcx.include_module(input, "__main__") {
-        panic!("{:?}", err); // TODO: re-implement codespan error handling.
-    }
+    let gcx = match SessionContext::initialize(&opts_verified) {
+        Ok(cx) => cx,
 
-    if let CompilerOptions::Build {
-        output,
-        show_ir,
-        cc,
-        ld: _,
-        cranelift_settings: _,
-        entry,
-        ..
-    } = opts
-    {
-        let (mut funcs, entry_ix) = gcx.collect_function_dependencies(&entry).unwrap();
+        Err((cx, err)) => {
+            // TODO: cx.fmt_error(err)
+            eprintln!("error: {}", err);
+            std::process::exit(1)
+        }
+    };
 
-        if let Some(_path) = show_ir.as_ref() {
-            todo!("show_ir");
+    match opts {
+        CompilerOptions::Check { input, .. } => {
+            gcx.include_module(input, "__main__")?;
         }
 
-        let object = {
-            let mut cg = montyc_codegen::prelude::CodegenModule::new();
-
-            for func in funcs.drain(..) {
-                cg.include_function(&mut gcx, func);
-            }
-
-            cg.finish(&mut gcx, None::<&str>, opts_cg, entry_ix)?
-        };
-
-        let cc = cc.unwrap_or("cc".into());
-
-        let object_path = &*object.to_string_lossy();
-
-        let output = output.to_str().unwrap();
-
-        std::process::Command::new(cc)
-            .args(&[object_path, "-o", output, "-no-pie"])
-            .status()
-            .map(|_| ())?;
+        CompilerOptions::Build { .. } => {
+            montyc_codegen::compile(&opts, &gcx)?;
+        }
     }
 
     Ok(())

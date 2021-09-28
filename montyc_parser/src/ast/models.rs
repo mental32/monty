@@ -31,11 +31,11 @@ impl AstObject for While {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_while(self, self.span())
+        visitor.visit_while(self, span)
     }
 }
 
@@ -60,11 +60,11 @@ impl AstObject for Return {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_return(self, self.span())
+        visitor.visit_return(self, span)
     }
 }
 
@@ -95,11 +95,11 @@ impl AstObject for ClassDef {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_classdef(self, self.span())
+        visitor.visit_classdef(self, span)
     }
 }
 
@@ -123,11 +123,11 @@ impl AstObject for Assign {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_assign(self, self.span())
+        visitor.visit_assign(self, span)
     }
 }
 
@@ -150,7 +150,7 @@ impl AstObject for Annotation {
         self
     }
 
-    fn visit_with<U>(&self, _visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, _visitor: &mut dyn AstVisitor<U>, _span: Option<Span>) -> U
     where
         Self: Sized,
     {
@@ -182,11 +182,11 @@ impl AstObject for Module {
         todo!()
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_module(self, self.span())
+        visitor.visit_module(self, span)
     }
 }
 

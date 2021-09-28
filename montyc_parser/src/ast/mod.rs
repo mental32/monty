@@ -35,6 +35,7 @@ pub enum AstNode {
     Ellipsis(models::Atom),
     Subscript(models::Primary),
     Call(models::Primary),
+    Attr(models::Primary),
     Ret(models::Return),
     While(models::While),
     Pass,
@@ -67,7 +68,7 @@ impl AstObject for AstNode {
         self.as_inner()
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
@@ -75,13 +76,13 @@ impl AstObject for AstNode {
             visitor.visit_pass()
         } else {
             match self {
-                AstNode::Import(import) => import.visit_with(visitor),
-                AstNode::ClassDef(classdef) => classdef.visit_with(visitor),
-                AstNode::FuncDef(fndef) => fndef.visit_with(visitor),
-                AstNode::If(ifch) => ifch.visit_with(visitor),
-                AstNode::Assign(asn) => asn.visit_with(visitor),
-                AstNode::Ret(ret) => ret.visit_with(visitor),
-                AstNode::Str(st) => st.visit_with(visitor),
+                AstNode::Import(import) => import.visit_with(visitor, span),
+                AstNode::ClassDef(classdef) => classdef.visit_with(visitor, span),
+                AstNode::FuncDef(fndef) => fndef.visit_with(visitor, span),
+                AstNode::If(ifch) => ifch.visit_with(visitor, span),
+                AstNode::Assign(asn) => asn.visit_with(visitor, span),
+                AstNode::Ret(ret) => ret.visit_with(visitor, span),
+                AstNode::Str(st) => st.visit_with(visitor, span),
                 _ => todo!("{:?}", self),
             }
         }
@@ -114,7 +115,7 @@ pub trait AstObject {
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject;
 
     /// Invoke the appropriate visitor method for this current AST node.
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized;
 }
@@ -135,11 +136,11 @@ where
         &self.inner
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        self.inner.visit_with(visitor)
+        self.inner.visit_with(visitor, span.or(self.span()))
     }
 }
 
@@ -237,6 +238,10 @@ pub trait AstVisitor<T = ()> {
 
     fn visit_subscript(&mut self, call: &Primary, _span: Option<Span>) -> T {
         self.visit_any(call)
+    }
+
+    fn visit_attr(&mut self, attr: &Primary, _span: Option<Span>) -> T {
+        self.visit_any(attr)
     }
 
     fn visit_module(&mut self, module: &Module, _span: Option<Span>) -> T {

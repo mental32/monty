@@ -8,31 +8,14 @@ documentation = "https://docs.rs/montyc"
 readme = "README.md"
 repository = "https://github.com/mental32/monty"
 license = "MIT"
-keyword = ["compilers", "typecheckers", "monty", "python"]
 
 [dependencies]
-montyc_parser = { path = "../montyc_parser" }
-montyc_core = { path = "../montyc_core" }
-montyc_hlir = { path = "../montyc_hlir" }
+montyc_driver = { path = "../montyc_driver" }
 montyc_codegen = { path = "../montyc_codegen" }
+montyc_query = { path = "../montyc_query" }
+montyc_core = { path = "../montyc_core" }
 
-# "make my life easier" dependencies
-derive_more = "0.99"
 structopt = "0.3.21"
-thiserror = "1"
-petgraph = "0.6"
-
-# Logging dependencies
+anyhow = "1.0.52"
 log = "0.4.14"
 env_logger = "0.9"
-
-# codegen dependencies
-cranelift-codegen = "0.76.0"
-
-target-lexicon = "0.12.0"
-ahash = { version = "0.7.4", features = ["std"] }
-tempfile = "3.2"
-
-# error reporting
-codespan = "0.11.1"
-codespan-reporting = "0.11.1"

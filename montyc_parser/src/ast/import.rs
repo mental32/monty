@@ -47,11 +47,11 @@ impl AstObject for Import {
         self
     }
 
-    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        visitor.visit_import(self, self.span())
+        visitor.visit_import(self, span)
     }
 }
 

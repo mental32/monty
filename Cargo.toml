@@ -1,9 +1,24 @@
 [workspace]
-members = ["montyc", "montyc_parser", "montyc_core", "montyc_hlir", "montyc_codegen"]
+members = [
+    "montyc",
+    "montyc_parser",
+    "montyc_core",
+    "montyc_driver",
+    "montyc_hlirt",
+    "montyc_codegen",
+    "montyc_query",
+    "montyc_flatcode",
+    "montyc_hlirt",
+]
+
+keyword = ["compilers", "typecheckers", "monty", "python"]
+
+exclude = ["cranelift-structbuf"]
 
 [profile.dev]
 codegen-units = 8
 lto = "off"
+incremental = false
 
 [profile.release]
 codegen-units = 1

@@ -1,33 +1,73 @@
 <h1 align="center">Monty</h1>
 
-<h1 align="center">A Strongly Typed Python Dialect</h1>
+<h1 align="center">A compiler for strongly typed Python.</h1>
 
 ## Index
 
 - [Index](#index)
 - [Brief](#brief)
+  - [How does Monty differ from regular Python or the typing semantics of other type checkers?](#how-does-monty-differ-from-regular-python-or-the-typing-semantics-of-other-type-checkers)
 - [Building the compiler](#building-the-compiler)
-- [What Monty can do to feel dynamic.](#what-monty-can-do-to-feel-dynamic)
-  - ["automatic unionization"](#automatic-unionization)
-  - ["Type narrowing"](#type-narrowing)
-  - [Staged computation of module-level code (aka "comptime"/"consteval")](#staged-computation-of-module-level-code-aka-comptimeconsteval)
+  - [Crate/Repository Layout](#craterepository-layout)
 - [Related projects](#related-projects)
   - ["prior art"](#prior-art)
 
 ## Brief
 
-Monty `(/ˈmɒntɪ/)` is an attempt to provide a completely organic alternative
-dialect of Python equipped with a stronger, safer, and smarter type system.
+Monty `(/ˈmɒntɪ/)` is a gradually typed, statically compilable Python.
+With some baked in tricks to make it feel as dynamic as regular Python.
 
-It can be summed up simply as: type annotated, statically compiled, Python.
-With baked in tricks to make it feel as dynamic as Python.
+### How does Monty differ from regular Python or the typing semantics of other type checkers?
+
+1. The most notable difference is that code in the global scope gets run at compile time instead of at program startup.
+
+This is done for several reasons however the most important one is generally to make importing a static (at-compile-time)
+process rather than a lazy (at-program-startup-time) task.
+
+The attitude monty has towards code is that all the business logic should be tucked away neatly organized behind
+classes and functions, anything that is in the module/global scope should only be there to initialize and define
+those classes and functions.
+
+The compile-time runtime is bounded so that programs may not hog time or infinitely execute. I/O is also restricted
+and sandboxed by default prompting the terminal when code attempts to open files, bind or connect sockets, and read
+input.
+
+1. Monty by default will accept (parse, comptime eval) **any** Python code. It may not, however, compile it all.
+
+In the interest of making it easy to gradually port existing Python code so that monty can compile it: the compiler will parse
+all modern Python (3.8+) code and it will submit the code through compile-time evaluation. this means that it is completely legal
+to have Python code which monty cant compile (e.g. async/await, macros, etc...) alongside code that monty can compile.
+
+It is a compilation error if monty discovers a call into code that it can not compile. All the extra code that isn't compilable is
+still parsed, evaluated, and managed internally to make it usable for compile-time evaluation, or third-party analysis.
+
+3. Monty typing takes after pytype, pyright, and pyre.
+
+Monty takes direct inspiration from the three mainstream checkers: [pytype] (google), [pyright] (microsoft), [pyre] (facebook).
+
+Like pytype: monty relies [heavily on inference and is lenient instead of strict](https://github.com/google/pytype#how-is-pytype-different-from-other-type-checkers)
+
+Monty learnt about narrowing and guards from pyright [and supports many of the same guard and narrowing patterns](https://github.com/microsoft/pyright/blob/main/docs/type-concepts.md#type-narrowing)
+
+A lot of existing code in monty is designed to be embeddable and query-able [similar to pyre](https://pyre-check.org/docs/querying-pyre/).
 
 ## Building the compiler
 
-You will need the a recent nightly version of rust (`1.53.0` or so) in order to build.
+You will need a fairly recent version of rustc, I am building locally with 1.57.
+After that it's as simple as running: `cargo run --bin montyc -- --help`
 
-after that it's as simple as running `cargo build`
+### Crate/Repository Layout
 
+* `/montyc` is the compiler binary, it is a thin wrapper around `montyc_driver`
+* `/montyc_driver` is where all the magic happens, type checking/inference, calls into codegen, etc...
+* `/montyc_codegen` is where codegen providers are, currently only Cranelift is supported but I'd like to support both LLVM and GCC in the future.
+* `/montyc_hlirt` is a High Level Interpreter Runtime (HLIRT) and is a minimal but geniune Python interpreter used mainly for compile time evaluation.
+* `/montyc_query` is where the query interface is defined for the driver.
+* `/montyc_flatcode` is where AST -> FlatCode lowering happens.
+* `/montyc_parser` is the parser implementation.
+* `/montyc_core` is where all fundamental types used in this project go to live.
+
+<!-- 
 ## What Monty can do to feel dynamic.
 
 This section is a work in progress and it documents a few ideas
@@ -128,7 +168,7 @@ Assuming most global-scope level logic is there to act as a sort of
 Of course in a completely dynamic environment we don't have to restrict the user
 like we would when compiling the code regularly, so in that case most things that
 would be rejected normally are perfectly fine such as: `exec`, `eval`, 
-`globals`, `locals`, dynamic class creation, and functions with untyped arguments.
+`globals`, `locals`, dynamic class creation, and functions with untyped arguments. -->
 
 ## Related projects
 
