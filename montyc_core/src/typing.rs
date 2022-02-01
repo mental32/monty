@@ -363,6 +363,23 @@ pub trait TypingContext {
         type_id_of_val: &dyn Fn(crate::value::ValueId) -> Option<TypeId>,
     ) -> Option<String>;
 
+    #[inline]
+    fn is_integer(&self, type_id: TypeId) -> bool {
+        [
+            TypingConstants::Int,
+            TypingConstants::I16,
+            TypingConstants::I32,
+            TypingConstants::I64,
+            TypingConstants::I8,
+            TypingConstants::U16,
+            TypingConstants::U32,
+            TypingConstants::U64,
+            TypingConstants::U8,
+        ]
+        .iter()
+        .any(|t| *t == type_id)
+    }
+
     /// Compute the `std::alloc::Layout` for some `TypeId`
     #[inline]
     fn layout_of(&self, type_id: TypeId) -> Layout {

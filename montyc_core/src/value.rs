@@ -1,4 +1,4 @@
-use crate::SpanRef;
+use crate::{MapT, SpanRef};
 
 derive_everything! {
     #[derive(Default)]
@@ -56,5 +56,5 @@ pub type CallableSignature<T> = Option<(Option<SpanRef>, Box<[(SpanRef, Option<T
 
 #[derive(Debug, Default, Clone)]
 pub struct Value {
-    pub properties: Vec<()>,
+    pub properties: MapT<u32, ValueId>,
 }

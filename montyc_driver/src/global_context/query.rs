@@ -1,4 +1,3 @@
-use ahash::AHashSet;
 use montyc_core::{codegen::CgInst, patma, Function, TaggedValueId, TypeId, ValueId};
 use montyc_hlirt::object::AnyFunc;
 use montyc_parser::AstNode;

@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use cranelift_codegen::bforest::Map;
-use cranelift_codegen::ir::{self, ExternalName, Signature};
+use cranelift_codegen::ir::{self, ExternalName, InstBuilder, Signature};
 use cranelift_codegen::isa::{self, CallConv, TargetIsa};
 use cranelift_codegen::settings::{self, Configurable, Flags};
 use cranelift_codegen::{binemit, Context};
@@ -15,8 +14,7 @@ use tempfile::NamedTempFile;
 use montyc_core::codegen::{CgBlockId, CgInst};
 use montyc_core::opts::CompilerOptions;
 use montyc_core::{
-    BuiltinType, MapT, MontyResult, PythonType, TaggedValueId, TypeId, TypingConstants, ValueId,
-    FUNCTION,
+    BuiltinType, MapT, MontyResult, PythonType, TaggedValueId, TypeId, ValueId, FUNCTION,
 };
 use montyc_query::Queries;
 
@@ -140,6 +138,8 @@ pub(crate) struct BackendImpl {
 
     /// The path to the C compiler used to link the objects together.
     cc: PathBuf,
+
+    output: PathBuf,
 }
 
 impl core::fmt::Debug for BackendImpl {
@@ -154,12 +154,13 @@ impl BackendImpl {
             CompilerOptions::Build {
                 cranelift_settings, ..
             } => cranelift_settings,
-            _ => unreachable!("Refusing to generate codegen settings for a non-build option."),
+
+            _ => unreachable!("cant generate codegen settings for a non-build option."),
         };
 
         let mut flags_builder = cranelift_codegen::settings::builder();
 
-        let default_settings = ["opt_level=none", "is_pic=yes", "enable_verifier=yes"]
+        let default_settings = ["opt_level=none", "is_pic=no", "enable_verifier=yes"]
             .iter()
             .map(ToString::to_string);
 
@@ -251,20 +252,20 @@ impl BackendImpl {
 
         for (ix, f) in stubbed.iter() {
             let fid = fids[ix];
-            let klass_t = queries.get_type_of(*ix).unwrap();
+            let func_t = queries.get_type_of(*ix).unwrap();
 
-            if let PythonType::Callable { params, ret } = tcx.get_python_type_of(klass_t).unwrap() {
+            if let PythonType::Callable { ret, .. } = tcx.get_python_type_of(func_t).unwrap() {
                 let name = queries.spanref_to_str(queries.get_function(*ix)?.name)?;
-                let key = (klass_t, name);
+                let key = (ret, name);
 
                 let tcx = queries.tcx();
 
                 let mut func = match bltns.get(&key) {
                     Some(func) => func.clone(),
                     None => {
-                        log::warn!(
+                        log::error!(
                             "Missing builtin function for type {:?} method {}",
-                            tcx.display_type(klass_t, &|v| queries.get_type_of(v).ok())
+                            tcx.display_type(ret, &|v| queries.get_type_of(v).ok())
                                 .unwrap(),
                             name
                         );
@@ -288,7 +289,7 @@ impl BackendImpl {
 
                 log::info!(
                     "Defining {:?} {} -> {}",
-                    tcx.get_python_type_of(klass_t),
+                    tcx.get_python_type_of(func_t),
                     name,
                     fid
                 );
@@ -313,6 +314,9 @@ impl BackendImpl {
         func: &CgFuncData,
         fisa: &Flags,
     ) -> cranelift_module::ModuleResult<&'a mut FunctionBuilderContext> {
+        log::info!("[build_func] building func {:?}", func.value_id);
+        log::trace!("    with cfg: {:#?}", func.cfg.raw_nodes());
+
         let CgFuncData { name, sig, cfg, .. } = func;
 
         let mut clir = ir::Function::with_name_signature(name.clone(), sig.clone());
@@ -326,7 +330,7 @@ impl BackendImpl {
                 inner: FunctionBuilder::new(&mut clir, builder_cx),
                 values: MapT::with_capacity(cfg.raw_nodes().iter().map(|n| n.weight.len()).sum()),
                 locals: MapT::new(),
-                size_cache: MapT::new(),
+
                 f_refs: MapT::new(),
                 host: queries,
                 cfg,
@@ -345,61 +349,50 @@ impl BackendImpl {
             fx.append_block_params_for_function_params(start);
             fx.switch_to_block(start);
 
-            // And now construct a map of parameter names to their offset in the sig.
+            let func_params = match fx
+                .host
+                .tcx()
+                .get_python_type_of(fx.host.get_type_of(func.value_id.0).unwrap())
+                .unwrap()
+            {
+                PythonType::Callable { params, .. } => params,
+                _ => unreachable!(),
+            };
 
-            let start_params = fx.block_params(start).to_owned().into_boxed_slice();
+            if let Some(params) = func_params {
+                let entry_block_params = fx.block_params(start).to_owned().into_boxed_slice();
 
-            // let args_t = match queries
-            //     .get_value(hlir.value_id.0)
-            //     .expect("hlir.value_ix should be present in the value store.")
-            // {
-            //     Value::Function { args_t, .. } => args_t,
-            //     other => unreachable!("hlir.value_ix did not map to a Function value! {:?}", other),
-            // };
+                let param_names = match fx
+                    .host
+                    .get_function_flatcode(func.value_id)
+                    .unwrap()
+                    .ast
+                    .unwrap()
+                {
+                    montyc_parser::AstNode::FuncDef(f) => f.args.unwrap_or_default(),
+                    _ => unreachable!(),
+                };
 
-            // let (recv, params) = args_t.clone().unwrap_or_default();
+                for (((param_name, _), param_t), param_v) in param_names
+                    .iter()
+                    .zip(params.iter())
+                    .zip(entry_block_params.iter())
+                {
+                    let param_ss = fx.stack_alloc(*param_t);
 
-            // let f_params = recv
-            //     .into_iter()
-            //     .chain(params.into_iter().map(|(k, _)| *k))
-            //     .enumerate()
-            //     .map(|(ix, k)| (k.group(), ix))
-            //     .collect::<MapT<_, _>>();
+                    ir::InstBuilder::stack_store(fx.inner.ins(), *param_v, param_ss, 0);
 
-            // Now using the information above (`f_params` being a map of parameter name to its offset in the signature)
-            // proceed to create stack slots for every argument and the reciever if present.
+                    fx.locals.insert(
+                        param_name.group(),
+                        (param_ss, *param_t, ir_type_of(fx.host.tcx(), *param_t)),
+                    );
+                }
+            }
 
-            // if let Some(recv) = recv.map(|r| r.group()) {
-            //     let stack_slot = fx.stack_alloc(TypingConstants::TSelf);
+            fx.ins().jump(blocks[&CgBlockId(0)], &[]);
+            fx.seal_block(start);
 
-            //     if f_params.contains_key(&recv) {
-            //         fx.ins().stack_store(start_params[0], stack_slot, 0);
-            //     }
-
-            //     let data = (
-            //         stack_slot,
-            //         TypingConstants::TSelf,
-            //         fx.module.get_scalar_type_of(TypingConstants::TSelf),
-            //     );
-
-            //     fx.locals.insert(recv, data);
-            // }
-
-            // Create stack slots for all local variables too.
-
-            // for (name, tid) in host.get_rib_of(self.hlir.value_id.0).unwrap().iter() {
-            //     let scalar_ty = fx.module.get_scalar_type_of(*tid);
-            //     let stack_slot = fx.stack_alloc(*tid);
-
-            //     if let Some(ix) = f_params.get(name) {
-            //         fx.ins().stack_store(start_params[*ix], stack_slot, 0);
-            //     }
-
-            //     fx.locals.insert(*name, (stack_slot, *tid, scalar_ty));
-            // }
-
-            // Then finish lowering the rest of the code.
-
+            // Now finish lowering the rest of the code.
             fx.lower(blocks, object_module, fids, self.codegen_settings());
         }
 
@@ -517,8 +510,14 @@ impl BackendImpl {
         }
         .unwrap_or_else(|| PathBuf::from("cc"));
 
+        let output = match opts {
+            CompilerOptions::Build { output, .. } => output.clone(),
+            _ => unreachable!(),
+        };
+
         Self {
             settings,
+            output,
 
             cc,
             data: CgData {
@@ -613,10 +612,11 @@ impl BackendImpl {
         };
 
         let object_path = &*path.to_string_lossy();
-        let output = "/tmp/a";
+
+        log::info!("written object file to {:?}", object_path);
 
         std::process::Command::new(self.cc.clone())
-            .args(&[object_path, "-o", output])
+            .args(&[object_path, "-o", self.output.to_str().unwrap(), "-no-pie"])
             .status()
             .map(|_| ())?;
 

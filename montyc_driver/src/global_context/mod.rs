@@ -11,9 +11,9 @@ use parking_lot::Mutex;
 use montyc_core::dict::PyDictRaw;
 use montyc_core::utils::SSAMap;
 use montyc_core::{
-    BuiltinType, LocalTypeId, MapT, ModuleData, ModuleRef, MontyError, MontyResult, PythonType,
-    SpanRef, TaggedValueId, Type, TypeId, TypingConstants, TypingContext, Value, ValueId, FUNCTION,
-    MODULE,
+    patma, BuiltinType, LocalTypeId, MapT, ModuleData, ModuleRef, MontyError, MontyResult,
+    PythonType, SpanRef, TaggedValueId, Type, TypeId, TypingConstants, TypingContext, Value,
+    ValueId, FUNCTION, MODULE,
 };
 
 use montyc_flatcode::FlatCode;
@@ -979,6 +979,36 @@ impl SessionContext {
 
         for (id, refs) in new_objects.drain() {
             let value_id = store.get_by_assoc(id).unwrap();
+
+            if let Some(module_dict) = rt.borrow().objects.with_object(id, |o| match o {
+                PyValue::Module { inner, .. } => Some(inner.__dict__.clone()),
+                _ => None,
+            }) {
+                for (k, v) in module_dict
+                    .iter()
+                    .map(|(_, (k, v))| (*k, store.get_by_assoc(*v)))
+                    .map(|(k, v)| {
+                        (
+                            rt.borrow()
+                                .objects
+                                .with_object(k, |s| patma!(s.clone(), PyValue::Str(s) in s)),
+                            v,
+                        )
+                    })
+                {
+                    let st = k.expect("keys should always be strings");
+                    let k = match self.spanner.spangroup_of_str(&st) {
+                        Some(g) => g,
+                        None => self.spanner.str_to_spanref::<0>(&st).unwrap().group(),
+                    };
+
+                    let v = v.unwrap();
+
+                    store.with_value_mut(value_id, |val| {
+                        val.properties.insert(k, v);
+                    });
+                }
+            }
 
             store.with_metadata_mut(value_id, |meta| {
                 meta.object_id.replace(id);

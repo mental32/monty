@@ -50,6 +50,17 @@ impl SpanInterner {
     }
 
     #[inline]
+    pub fn spangroup_of_str(&self, st: &str) -> Option<u32> {
+        let hash = {
+            let mut hasher = self.0.borrow().ahash_rstate.build_hasher();
+            st.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        self.spangroup_of_hash(hash)
+    }
+
+    #[inline]
     pub fn spangroup_of_hash(&self, hash: u64) -> Option<u32> {
         self.0.borrow().groups.get(&hash).cloned()
     }

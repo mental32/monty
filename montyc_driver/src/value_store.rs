@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::option;
 use std::rc::Rc;
 
 use dashmap::DashMap;
@@ -172,6 +171,14 @@ impl GlobalValueStore {
         let value_id = key.resolve(self)?;
         let graph = self.value_graph.borrow();
         let val = graph.node_weight(NodeIndex::from(value_id.0))?;
+
+        Some(f(val))
+    }
+
+    pub fn with_value_mut<T>(&self, key: impl GVKey, f: impl FnOnce(&mut Value) -> T) -> Option<T> {
+        let value_id = key.resolve(self)?;
+        let mut graph = self.value_graph.borrow_mut();
+        let val = graph.node_weight_mut(NodeIndex::from(value_id.0))?;
 
         Some(f(val))
     }

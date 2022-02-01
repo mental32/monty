@@ -6,7 +6,7 @@ use montyc_core::ast::Constant;
 use montyc_core::codegen::{CgBlockId, CgInst};
 use montyc_core::{
     Function, MapT, ModuleRef, MontyError, MontyResult, PythonType, TypeError, TypeId,
-    TypingConstants, TypingContext,
+    TypingConstants, TypingContext, ValueId,
 };
 
 use montyc_flatcode::{raw_inst::RawInst, FlatInst};
@@ -146,6 +146,7 @@ struct TypingMachine {
     entry: Option<NodeIndex>,
     mref: ModuleRef,
     locals: MapT<u32, Variable>,
+    nonlocals: MapT<usize, ValueId>,
     values: MapT<usize, TypeId>,
 }
 
@@ -159,6 +160,7 @@ impl TypingMachine {
             return_t,
             mref,
             locals: MapT::new(),
+            nonlocals: MapT::new(),
             values: MapT::new(),
         }
     }
@@ -179,6 +181,7 @@ impl TypingMachine {
             entry: _,
             mref,
             locals,
+            nonlocals,
             return_t,
             values: value_types,
         } = self;
@@ -276,77 +279,104 @@ impl TypingMachine {
                 }
 
                 RawInst::UseVar { variable } => {
-                    // HACK:
-                    //     we should be using some kind of separate binding graph
-                    //     where the names are nodes and the edges are control flow edges
-                    //     so that we can use a dominance algorithm as a rough check whether
-                    //     a binding is potentially unbound.
-                    //
-                    //     but I'm not quite sure how to go about implementing this right now...
-                    //     the current implementation works as follows:
-                    //
-                    //     * given a list of block indecies: the first index is the current block. the rest are the indecies of the blocks immediately preceding it.
-                    //     * for every block in the list: find an binding that references it `bindings.iter().find(|b| b.block == ix)`
-                    //     * if the first index has a binding, use that. everything is ok.
-                    //     * otherwise look at the rest of the indecies and assert they all contain a binding.
-                    //     * the result is a vec of types that describes a union of what the type of the variable may be.
+                    match locals.get(&variable.group()) {
+                        None => {
+                            // NOT a local variable.
+                            let module = cx.value_store.get_by_assoc(*mref).unwrap();
+                            let value = cx
+                                .value_store
+                                .with_value(module, |m| {
+                                    m.properties.get(&variable.group()).cloned()
+                                })
+                                .unwrap()
+                                .unwrap();
 
-                    let Variable(bindings) = &locals[&variable.group()];
+                            let value_t = cx.get_type_of(value)?;
 
-                    let mut bindings_it = Some(block_ix)
-                        .into_iter()
-                        .chain(
-                            cfg.edges_directed(block_ix, EdgeDirection::Incoming)
-                                .map(|e| e.source()),
-                        )
-                        .map(|ix| (ix, bindings.iter().find(|b| b.block == ix).cloned()));
+                            value_types.insert(inst.value, value_t);
 
-                    let variable_types = if let Some((index, binding)) = bindings_it.next() {
-                        assert_eq!(index, block_ix);
+                            nonlocals.insert(inst.value, value);
 
-                        match binding {
-                            Some(Binding { type_id, .. }) => vec![type_id],
+                            cg_block.push(CgInst::Use {
+                                value,
+                                ret: inst.value,
+                            });
+                        }
 
-                            None => {
-                                // no binding in current block, inspect the immediate predecessors.
+                        Some(Variable(bindings)) => {
+                            // HACK:
+                            //     we should be using some kind of separate binding graph
+                            //     where the names are nodes and the edges are control flow edges
+                            //     so that we can use a dominance algorithm as a rough check whether
+                            //     a binding is potentially unbound.
+                            //
+                            //     but I'm not quite sure how to go about implementing this right now...
+                            //     the current implementation works as follows:
+                            //
+                            //     * given a list of block indecies: the first index is the current block. the rest are the indecies of the blocks immediately preceding it.
+                            //     * for every block in the list: find an binding that references it `bindings.iter().find(|b| b.block == ix)`
+                            //     * if the first index has a binding, use that. everything is ok.
+                            //     * otherwise look at the rest of the indecies and assert they all contain a binding.
+                            //     * the result is a vec of types that describes a union of what the type of the variable may be.
 
-                                let mut types =
-                                    ahash::AHashSet::with_capacity(bindings_it.size_hint().0);
+                            let mut bindings_it = Some(block_ix)
+                                .into_iter()
+                                .chain(
+                                    cfg.edges_directed(block_ix, EdgeDirection::Incoming)
+                                        .map(|e| e.source()),
+                                )
+                                .map(|ix| (ix, bindings.iter().find(|b| b.block == ix).cloned()));
 
-                                for (_, binding) in bindings_it {
-                                    match binding {
-                                        Some(Binding { type_id, .. }) => { types.insert(type_id); },
+                            let variable_types = if let Some((index, binding)) = bindings_it.next()
+                            {
+                                assert_eq!(index, block_ix);
 
-                                        None => todo!("all immediate predecessors must contain a variable binding."),
+                                match binding {
+                                    Some(Binding { type_id, .. }) => vec![type_id],
+
+                                    None => {
+                                        // no binding in current block, inspect the immediate predecessors.
+
+                                        let mut types = ahash::AHashSet::with_capacity(
+                                            bindings_it.size_hint().0,
+                                        );
+
+                                        for (_, binding) in bindings_it {
+                                            match binding {
+                                            Some(Binding { type_id, .. }) => { types.insert(type_id); },
+
+                                            None => todo!("all immediate predecessors must contain a variable binding."),
+                                        }
+                                        }
+
+                                        types.into_iter().collect()
                                     }
                                 }
+                            } else {
+                                todo!("unbound local variable.");
+                            };
 
-                                types.into_iter().collect()
-                            }
+                            let var_t = match variable_types.as_slice() {
+                                [] => todo!("unbound local variable."),
+
+                                [one] => *one,
+
+                                _ => cx.tcx().insert(
+                                    PythonType::Union {
+                                        members: Some(variable_types),
+                                    }
+                                    .into(),
+                                ),
+                            };
+
+                            value_types.insert(inst.value, var_t);
+
+                            cg_block.push(CgInst::ReadLocalVar {
+                                var: variable.clone(),
+                                ret: inst.value,
+                            });
                         }
-                    } else {
-                        todo!("unbound local variable.");
-                    };
-
-                    let var_t = match variable_types.as_slice() {
-                        [] => todo!("unbound local variable."),
-
-                        [one] => *one,
-
-                        _ => cx.tcx().insert(
-                            PythonType::Union {
-                                members: Some(variable_types),
-                            }
-                            .into(),
-                        ),
-                    };
-
-                    value_types.insert(inst.value, var_t);
-
-                    cg_block.push(CgInst::ReadLocalVar {
-                        var: variable.clone(),
-                        ret: inst.value,
-                    });
+                    }
                 }
 
                 RawInst::RefAsStr { .. } => {
@@ -405,6 +435,18 @@ impl TypingMachine {
                                 RawInst::GetDunder { dunder, object } => {
                                     let object_t = value_types[&object];
                                     Some((object_t, format!("{}", dunder)))
+                                }
+
+                                RawInst::UseVar { .. } => {
+                                    if let Some(value) = nonlocals.get(callable) {
+                                        cg_block.push(CgInst::Call {
+                                            value: *value,
+                                            args: arguments.clone(),
+                                            ret: inst.value,
+                                        });
+                                    }
+
+                                    continue;
                                 }
 
                                 _ => None,
@@ -573,8 +615,8 @@ pub fn typecheck(
 
     let code = cx.get_function_flatcode(fun.value_id)?;
 
-    let return_t = match cx.tcx().get_python_type_of(fun.type_id).unwrap() {
-        PythonType::Callable { ret, .. } => ret,
+    let (return_t, params_t) = match cx.tcx().get_python_type_of(fun.type_id).unwrap() {
+        PythonType::Callable { ret, params } => (ret, params),
         _ => unreachable!(),
     };
 
@@ -584,6 +626,23 @@ pub fn typecheck(
         None => unreachable!("code should always have one block."),
     };
 
+    if let Some(montyc_parser::AstNode::FuncDef(f)) = code.ast {
+        for ((sref, _), type_id) in f
+            .args
+            .unwrap_or_default()
+            .into_iter()
+            .zip(params_t.unwrap_or_default().into_iter())
+        {
+            let var = tm.locals.entry(sref.group()).or_default();
+
+            var.0.push(Binding {
+                block: entry,
+                inst: 0,
+                type_id,
+            });
+        }
+    }
+
     let mut blocks_processed = Vec::with_capacity(tm.cfg.raw_nodes().len());
     let mut blocks_to_analyze = VecDeque::with_capacity(tm.cfg.raw_nodes().len());
     blocks_to_analyze.push_front(entry);
@@ -591,6 +650,10 @@ pub fn typecheck(
     let mut errors = Vec::with_capacity(16);
 
     let mut cg_cfg = montyc_core::codegen::CgBlockCFG::new();
+
+    for _ in tm.cfg.raw_nodes() {
+        cg_cfg.add_node(vec![]);
+    }
 
     while let Some(ix) = blocks_to_analyze.pop_front() {
         errors.clear();
@@ -600,6 +663,7 @@ pub fn typecheck(
         }
 
         let cg_block = tm.analyze_block(cx, ix, &mut errors)?;
+        assert!(!cg_block.is_empty(), "{:#?}", tm);
 
         if let [] = errors.as_slice() {
             match blocks_processed.binary_search(&ix) {
@@ -607,7 +671,9 @@ pub fn typecheck(
                 Err(pos) => blocks_processed.insert(pos, ix),
             }
 
-            cg_cfg.add_node(cg_block);
+            if let Some(block) = cg_cfg.node_weight_mut(ix) {
+                let _ = std::mem::replace(block, cg_block);
+            }
 
             for edge in tm.cfg.edges_directed(ix, EdgeDirection::Outgoing) {
                 assert_eq!(edge.source(), ix);

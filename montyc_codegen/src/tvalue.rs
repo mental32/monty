@@ -3,14 +3,14 @@ use montyc_core::TypeId;
 #[derive(Debug, Clone, Copy)]
 pub enum ValueKind<V> {
     Imm(V),
-    Ref(V),
-    Fat(V, V),
+    ThinRef(V),
+    FatRef(V, V),
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct TValue<V> {
     inner: ValueKind<V>,
-    type_id: TypeId,
+    pub type_id: TypeId,
 }
 
 impl<V> TValue<V> {
@@ -23,21 +23,21 @@ impl<V> TValue<V> {
 
     pub fn reference(val: V, ty: TypeId) -> Self {
         Self {
-            inner: ValueKind::Ref(val),
+            inner: ValueKind::ThinRef(val),
             type_id: ty,
         }
     }
 
     pub fn fat(left: V, right: V, ty: TypeId) -> Self {
         Self {
-            inner: ValueKind::Fat(left, right),
+            inner: ValueKind::FatRef(left, right),
             type_id: ty,
         }
     }
 
     pub fn as_value(&self) -> &V {
         match &self.inner {
-            ValueKind::Imm(a) | ValueKind::Ref(a) | ValueKind::Fat(a, _) => a,
+            ValueKind::Imm(a) | ValueKind::ThinRef(a) | ValueKind::FatRef(a, _) => a,
         }
     }
 }
