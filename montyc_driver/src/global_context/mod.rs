@@ -311,7 +311,17 @@ impl TypingContext for TypingData {
 
                     PythonType::NoReturn => todo!(),
                     PythonType::Any => todo!(),
-                    PythonType::Tuple { .. } => todo!(),
+
+                    PythonType::Tuple { members } => write!(
+                        f,
+                        "Tuple[{}]",
+                        TypeFormatter::list(
+                            &*members.clone().unwrap_or_default(),
+                            *tcx,
+                            *type_id_of_val
+                        )
+                    ),
+
                     PythonType::List { .. } => todo!(),
 
                     PythonType::Union { members } => write!(

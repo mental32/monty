@@ -1,4 +1,4 @@
-use crate::{SpanRef, ValueId};
+use crate::{SpanRef, TypeId, ValueId};
 
 /// Codegen Instruction consumed by codegen lowering passes.
 ///
@@ -18,6 +18,8 @@ pub enum CgInst {
 
     ReadLocalVar { var: SpanRef, ret: usize },
     WriteLocalVar { var: SpanRef, orig: usize },
+
+    Alloc { type_id: TypeId, ilist: Vec<usize> },
 
     Return(usize),
 }

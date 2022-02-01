@@ -42,6 +42,9 @@ pub(crate) mod macros {
 
 pub(crate) mod builder;
 pub(crate) mod builtins;
+pub(crate) mod data;
+
+use data::CgFuncData;
 
 fn ir_type_of(tcx: &dyn montyc_core::TypingContext, type_id: TypeId) -> ir::Type {
     match tcx.get_python_type_of(type_id).unwrap() {
@@ -62,83 +65,17 @@ fn ir_type_of(tcx: &dyn montyc_core::TypingContext, type_id: TypeId) -> ir::Type
     }
 }
 
-#[derive(Debug, Clone)]
-struct CgFuncData {
-    name: ExternalName,
-    sig: Signature,
-    value_id: TaggedValueId<{ FUNCTION }>,
-    cfg: montyc_core::codegen::CgBlockCFG,
-}
-
-#[derive(Debug)]
-pub(crate) struct CgData {
-    /// A mapping of function value indecies to `Func`.
-    funcs: MapT<ValueId, CgFuncData>,
-
-    /// functions that are defined, arranged from left-to-right as they are declared.
-    ///
-    /// The docs for cranelifts `ExternalName` lie!
-    /// The inner values are not "arbitrary" and do have special meaning when using `cranelift_object` wrt FuncIds.
-    ///
-    /// We need to keep the order of functions when we include them so that the declare, define, and importing logic works correctly.
-    /// At the moment we can simply store a tuple of `(name, linkage, signature)`
-    ///
-    _funcs_ordered_by_definition: Vec<(Box<str>, Linkage, Signature, Option<ValueId>)>,
-
-    /// Data storage. TODO
-    _data: (),
-}
-
-impl CgData {
-    pub(crate) fn funcs_ordered(
-        &self,
-    ) -> impl Iterator<Item = &(Box<str>, Linkage, Signature, Option<ValueId>)> {
-        self._funcs_ordered_by_definition.iter()
-    }
-
-    pub fn insert_function(
-        &mut self,
-        value_id: TaggedValueId<{ FUNCTION }>,
-        cfg: montyc_core::codegen::CgBlockCFG,
-        signature: Signature,
-    ) -> ExternalName {
-        let name = ExternalName::User {
-            namespace: 0,
-            index: self._funcs_ordered_by_definition.len() as u32,
-        };
-
-        let stringy_name = format!("value_{}", value_id.0 .0);
-
-        self._funcs_ordered_by_definition.push((
-            stringy_name.into(),
-            Linkage::Local,
-            signature.clone(),
-            Some(value_id.0),
-        ));
-
-        let func = CgFuncData {
-            value_id,
-            cfg,
-            name: name.clone(),
-            sig: signature,
-        };
-
-        self.funcs.insert(value_id.0, func);
-
-        name
-    }
-}
-
 pub(crate) struct BackendImpl {
     /// cranelift settings.
     settings: settings::Flags,
 
     /// Codegen data like functions and static data.
-    data: CgData,
+    data: data::CgData,
 
     /// The path to the C compiler used to link the objects together.
     cc: PathBuf,
 
+    /// The path to where we should write the output to.
     output: PathBuf,
 }
 
@@ -187,8 +124,6 @@ impl BackendImpl {
         fisa: &Flags,
         object_module: &mut ObjectModule,
     ) {
-        use cranelift_codegen::ir::InstBuilder;
-
         let mut main_fn = ir::Function::with_name_signature(
             ExternalName::User {
                 namespace: 0,
@@ -446,8 +381,7 @@ impl BackendImpl {
 
         let (stubbed, defined) = self
             .data
-            .funcs
-            .iter()
+            .iter_func_data()
             .map(|(ix, func)| (*ix, func))
             .partition::<MapT<_, _>, _>(|(_, func)| is_stubbed(func));
 
@@ -520,11 +454,7 @@ impl BackendImpl {
             output,
 
             cc,
-            data: CgData {
-                funcs: Default::default(),
-                _funcs_ordered_by_definition: vec![],
-                _data: (),
-            },
+            data: data::CgData::default(),
         }
     }
 

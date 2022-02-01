@@ -473,7 +473,7 @@ impl TypingMachine {
                                             })
                                         }
 
-                                        montyc_core::PropertyValue::Builtin(_, _) => todo!(),
+                                        montyc_core::PropertyValue::Builtin(kind, slot_name) => todo!(),
                                     }
                                 }
                             }
@@ -530,6 +530,7 @@ impl TypingMachine {
                     let dunder_t = match property {
                         Ok(p) => p.type_id,
                         Err(exc) => {
+                            todo!("{:?}", exc);
                             errors.push(exc);
                             continue;
                         }
@@ -560,7 +561,18 @@ impl TypingMachine {
                     });
                 }
 
-                RawInst::Tuple(_) => todo!(),
+                RawInst::Tuple(elems) => {
+                    let type_id = cx
+                        .typing_context
+                        .tuple(elems.iter().map(|e| value_types[e]).collect());
+
+                    cg_block.push(CgInst::Alloc {
+                        type_id,
+                        ilist: elems.to_vec(),
+                    });
+
+                    value_types.insert(inst.value, type_id);
+                }
 
                 RawInst::PhiJump { .. } => todo!(),
                 RawInst::PhiRecv => todo!(),

@@ -40,17 +40,6 @@ impl Allocatable for TypeId {
             PythonType::NoReturn => todo!(),
             PythonType::Any => todo!(),
             PythonType::Tuple { members } => todo!(),
-            PythonType::List { inner } => todo!(),
-            PythonType::Union { members } => todo!(),
-            PythonType::Type { of } => todo!(),
-            PythonType::Instance { of } => todo!(),
-            PythonType::TypeVar { name } => todo!(),
-            PythonType::Callable { params, ret } => todo!(),
-            PythonType::Generic { args } => todo!(),
-            PythonType::Builtin { inner } => todo!(),
-            // PythonType::NoReturn => todo!(),
-            // PythonType::Any => todo!(),
-
             // PythonType::Tuple { members } => {
             //     let (layout, _) = {
             //         let members = members.clone().unwrap_or_default();
@@ -76,13 +65,14 @@ impl Allocatable for TypeId {
 
             //     patma!(*addr, [addr] in fx.inner.inst_results(malloc_inst)).unwrap()
             // }
-
-            // PythonType::Union { members } => todo!(),
-            // PythonType::Type { of } => todo!(),
-            // PythonType::TypeVar { name } => todo!(),
-            // PythonType::Callable { params, ret } => todo!(),
-            // PythonType::Generic { args } => todo!(),
-            // PythonType::Builtin { inner } => todo!(),
+            PythonType::List { inner } => todo!(),
+            PythonType::Union { members } => todo!(),
+            PythonType::Type { of } => todo!(),
+            PythonType::Instance { of } => todo!(),
+            PythonType::TypeVar { name } => todo!(),
+            PythonType::Callable { params, ret } => todo!(),
+            PythonType::Generic { args } => todo!(),
+            PythonType::Builtin { inner } => todo!(),
         }
     }
 
@@ -96,17 +86,6 @@ impl Allocatable for TypeId {
             PythonType::NoReturn => todo!(),
             PythonType::Any => todo!(),
             PythonType::Tuple { members } => todo!(),
-            PythonType::List { inner } => todo!(),
-            PythonType::Union { members } => todo!(),
-            PythonType::Type { of } => todo!(),
-            PythonType::Instance { of } => todo!(),
-            PythonType::TypeVar { name } => todo!(),
-            PythonType::Callable { params, ret } => todo!(),
-            PythonType::Generic { args } => todo!(),
-            PythonType::Builtin { inner } => todo!(),
-            // PythonType::NoReturn => todo!(),
-            // PythonType::Any => todo!(),
-
             // PythonType::Tuple { members } => {
             //     let (_, offsets) = {
             //         let members = members.clone().unwrap_or_default();
@@ -124,13 +103,14 @@ impl Allocatable for TypeId {
             //             .store(MemFlags::new(), elem.as_value(), addr, offset);
             //     }
             // }
-
-            // PythonType::Union { members } => todo!(),
-            // PythonType::Type { of } => todo!(),
-            // PythonType::TypeVar { name } => todo!(),
-            // PythonType::Callable { args, ret } => todo!(),
-            // PythonType::Generic { args } => todo!(),
-            // PythonType::Builtin { inner } => todo!(),
+            PythonType::List { inner } => todo!(),
+            PythonType::Union { members } => todo!(),
+            PythonType::Type { of } => todo!(),
+            PythonType::Instance { of } => todo!(),
+            PythonType::TypeVar { name } => todo!(),
+            PythonType::Callable { params, ret } => todo!(),
+            PythonType::Generic { args } => todo!(),
+            PythonType::Builtin { inner } => todo!(),
         }
     }
 }
@@ -168,22 +148,12 @@ impl Builder<'_, '_> {
     }
 
     pub fn lower(
-        self,
+        mut self,
         blocks: MapT<CgBlockId, ir::Block>,
         module: &mut ObjectModule,
         fids: &MapT<ValueId, FuncId>,
         cg_settings: Box<dyn TargetIsa>,
     ) {
-        let Self {
-            inner: mut builder,
-            cfg,
-            mut values,
-            mut locals,
-            mut f_refs,
-            host,
-            ..
-        } = self;
-
         let mut blocks_processed = vec![];
         let mut block_indecies = VecDeque::from(vec![NodeIndex::new(0)]);
 
@@ -196,95 +166,107 @@ impl Builder<'_, '_> {
             let current_block_id = CgBlockId(block_ix.index());
             let current_block = blocks[&current_block_id];
 
-            if builder.current_block() != Some(current_block) {
+            if self.inner.current_block() != Some(current_block) {
                 log::trace!(
                     "switching {:?} -> {:?}",
-                    builder.current_block(),
+                    self.inner.current_block(),
                     current_block
                 );
 
-                builder.switch_to_block(current_block);
+                self.inner.switch_to_block(current_block);
             }
 
-            for inst in &cfg[block_ix] {
+            for inst in &self.cfg[block_ix] {
                 log::trace!("[cranelift::builder::Builder::lower]   {:?}", inst);
 
                 match inst {
+                    CgInst::Alloc { type_id, ilist } => {
+                        let addr = type_id.alloc_uninit(&mut self);
+
+                        let values = ilist
+                            .iter()
+                            .map(|v| self.values[v].clone())
+                            .collect::<Vec<_>>()
+                            .into_iter();
+
+                        type_id.initialize(&mut self, addr, values);
+                    }
+
                     CgInst::Jump { to } => {
-                        builder.ins().jump(blocks[&to], &[]);
+                        self.inner.ins().jump(blocks[&to], &[]);
                         break;
                     }
 
                     CgInst::JumpIfTrue { to, ctrl } => {
-                        let one = builder.ins().iconst(ir::types::I64, 1);
-                        let ctrl = values[ctrl].as_value();
+                        let one = self.inner.ins().iconst(ir::types::I64, 1);
+                        let ctrl = self.values[ctrl].as_value();
 
-                        builder
+                        self.inner
                             .ins()
                             .br_icmp(IntCC::Equal, *ctrl, one, blocks[to], &[]);
                     }
 
                     CgInst::JumpIfFalse { to, ctrl } => {
-                        let one = builder.ins().iconst(ir::types::I64, 0);
-                        let ctrl = values[ctrl].as_value();
+                        let one = self.inner.ins().iconst(ir::types::I64, 0);
+                        let ctrl = self.values[ctrl].as_value();
 
-                        builder
+                        self.inner
                             .ins()
                             .br_icmp(IntCC::Equal, *ctrl, one, blocks[to], &[]);
                     }
 
                     CgInst::Use { value, ret } => {
-                        let f_ref = match f_refs.get(value) {
+                        let f_ref = match self.f_refs.get(value) {
                             Some(f_ref) => *f_ref,
                             None => {
                                 let fid = fids[value];
-                                let f_ref = module.declare_func_in_func(fid, builder.func);
-                                f_refs.insert(*value, f_ref);
+                                let f_ref = module.declare_func_in_func(fid, self.inner.func);
+                                self.f_refs.insert(*value, f_ref);
                                 f_ref
                             }
                         };
 
-                        let addr = builder.ins().func_addr(cg_settings.pointer_type(), f_ref);
+                        let addr = self
+                            .inner
+                            .ins()
+                            .func_addr(cg_settings.pointer_type(), f_ref);
 
-                        let ty = host.get_type_of(*value).unwrap();
+                        let ty = self.host.get_type_of(*value).unwrap();
 
-                        values.insert(*ret, TValue::reference(addr, ty));
+                        self.values.insert(*ret, TValue::reference(addr, ty));
                     }
 
                     CgInst::Call { value, args, ret } => {
-                        let func = match f_refs.get(value) {
+                        let func = match self.f_refs.get(value) {
                             Some(f) => *f,
                             None => {
                                 let fid = fids[value];
-                                let f_ref = module.declare_func_in_func(fid, builder.func);
-                                f_refs.insert(*value, f_ref);
+                                let f_ref = module.declare_func_in_func(fid, self.inner.func);
+                                self.f_refs.insert(*value, f_ref);
                                 f_ref
                             }
                         };
 
                         let args = args
                             .iter()
-                            .map(|v| *values[v].as_value())
+                            .map(|v| *self.values[v].as_value())
                             .collect::<Vec<_>>();
 
-                        let inst = builder.ins().call(func, &args);
+                        let inst = self.inner.ins().call(func, &args);
 
-                        let value_t = match host
-                            .tcx()
-                            .get_python_type_of(host.get_type_of(*value).unwrap())
-                            .unwrap()
-                        {
+                        let type_id = self.host.get_type_of(*value).unwrap();
+                        let value_t = match self.host.tcx().get_python_type_of(type_id).unwrap() {
                             PythonType::Callable { ret, .. } => ret,
                             _ => unreachable!(),
                         };
 
-                        match builder.inst_results(inst) {
+                        match self.inner.inst_results(inst) {
                             [] => {
                                 todo!()
                             }
 
                             [rval] => {
-                                values.insert(*ret, TValue::imm(*rval, value_t));
+                                self.values.insert(*ret, TValue::imm(*rval, value_t));
                             }
 
                             _ => unimplemented!(),
@@ -294,82 +276,89 @@ impl Builder<'_, '_> {
                     CgInst::Const { cst, ret } => {
                         let (ssa, const_t) = match cst {
                             Constant::Int(n) => (
-                                builder.ins().iconst(ir::types::I64, *n),
+                                self.inner.ins().iconst(ir::types::I64, *n),
                                 TypingConstants::Int,
                             ),
 
                             Constant::Float(n) => (
-                                builder.ins().iconst(ir::types::F64, *n as i64),
+                                self.inner.ins().iconst(ir::types::F64, *n as i64),
                                 TypingConstants::Float,
                             ),
 
                             Constant::Bool(b) => (
-                                builder.ins().iconst(ir::types::I64, *b as i64),
+                                self.inner.ins().iconst(ir::types::I64, *b as i64),
                                 TypingConstants::Bool,
                             ),
 
-                            Constant::String(_) => todo!(),
+                            Constant::String(st) => {
+                                let ptr = todo!("declare string constant data");
+                                (ptr, TypingConstants::Str)
+                            }
 
                             Constant::None => (
-                                builder.ins().iconst(ir::types::R64, 0),
+                                self.inner.ins().iconst(ir::types::R64, 0),
                                 TypingConstants::None,
                             ),
 
                             Constant::Ellipsis => todo!(),
                         };
 
-                        values.insert(*ret, TValue::imm(ssa, const_t));
+                        self.values.insert(*ret, TValue::imm(ssa, const_t));
                     }
 
                     CgInst::ReadLocalVar { var, ret } => {
-                        let (ss, ty, _) = locals[&var.group()];
-                        let v = builder.ins().stack_load(ir::types::I64, ss, 0);
+                        let (ss, ty, _) = self.locals[&var.group()];
+                        let v = self.inner.ins().stack_load(ir::types::I64, ss, 0);
 
-                        values.insert(*ret, TValue::imm(v, ty));
+                        self.values.insert(*ret, TValue::imm(v, ty));
                     }
 
                     CgInst::WriteLocalVar { var, orig } => {
-                        if !locals.contains_key(&var.group()) {
+                        if !self.locals.contains_key(&var.group()) {
                             let slot_t = TypingConstants::Int;
-                            let ss = stack_alloc(&mut builder, host, slot_t);
+                            let ss = stack_alloc(&mut self.inner, self.host, slot_t);
 
-                            locals
-                                .insert(var.group(), (ss, slot_t, ir_type_of(host.tcx(), slot_t)));
+                            self.locals.insert(
+                                var.group(),
+                                (ss, slot_t, ir_type_of(self.host.tcx(), slot_t)),
+                            );
                         }
 
-                        let (ss, slot_t, _) = locals[&var.group()];
+                        let (ss, slot_t, _) = self.locals[&var.group()];
 
-                        let dest = builder.ins().stack_addr(ir::types::I64, ss, 0);
+                        let dest = self.inner.ins().stack_addr(ir::types::I64, ss, 0);
 
-                        let val = values[orig];
-                        let src = *values[orig].as_value();
+                        let val = self.values[orig];
+                        let src = *self.values[orig].as_value();
 
-                        if host.tcx().is_integer(val.type_id) {
-                            builder.ins().stack_store(src, ss, 0);
+                        if self.host.tcx().is_integer(val.type_id) {
+                            self.inner.ins().stack_store(src, ss, 0);
                         } else {
-                            let size = host.tcx().size_of(slot_t);
-                            let size = builder
+                            let size = self.host.tcx().size_of(slot_t);
+                            let size = self
+                                .inner
                                 .ins()
                                 .iconst(ir::types::I64, i64::try_from(size).unwrap());
 
-                            builder.call_memcpy(cg_settings.frontend_config(), dest, src, size);
+                            self.inner
+                                .call_memcpy(cg_settings.frontend_config(), dest, src, size);
                         }
                     }
 
                     CgInst::Return(val) => {
-                        let rval = *values[&val].as_value();
+                        let rval = *self.values[&val].as_value();
 
-                        builder.ins().return_(&[rval]);
+                        self.inner.ins().return_(&[rval]);
                         break;
                     }
                 }
             }
 
-            builder.seal_block(current_block);
+            self.inner.seal_block(current_block);
 
             blocks_processed.push(block_ix);
 
-            for edge in cfg.edges_directed(block_ix, EdgeDirection::Outgoing) {
+            for edge in self.cfg.edges_directed(block_ix, EdgeDirection::Outgoing) {
                 assert_eq!(edge.source(), block_ix);
 
                 if let Ok(_) = blocks_processed.binary_search(&edge.target()) {
@@ -382,7 +371,7 @@ impl Builder<'_, '_> {
             }
         }
 
-        builder.finalize();
+        self.inner.finalize();
     }
 }
 

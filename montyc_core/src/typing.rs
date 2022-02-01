@@ -483,11 +483,7 @@ pub trait TypingContext {
                         members_as_union
                     },
                 ]),
-                if is_empty {
-                    TypingConstants::Never
-                } else {
-                    members_as_union
-                },
+                TypingConstants::None,
             );
 
             let setitem_property = Property::new(
