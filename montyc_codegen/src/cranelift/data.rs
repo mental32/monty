@@ -38,6 +38,19 @@ impl CgData {
         self.funcs.iter()
     }
 
+    pub fn decl_foreign_function(&mut self, name: &str, signature: Signature) -> ExternalName {
+        let stringy_name = name.to_string().into_boxed_str();
+        let name = ExternalName::User {
+            namespace: 0,
+            index: self._funcs_ordered_by_definition.len() as u32,
+        };
+
+        self._funcs_ordered_by_definition
+            .push((stringy_name, Linkage::Import, signature, None));
+
+        name
+    }
+
     pub fn insert_function(
         &mut self,
         value_id: TaggedValueId<{ FUNCTION }>,

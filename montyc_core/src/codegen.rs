@@ -1,5 +1,11 @@
 use crate::{SpanRef, TypeId, ValueId};
 
+#[derive(Debug, Clone, Copy)]
+pub enum Field {
+    ByVal(usize),
+    Imm(i64),
+}
+
 /// Codegen Instruction consumed by codegen lowering passes.
 ///
 /// Previously FlatSeq's and FlatInst's were passed directly to
@@ -16,10 +22,12 @@ pub enum CgInst {
     Call { value: ValueId, args: Vec<usize>, ret: usize },
     Const { cst: crate::ast::Constant, ret: usize },
 
+    FieldLoad { orig: usize, orig_t: TypeId, field: Field, field_t: TypeId, ret: usize },
+
     ReadLocalVar { var: SpanRef, ret: usize },
     WriteLocalVar { var: SpanRef, orig: usize },
 
-    Alloc { type_id: TypeId, ilist: Vec<usize> },
+    Alloc { type_id: TypeId, ilist: Vec<usize>, ret: usize },
 
     Return(usize),
 }

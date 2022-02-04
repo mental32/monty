@@ -13,7 +13,7 @@ pub mod raw_inst;
 
 use std::fmt::Display;
 
-use montyc_core::{ast::Constant, ModuleRef, Span, SpanRef, TypeId};
+use montyc_core::{ast::Constant, ModuleRef, Span, SpanRef};
 use montyc_parser::AstNode;
 
 use self::raw_inst::RawInst;
@@ -24,7 +24,6 @@ const INVALID_VALUE: usize = std::usize::MAX;
 #[derive(Debug, Clone, Default)]
 pub struct InstAttrs {
     pub span: Option<Span>,
-    pub type_id: Option<TypeId>,
     pub ast: Option<montyc_parser::AstNode>,
 }
 

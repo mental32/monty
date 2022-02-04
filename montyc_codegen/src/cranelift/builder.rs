@@ -2,21 +2,24 @@ use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 
-use cranelift_codegen::ir;
 use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::{self, ExternalName};
 use cranelift_codegen::ir::{
-    Block, FuncRef, InstBuilder, MemFlags, StackSlot, StackSlotData, StackSlotKind,
+    FuncRef, InstBuilder, MemFlags, StackSlot, StackSlotData, StackSlotKind,
 };
 use cranelift_codegen::isa::TargetIsa;
-use cranelift_frontend::FunctionBuilder;
 
+use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{FuncId, Module};
 use cranelift_object::ObjectModule;
+
 use montyc_core::ast::Constant;
-use montyc_core::codegen::{CgBlockId, CgInst};
+use montyc_core::codegen::{CgBlockId, CgInst, Field};
 use montyc_core::{patma, MapT, PythonType, TypeId, TypingConstants, ValueId};
+
 use montyc_flatcode::{raw_inst::RawInst, FlatInst};
 use montyc_query::Queries;
+
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::EdgeDirection;
@@ -39,32 +42,28 @@ impl Allocatable for TypeId {
         match tcx.get_python_type_of(*self).unwrap() {
             PythonType::NoReturn => todo!(),
             PythonType::Any => todo!(),
-            PythonType::Tuple { members } => todo!(),
-            // PythonType::Tuple { members } => {
-            //     let (layout, _) = {
-            //         let members = members.clone().unwrap_or_default();
+            PythonType::Tuple { members } => {
+                let (layout, _) = {
+                    let members = members.clone().unwrap_or_default();
 
-            //         montyc_core::calculate_layout(
-            //             &mut members.iter().map(|tid| tcx.layout_of(*tid)),
-            //         )
-            //     };
+                    montyc_core::calculate_layout(
+                        &mut members.iter().map(|tid| tcx.layout_of(*tid)),
+                    )
+                };
 
-            //     assert_ne!(
-            //         0,
-            //         layout.size(),
-            //         "{:?}",
-            //         tcx.get_python_type_of(*self).unwrap()
-            //     );
+                assert_ne!(
+                    0,
+                    layout.size(),
+                    "{:?}",
+                    tcx.get_python_type_of(*self).unwrap()
+                );
 
-            //     let size = fx.inner.ins().iconst(
-            //         ir::types::I64,
-            //         <_ as TryInto<i64>>::try_into(layout.size()).unwrap(),
-            //     );
+                let malloc_inst = fx.heap_alloc(
+                    <_ as std::convert::TryInto<i64>>::try_into(layout.size()).unwrap(),
+                );
 
-            //     let malloc_inst = todo!();
-
-            //     patma!(*addr, [addr] in fx.inner.inst_results(malloc_inst)).unwrap()
-            // }
+                patma!(*addr, [addr] in fx.inner.inst_results(malloc_inst)).unwrap()
+            }
             PythonType::List { inner } => todo!(),
             PythonType::Union { members } => todo!(),
             PythonType::Type { of } => todo!(),
@@ -85,24 +84,23 @@ impl Allocatable for TypeId {
         match kind {
             PythonType::NoReturn => todo!(),
             PythonType::Any => todo!(),
-            PythonType::Tuple { members } => todo!(),
-            // PythonType::Tuple { members } => {
-            //     let (_, offsets) = {
-            //         let members = members.clone().unwrap_or_default();
-            //         let tcx = fx.host.tcx();
+            PythonType::Tuple { members } => {
+                let (_, offsets) = {
+                    let members = members.clone().unwrap_or_default();
+                    let tcx = fx.host.tcx();
 
-            //         montyc_core::calculate_layout(
-            //             &mut members.iter().map(|tid| tcx.layout_of(*tid)),
-            //         )
-            //     };
+                    montyc_core::calculate_layout(
+                        &mut members.iter().map(|tid| tcx.layout_of(*tid)),
+                    )
+                };
 
-            //     for (ix, elem) in values.into_iter().enumerate() {
-            //         let offset = offsets[ix];
+                for (ix, elem) in values.into_iter().enumerate() {
+                    let offset = offsets[ix];
 
-            //         fx.ins()
-            //             .store(MemFlags::new(), elem.as_value(), addr, offset);
-            //     }
-            // }
+                    fx.ins()
+                        .store(MemFlags::new(), *elem.as_value(), addr, offset);
+                }
+            }
             PythonType::List { inner } => todo!(),
             PythonType::Union { members } => todo!(),
             PythonType::Type { of } => todo!(),
@@ -140,9 +138,30 @@ pub(super) struct Builder<'a, 'b> {
     pub f_refs: MapT<ValueId, FuncRef>,
 
     pub host: &'a dyn Queries,
+    pub alloc: ExternalName,
+    pub cg_settings: Box<dyn TargetIsa>,
 }
 
 impl Builder<'_, '_> {
+    pub fn heap_alloc(&mut self, size: i64) -> ir::Inst {
+        let pointer_type = self.cg_settings.pointer_type();
+        let signature = self.inner.import_signature(signature!(
+            self.cg_settings.default_call_conv(),
+            &[ir::types::I64],
+            pointer_type
+        ));
+
+        let alloc = self.inner.import_function(ir::ExtFuncData {
+            name: self.alloc.clone(),
+            signature,
+            colocated: false,
+        });
+
+        let size = self.inner.ins().iconst(ir::types::I64, size);
+
+        self.ins().call(alloc, &[size])
+    }
+
     pub fn stack_alloc(&mut self, tid: TypeId) -> StackSlot {
         stack_alloc(&mut self.inner, self.host, tid)
     }
@@ -180,7 +199,11 @@ impl Builder<'_, '_> {
                 log::trace!("[cranelift::builder::Builder::lower]   {:?}", inst);
 
                 match inst {
-                    CgInst::Alloc { type_id, ilist } => {
+                    CgInst::Alloc {
+                        type_id,
+                        ilist,
+                        ret,
+                    } => {
                         let addr = type_id.alloc_uninit(&mut self);
 
                         let values = ilist
@@ -190,6 +213,50 @@ impl Builder<'_, '_> {
                             .into_iter();
 
                         type_id.initialize(&mut self, addr, values);
+
+                        self.values.insert(*ret, TValue::reference(addr, *type_id));
+                    }
+
+                    CgInst::FieldLoad {
+                        orig,
+                        orig_t,
+                        field,
+                        field_t,
+                        ret,
+                    } => {
+                        let orig = self.values[orig];
+                        let origin_type = self.host.tcx().get_python_type_of(*orig_t).unwrap();
+
+                        match origin_type {
+                            PythonType::Tuple { members } => {
+                                let (_, offsets) = {
+                                    let members = members.clone().unwrap_or_default();
+                                    let tcx = self.host.tcx();
+
+                                    montyc_core::calculate_layout(
+                                        &mut members.iter().map(|tid| tcx.layout_of(*tid)),
+                                    )
+                                };
+
+                                match field {
+                                    Field::ByVal(_) => todo!(),
+                                    Field::Imm(offset) => {
+                                        let offset = offsets[*offset as usize];
+
+                                        let field = self.inner.ins().load(
+                                            ir::types::I64,
+                                            MemFlags::new(),
+                                            *orig.as_value(),
+                                            offset,
+                                        );
+
+                                        self.values.insert(*ret, TValue::imm(field, *field_t));
+                                    }
+                                }
+                            }
+
+                            _ => todo!(),
+                        }
                     }
 
                     CgInst::Jump { to } => {

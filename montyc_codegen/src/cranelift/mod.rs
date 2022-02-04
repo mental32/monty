@@ -248,6 +248,7 @@ impl BackendImpl {
         fids: &MapT<ValueId, FuncId>,
         func: &CgFuncData,
         fisa: &Flags,
+        alloc: ExternalName,
     ) -> cranelift_module::ModuleResult<&'a mut FunctionBuilderContext> {
         log::info!("[build_func] building func {:?}", func.value_id);
         log::trace!("    with cfg: {:#?}", func.cfg.raw_nodes());
@@ -265,10 +266,11 @@ impl BackendImpl {
                 inner: FunctionBuilder::new(&mut clir, builder_cx),
                 values: MapT::with_capacity(cfg.raw_nodes().iter().map(|n| n.weight.len()).sum()),
                 locals: MapT::new(),
-
                 f_refs: MapT::new(),
                 host: queries,
+                alloc,
                 cfg,
+                cg_settings: self.codegen_settings(),
             };
 
             // Allocate the blocks to be used:
@@ -350,7 +352,7 @@ impl BackendImpl {
     }
 
     fn build_all_functions(
-        &self,
+        &mut self,
         queries: &dyn Queries,
         entry_ix: ValueId,
     ) -> MontyResult<ObjectModule> {
@@ -362,6 +364,15 @@ impl BackendImpl {
 
             ObjectBuilder::new(self.codegen_settings(), name, libcall_names).unwrap()
         });
+
+        let alloc = self.data.decl_foreign_function(
+            "malloc",
+            signature!(
+                self.codegen_settings().default_call_conv(),
+                &[ir::types::I64],
+                self.codegen_settings().pointer_type()
+            ),
+        );
 
         fn is_stubbed(func: &&CgFuncData) -> bool {
             match func.cfg.raw_nodes() {
@@ -424,6 +435,7 @@ impl BackendImpl {
                 &fids,
                 func,
                 &fisa,
+                alloc.clone(),
             ) {
                 todo!("{:?}", err);
             }

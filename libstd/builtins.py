@@ -20,6 +20,7 @@ class type:
     type(name, bases, dict) -> a new type
     """
 
+
 @extern
 class function:
     """
@@ -36,6 +37,7 @@ class function:
     closure
         a tuple that supplies the bindings for free variables
     """
+
 
 @extern
 class bool:

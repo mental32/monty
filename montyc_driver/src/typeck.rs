@@ -426,7 +426,7 @@ impl TypingMachine {
                                         let spanref_to_str = cx.spanref_to_str(r)?.to_string();
                                         let object_t = value_types[&object];
 
-                                        Some((object_t, spanref_to_str))
+                                        Some((object, object_t, spanref_to_str))
                                     } else {
                                         None
                                     }
@@ -434,7 +434,7 @@ impl TypingMachine {
 
                                 RawInst::GetDunder { dunder, object } => {
                                     let object_t = value_types[&object];
-                                    Some((object_t, format!("{}", dunder)))
+                                    Some((object, object_t, format!("{}", dunder)))
                                 }
 
                                 RawInst::UseVar { .. } => {
@@ -452,7 +452,45 @@ impl TypingMachine {
                                 _ => None,
                             };
 
-                            if let Some((object_t, st)) = attr {
+                            if let Some((object, object_t, st)) = attr {
+                                let object_pytype = cx.tcx().get_python_type_of(object_t).unwrap();
+
+                                match (object_pytype, st.as_str()) {
+                                    (PythonType::Tuple { members }, "__getitem__") => {
+                                        let members = members.unwrap_or_default();
+                                        let index = arguments[1];
+
+                                        let (field, field_t) =
+                                            match Self::find_inst(cfg, index).unwrap().0.op {
+                                                RawInst::Const(Constant::Int(n)) => (
+                                                    montyc_core::codegen::Field::Imm(n),
+                                                    members.get(n as usize).cloned(),
+                                                ),
+
+                                                _ => (
+                                                    montyc_core::codegen::Field::ByVal(index),
+                                                    Some(ret),
+                                                ),
+                                            };
+
+                                        let field_t = field_t.unwrap_or(TypingConstants::Never);
+
+                                        cg_block.push(CgInst::FieldLoad {
+                                            orig: object,
+                                            orig_t: object_t,
+
+                                            field,
+                                            field_t,
+
+                                            ret: inst.value,
+                                        });
+
+                                        continue;
+                                    }
+
+                                    _ => (),
+                                }
+
                                 if let Ok(property) = cx
                                     .typing_context
                                     .get_property(object_t, &st)
@@ -473,7 +511,9 @@ impl TypingMachine {
                                             })
                                         }
 
-                                        montyc_core::PropertyValue::Builtin(kind, slot_name) => todo!(),
+                                        montyc_core::PropertyValue::Builtin(kind, slot_name) => {
+                                            todo!()
+                                        }
                                     }
                                 }
                             }
@@ -569,6 +609,7 @@ impl TypingMachine {
                     cg_block.push(CgInst::Alloc {
                         type_id,
                         ilist: elems.to_vec(),
+                        ret: inst.value,
                     });
 
                     value_types.insert(inst.value, type_id);

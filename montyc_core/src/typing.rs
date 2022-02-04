@@ -453,8 +453,15 @@ pub trait TypingContext {
         );
 
         let is_empty = members.is_none();
-        let members_as_union = match members {
-            Some(_) => self.insert(PythonType::Union { members }.into()),
+        let members_uniq = members.map(|mut elems| {
+            elems.sort();
+            elems.dedup();
+            elems
+        });
+
+        let members_as_union = match members_uniq {
+            Some(v) if matches!(v.as_slice(), [_]) => v[0],
+            members @ Some(_) => self.insert(PythonType::Union { members }.into()),
             None => TypingConstants::Never,
         };
 
