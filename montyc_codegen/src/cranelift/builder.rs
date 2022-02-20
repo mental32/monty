@@ -10,7 +10,7 @@ use cranelift_codegen::ir::{
 use cranelift_codegen::isa::TargetIsa;
 
 use cranelift_frontend::FunctionBuilder;
-use cranelift_module::{FuncId, Module};
+use cranelift_module::{DataContext, FuncId, Module};
 use cranelift_object::ObjectModule;
 
 use montyc_core::ast::Constant;
@@ -32,7 +32,7 @@ trait Allocatable {
 
     fn initialize<I>(&self, fx: &mut Builder, addr: ir::Value, values: I)
     where
-        I: Iterator<Item = TValue<ir::Value>>;
+        I: IntoIterator<Item = TValue<ir::Value>>;
 }
 
 impl Allocatable for TypeId {
@@ -77,7 +77,7 @@ impl Allocatable for TypeId {
 
     fn initialize<I>(&self, fx: &mut Builder, addr: ir::Value, values: I)
     where
-        I: Iterator<Item = TValue<ir::Value>>,
+        I: IntoIterator<Item = TValue<ir::Value>>,
     {
         let kind = { fx.host.tcx().get_python_type_of(*self).unwrap().clone() };
 
@@ -206,13 +206,13 @@ impl Builder<'_, '_> {
                     } => {
                         let addr = type_id.alloc_uninit(&mut self);
 
-                        let values = ilist
-                            .iter()
-                            .map(|v| self.values[v].clone())
-                            .collect::<Vec<_>>()
-                            .into_iter();
+                        let values = self.values.clone();
 
-                        type_id.initialize(&mut self, addr, values);
+                        type_id.initialize(
+                            &mut self,
+                            addr,
+                            ilist.iter().map(move |v| values[v].clone()),
+                        );
 
                         self.values.insert(*ret, TValue::reference(addr, *type_id));
                     }
@@ -358,12 +358,36 @@ impl Builder<'_, '_> {
                             ),
 
                             Constant::String(st) => {
-                                let ptr = todo!("declare string constant data");
+                                let data_id = module
+                                    .declare_data(
+                                        &format!("str,{}", st.distinct()),
+                                        cranelift_module::Linkage::Local,
+                                        false,
+                                        false,
+                                    )
+                                    .unwrap();
+
+                                let mut dcx = DataContext::new();
+                                dcx.set_align(16); // TODO(mental): this was in the old implementation. I do not know why.
+
+                                let string = self.host.spanref_to_str(*st).unwrap();
+                                let string = std::ffi::CString::new(string).unwrap();
+                                let string = string.into_bytes_with_nul();
+                                let string = string.into_boxed_slice();
+
+                                dcx.define(string);
+
+                                module.define_data(data_id, &mut dcx).unwrap();
+
+                                let str_gv = module.declare_data_in_func(data_id, self.inner.func);
+
+                                let ptr = self.inner.ins().global_value(ir::types::I64, str_gv);
+
                                 (ptr, TypingConstants::Str)
                             }
 
                             Constant::None => (
-                                self.inner.ins().iconst(ir::types::R64, 0),
+                                self.inner.ins().iconst(ir::types::I64, 0),
                                 TypingConstants::None,
                             ),
 

@@ -5,7 +5,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{fmt, io, panic, rc::Rc};
 
 use ahash::AHashSet;
+
 use dashmap::DashMap;
+
+use montyc_hlirt::argparse::{ObjectParserExt, Parser};
+
+use montyc_hlirt::rt::singletons::Singletons;
 use parking_lot::Mutex;
 
 use montyc_core::dict::PyDictRaw;
@@ -15,16 +20,12 @@ use montyc_core::{
     PythonType, SpanRef, TaggedValueId, Type, TypeId, TypingConstants, TypingContext, Value,
     ValueId, FUNCTION, MODULE,
 };
-
 use montyc_flatcode::FlatCode;
-
 use montyc_hlirt::ctx::{CallCx, EvalGlue};
-use montyc_hlirt::object::{FuncLike, ObjectBuilder, PyValue, ReadyCallable};
+use montyc_hlirt::object::{FuncLike, IntoPyValue, ObjectBuilder, PyValue, ReadyCallable};
 use montyc_hlirt::rt::{AcceptInput, Runtime, RuntimeHost, RuntimeHostExt};
-use montyc_hlirt::{ObjectId, ObjectSpace, PyException, PyResult, PyResultExt};
-
+use montyc_hlirt::{argparse, ObjectId, ObjectSpace, PyException, PyResult, PyResultExt};
 use montyc_parser::{AstObject, SpanInterner};
-
 use montyc_query::Queries;
 
 use crate::prelude::*;
@@ -302,11 +303,11 @@ impl TypingContext for TypingData {
                     PythonType::Instance { of } => write!(
                         f,
                         "Instance of {}",
-                        TypeFormatter::display(
-                            type_id_of_val(*of).ok_or(fmt::Error)?,
-                            *tcx,
-                            *type_id_of_val
-                        )
+                        type_id_of_val(*of)
+                            .map(|t| TypeFormatter::display(t, *tcx, *type_id_of_val))
+                            .unwrap_or_else(|| format!(
+                                "<error failed resolving {of:?} to a type id>"
+                            ))
                     ),
 
                     PythonType::NoReturn => todo!(),
@@ -527,12 +528,72 @@ impl SessionContext {
 
                 rt.try_init(&mut &*self); // initialize interpreter builtins and classes.
 
-                fn nop(_cx: CallCx) -> PyResult<ObjectId> {
-                    todo!()
-                }
-
                 rt.singletons.monty = ObjectBuilder::<{ MODULE }>::new()
-                    .setattr("extern", ReadyCallable::from(nop))
+                    .setattr(
+                        "intrinsic",
+                        ReadyCallable::from(move |cx: CallCx| -> PyResult<ObjectId> {
+                            log::trace!("[__monty.intrinsic] applied intrinsic.");
+                            return Ok(cx.args[0]);
+                        }),
+                    )
+                    .setattr(
+                        "extern",
+                        ReadyCallable::from(move |cx: CallCx| -> PyResult<ObjectId> {
+                            log::trace!("[__monty.extern] called extern.");
+
+                            let (cx, (callconv,)) = argparse::arg("callconv")
+                                .map_value(|id, v| {
+                                    patma!((id, st.to_owned()), PyValue::Str(st) in v).ok_or(id)
+                                })
+                                .parse_with_cx(cx)?;
+
+                            let (callconv, callconv_st) = callconv.map_err(|id| {
+                                PyException::type_error()
+                                    .set_message(&format!(
+                                        "expected first argument to be `str` instead got {:?}`",
+                                        id
+                                    ))
+                                    .into()
+                            })?;
+
+                            log::trace!("[__monty.extern]   callconv: {:?}", callconv_st);
+
+                            let decorator =
+                                ReadyCallable::from(move |cx: CallCx| -> PyResult<ObjectId> {
+                                    let (cx, (func,)) = argparse::arg("func")
+                                        // .map_value(|id, v| {
+                                        //     patma!((inner.__dict__, id), f @ PyValue::Function { inner, .. } in v).ok_or(id)
+                                        // })
+                                        .parse_with_cx(cx)?;
+
+                                    let extern_slot_hash = cx.ecx.runtime().hash("__extern__");
+                                    let extern_slot = cx.ecx.runtime_mut().new_string("__extern__");
+
+                                    cx.ecx.runtime_mut().objects.with_object_mut(
+                                        func,
+                                        move |v| match v {
+                                            PyValue::Function { inner, .. } => {
+                                                inner.__dict__.insert(
+                                                    extern_slot_hash,
+                                                    (extern_slot, callconv),
+                                                );
+
+                                                Ok(())
+                                            }
+
+                                            _ => PyException::type_error().into(),
+                                        },
+                                    )?;
+
+                                    Ok(func)
+                                })
+                                .into_py_val();
+
+                            let decorator = cx.ecx.runtime_mut().objects.insert(decorator);
+
+                            Ok(decorator)
+                        }),
+                    )
                     .synthesise_within(&mut *rt)?;
             }
 
@@ -544,42 +605,41 @@ impl SessionContext {
 
             rt.singletons.builtins = builtins;
 
-            let default_builtin_classes: &[(TypeId, fn(&mut Runtime) -> &mut ObjectId)] = &[
-                (TypingConstants::Object, |rt| {
-                    &mut rt.singletons.object_class
-                }),
-                (TypingConstants::Type, |rt| &mut rt.singletons.type_class),
-                (TypingConstants::Bool, |rt| &mut rt.singletons.bool_class),
-                (TypingConstants::Int, |rt| &mut rt.singletons.int_class),
-                (TypingConstants::Float, |rt| &mut rt.singletons.float_class),
-                (TypingConstants::Str, |rt| &mut rt.singletons.string_class),
-                (TypingConstants::UntypedFunc, |rt| {
-                    &mut rt.singletons.function_class
-                }),
+            let default_builtin_classes: &[(TypeId, fn(&mut Singletons) -> &mut ObjectId)] = &[
+                (TypingConstants::Object, |s| &mut s.object_class),
+                (TypingConstants::None, |s| &mut s.none_class),
+                (TypingConstants::Type, |s| &mut s.type_class),
+                (TypingConstants::Bool, |s| &mut s.bool_class),
+                (TypingConstants::Int, |s| &mut s.int_class),
+                (TypingConstants::Float, |s| &mut s.float_class),
+                (TypingConstants::Str, |s| &mut s.string_class),
+                (TypingConstants::UntypedTuple, |s| &mut s.tuple_class),
+                (TypingConstants::UntypedFunc, |s| &mut s.function_class),
             ];
 
             log::trace!("[SessionContext::initialize_hlirt] proceeding to overwrite builtin singletons with classes from builtins.py");
 
             for (ty, as_mut_ref) in default_builtin_classes {
-                let class_name = match self.typing_context.get_python_type_of(*ty).unwrap() {
-                    PythonType::Builtin { inner } => String::from(inner.name()),
-                    _ => unreachable!(),
+                if let PythonType::Builtin { inner } =
+                    self.typing_context.get_python_type_of(*ty).unwrap()
+                {
+                    let hash = rt.hash(inner.name());
+                    let (_, real_class) = rt
+                        .objects
+                        .with_object(builtins, |m| match m {
+                            PyValue::Module { inner, .. } => inner.__dict__.get(hash),
+                            _ => unreachable!(),
+                        })
+                        .unwrap();
+
+                    (*as_mut_ref(&mut rt.singletons)) = real_class;
+                } else {
+                    unreachable!("{:?} is not a builtin type.", ty);
                 };
-
-                let name_hash = rt.hash(class_name);
-                let (_, real_class) = rt
-                    .objects
-                    .with_object(builtins, move |val| match val {
-                        PyValue::Module { inner, .. } => inner.__dict__.get(name_hash),
-                        _ => todo!(),
-                    })
-                    .unwrap();
-
-                (*as_mut_ref(&mut *rt)) = real_class;
             }
 
             for (ty, as_mut_ref) in default_builtin_classes {
-                let klass = *as_mut_ref(&mut *rt);
+                let klass = *as_mut_ref(&mut rt.singletons);
                 let klass_dict = rt.objects.with_object(klass, |val| match val {
                     PyValue::Class { inner, .. } => inner.__dict__.clone(),
                     _ => todo!(),
@@ -1049,9 +1109,13 @@ impl SessionContext {
     fn resolve_type_annotation(&self, rt: &Runtime, ann: ObjectId) -> MontyResult<TypeId> {
         log::trace!("[SessionContext::resolve_type_annotation] ann={:?}", ann);
 
+        if ann == rt.singletons.none_v {
+            return Ok(TypingConstants::None);
+        }
+
         let (_name, _parent) = rt.objects.with_object(ann, |val| match val {
             PyValue::Class { name, parent, .. } => (name.clone(), parent.clone()),
-            _ => todo!(),
+            val => todo!("{:#?}", val),
         });
 
         match self.klass_to_instance_type(&*rt, ann) {
@@ -1135,7 +1199,7 @@ impl SessionContext {
 
                             for (name, ann) in params {
                                 log::trace!(
-                                    "[SessionContext::object_type]  resolving {:?} : {:?}",
+                                    "[SessionContext::object_type]    resolving {:?} : {:?}",
                                     name,
                                     ann,
                                 );
@@ -1146,7 +1210,7 @@ impl SessionContext {
                                 };
 
                                 log::trace!(
-                                    "[SessionContext::object_type]  argument annotation is: {:?}",
+                                    "[SessionContext::object_type]    argument annotation is: {:?}",
                                     self.typing_context
                                         .display_type(type_id, &|v| self.value_store.type_id_of(v))
                                         .unwrap()
@@ -1160,7 +1224,14 @@ impl SessionContext {
                     };
 
                     let ret = match returns {
-                        Some(ret) => self.resolve_type_annotation(rt, ret)?,
+                        Some(ret) => {
+                            log::trace!(
+                                "[SessionContext::object_type]  resolving return annotation",
+                            );
+
+                            self.resolve_type_annotation(rt, ret)?
+                        }
+
                         None => TypingConstants::None,
                     };
 
@@ -1234,6 +1305,10 @@ impl SessionContext {
             .with_metadata(val, |m| m.object_id)
             .ok_or(MontyError::None)?
             .unwrap(); // TODO: handle values that do not have an object repr.
+
+        rt.objects.with_object(obj, |v| {
+            log::trace!("[SessionContext::compute_type_of] {:?} is {:?}", obj, v)
+        });
 
         let object_class = rt.class_of(obj);
 

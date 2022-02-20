@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 
 use montyc_core::ast::Constant;
 use montyc_core::codegen::{CgBlockId, CgInst};
+use montyc_core::opts::CompilerOptions;
 use montyc_core::{
     Function, MapT, ModuleRef, MontyError, MontyResult, PythonType, TypeError, TypeId,
     TypingConstants, TypingContext, ValueId,
@@ -189,6 +190,8 @@ impl TypingMachine {
         let block = cfg.node_weight(block_ix).ok_or(MontyError::None)?;
         let mut cg_block = vec![];
 
+        let mref = *mref;
+
         for inst in block {
             log::trace!(
                 "[TypingMaching::analyze_block]  %{} := {}",
@@ -282,7 +285,7 @@ impl TypingMachine {
                     match locals.get(&variable.group()) {
                         None => {
                             // NOT a local variable.
-                            let module = cx.value_store.get_by_assoc(*mref).unwrap();
+                            let module = cx.value_store.get_by_assoc(mref).unwrap();
                             let value = cx
                                 .value_store
                                 .with_value(module, |m| {
@@ -290,6 +293,12 @@ impl TypingMachine {
                                 })
                                 .unwrap()
                                 .unwrap();
+
+                            log::trace!(
+                                "[TypingMaching::analyze_block::use_var]   variable {:?} references {:?}",
+                                variable,
+                                value
+                            );
 
                             let value_t = cx.get_type_of(value)?;
 
@@ -411,7 +420,36 @@ impl TypingMachine {
                             {
                                 match failure {
                                     montyc_core::UnifyFailure::UnequalArity(_, _) => todo!(),
-                                    montyc_core::UnifyFailure::BadArgumentTypes(_) => todo!(),
+
+                                    montyc_core::UnifyFailure::BadArgumentTypes(mismatch) => {
+                                        for (n, expected, actual) in mismatch {
+                                            log::error!(
+                                                "{:?} != {:?}",
+                                                cx.tcx().display_type(expected, &|v| cx
+                                                    .get_type_of(v)
+                                                    .ok()),
+                                                cx.tcx().display_type(actual, &|v| cx
+                                                    .get_type_of(v)
+                                                    .ok())
+                                            );
+
+                                            errors.push(TypeError::BadArgumentType {
+                                                expected,
+                                                actual,
+                                                arg_node: (
+                                                    mref,
+                                                    inst.attrs.span.clone().unwrap_or_default(),
+                                                ),
+                                                def_node: (
+                                                    mref,
+                                                    inst.attrs.span.clone().unwrap_or_default(),
+                                                ),
+                                            })
+                                        }
+
+                                        break;
+                                    }
+
                                     montyc_core::UnifyFailure::NotCallable => unreachable!(),
                                 }
                             }
@@ -496,10 +534,7 @@ impl TypingMachine {
                                     .get_property(object_t, &st)
                                     .ok_or_else(|| TypeError::InvalidAttributeAccess {
                                         base: object_t,
-                                        access: (
-                                            *mref,
-                                            inst.attrs.span.clone().unwrap_or_default(),
-                                        ),
+                                        access: (mref, inst.attrs.span.clone().unwrap_or_default()),
                                     })
                                 {
                                     match property.value {
@@ -535,7 +570,7 @@ impl TypingMachine {
                                 .get_property(object_t, attr)
                                 .ok_or_else(|| TypeError::InvalidAttributeAccess {
                                     base: object_t,
-                                    access: (*mref, inst.attrs.span.clone().unwrap_or_default()),
+                                    access: (mref, inst.attrs.span.clone().unwrap_or_default()),
                                 });
 
                             let attr_t = match property {
@@ -564,7 +599,7 @@ impl TypingMachine {
                         .get_property(object_t, &dunder)
                         .ok_or_else(|| TypeError::InvalidAttributeAccess {
                             base: object_t,
-                            access: (*mref, inst.attrs.span.clone().unwrap_or_default()),
+                            access: (mref, inst.attrs.span.clone().unwrap_or_default()),
                         });
 
                     let dunder_t = match property {
@@ -625,8 +660,8 @@ impl TypingMachine {
                         errors.push(TypeError::BadReturnType {
                             expected: *return_t,
                             actual: val_t,
-                            ret_node: (*mref, inst.attrs.span.clone().unwrap_or_default()),
-                            def_node: (*mref, inst.attrs.span.clone().unwrap_or_default()), // TODO: use the real def span
+                            ret_node: (mref, inst.attrs.span.clone().unwrap_or_default()),
+                            def_node: (mref, inst.attrs.span.clone().unwrap_or_default()), // TODO: use the real def span
                         })
                     } else {
                         cg_block.push(montyc_core::codegen::CgInst::Return(*value));
@@ -654,8 +689,8 @@ impl TypingMachine {
 /// This routine performs abstract interpretation of the provided function
 /// whilst analyzing and performing type correctess verification (typechecking)
 ///
-/// As a side effect from the analysis. extra metadata will be generated to be used
-/// for codegen.
+/// As a side effect if the context build options are set to `Build` then `CgInst`
+/// instructions will be emitted for later codegen.
 ///
 pub fn typecheck(
     cx: &SessionContext,
@@ -668,92 +703,167 @@ pub fn typecheck(
 
     let code = cx.get_function_flatcode(fun.value_id)?;
 
-    let (return_t, params_t) = match cx.tcx().get_python_type_of(fun.type_id).unwrap() {
-        PythonType::Callable { ret, params } => (ret, params),
-        _ => unreachable!(),
-    };
+    match &cx.opts {
+        CompilerOptions::Check { libstd, input } => todo!(),
+        CompilerOptions::Build { .. } => {
+            let (return_t, params_t) = match cx.tcx().get_python_type_of(fun.type_id).unwrap() {
+                PythonType::Callable { ret, params } => (ret, params),
+                _ => unreachable!(),
+            };
 
-    let mut tm = TypingMachine::new(flatseq_to_blocks(code.inst()), return_t, fun.mref);
-    let entry = match tm.entry {
-        Some(entry) => entry,
-        None => unreachable!("code should always have one block."),
-    };
+            let mut tm = TypingMachine::new(flatseq_to_blocks(code.inst()), return_t, fun.mref);
+            let entry = match tm.entry {
+                Some(entry) => entry,
+                None => unreachable!("code should always have one block."),
+            };
 
-    if let Some(montyc_parser::AstNode::FuncDef(f)) = code.ast {
-        for ((sref, _), type_id) in f
-            .args
-            .unwrap_or_default()
-            .into_iter()
-            .zip(params_t.unwrap_or_default().into_iter())
-        {
-            let var = tm.locals.entry(sref.group()).or_default();
+            if let Some(montyc_parser::AstNode::FuncDef(f)) = code.ast {
+                for ((sref, _), type_id) in f
+                    .args
+                    .unwrap_or_default()
+                    .into_iter()
+                    .zip(params_t.unwrap_or_default().into_iter())
+                {
+                    let var = tm.locals.entry(sref.group()).or_default();
 
-            var.0.push(Binding {
-                block: entry,
-                inst: 0,
-                type_id,
-            });
-        }
-    }
-
-    let mut blocks_processed = Vec::with_capacity(tm.cfg.raw_nodes().len());
-    let mut blocks_to_analyze = VecDeque::with_capacity(tm.cfg.raw_nodes().len());
-    blocks_to_analyze.push_front(entry);
-
-    let mut errors = Vec::with_capacity(16);
-
-    let mut cg_cfg = montyc_core::codegen::CgBlockCFG::new();
-
-    for _ in tm.cfg.raw_nodes() {
-        cg_cfg.add_node(vec![]);
-    }
-
-    while let Some(ix) = blocks_to_analyze.pop_front() {
-        errors.clear();
-
-        if let Ok(_) = blocks_processed.binary_search(&ix) {
-            continue;
-        }
-
-        let cg_block = tm.analyze_block(cx, ix, &mut errors)?;
-        assert!(!cg_block.is_empty(), "{:#?}", tm);
-
-        if let [] = errors.as_slice() {
-            match blocks_processed.binary_search(&ix) {
-                Ok(_) => unreachable!(),
-                Err(pos) => blocks_processed.insert(pos, ix),
-            }
-
-            if let Some(block) = cg_cfg.node_weight_mut(ix) {
-                let _ = std::mem::replace(block, cg_block);
-            }
-
-            for edge in tm.cfg.edges_directed(ix, EdgeDirection::Outgoing) {
-                assert_eq!(edge.source(), ix);
-
-                if let Ok(_) = blocks_processed.binary_search(&edge.target()) {
-                    continue;
-                }
-
-                if let None = blocks_to_analyze.iter().find(|ix| **ix == edge.target()) {
-                    blocks_to_analyze.push_back(edge.target())
+                    var.0.push(Binding {
+                        block: entry,
+                        inst: 0,
+                        type_id,
+                    });
                 }
             }
 
-            log::trace!(
-                "[typeck::typecheck] blocks to analyze: {:?}",
-                blocks_to_analyze
-            );
-        } else {
-            todo!("{:#?}", errors)
+            let mut cg_cfg = tm.visit(cx, entry)?;
+
+            for edge in tm.cfg.edge_indices() {
+                if let Some((start, end)) = tm.cfg.edge_endpoints(edge) {
+                    cg_cfg.update_edge(start, end, ());
+                }
+            }
+
+            Ok(cg_cfg)
         }
     }
+}
 
-    for edge in tm.cfg.edge_indices() {
-        if let Some((start, end)) = tm.cfg.edge_endpoints(edge) {
-            cg_cfg.update_edge(start, end, ());
+trait GraphLike<IndexT> {
+    fn n_nodes(&self) -> usize;
+}
+
+trait CFGReducer {
+    type IndexT: Eq + Ord + std::fmt::Debug + Copy;
+    type InputGraphT: GraphLike<Self::IndexT>;
+    type OutputT;
+
+    fn make_output(&self) -> Self::OutputT;
+
+    fn cfg_ref(&self) -> &Self::InputGraphT;
+    fn cfg_mut_ref(&mut self) -> &mut Self::InputGraphT;
+
+    fn visit_block(
+        &mut self,
+        cx: &SessionContext,
+        output: &mut Self::OutputT,
+        ix: Self::IndexT,
+        errors: &mut Vec<montyc_core::error::TypeError>,
+    ) -> MontyResult<Vec<Self::IndexT>>;
+
+    fn visit(&mut self, cx: &SessionContext, entry: Self::IndexT) -> MontyResult<Self::OutputT> {
+        let cfg_capacity = self.cfg_ref().n_nodes();
+
+        let mut blocks_processed = Vec::with_capacity(cfg_capacity);
+        let mut blocks_to_analyze = VecDeque::with_capacity(cfg_capacity);
+
+        blocks_to_analyze.push_front(entry);
+
+        let mut errors = Vec::with_capacity(16);
+        let mut output = self.make_output();
+
+        while let Some(ix) = blocks_to_analyze.pop_front() {
+            errors.clear();
+
+            let insert_at = match blocks_processed.binary_search(&ix) {
+                Ok(_) => continue,
+                Err(index) => index,
+            };
+
+            let output_nodes = self.visit_block(cx, &mut output, ix, &mut errors)?;
+
+            if let [] = errors.as_slice() {
+                blocks_processed.insert(insert_at, ix);
+
+                for node in output_nodes {
+                    if let Ok(_) = blocks_processed.binary_search(&node) {
+                        continue;
+                    }
+
+                    if let None = blocks_to_analyze.iter().find(|ix| **ix == node) {
+                        blocks_to_analyze.push_back(node)
+                    }
+                }
+
+                log::trace!(
+                    "[typeck::typecheck] blocks to analyze: {:?}",
+                    blocks_to_analyze
+                );
+            } else {
+                todo!("{:#?}", errors)
+            }
         }
+
+        Ok(output)
+    }
+}
+
+impl GraphLike<NodeIndex> for BlockCFG {
+    fn n_nodes(&self) -> usize {
+        self.raw_nodes().len()
+    }
+}
+
+impl CFGReducer for TypingMachine {
+    type InputGraphT = BlockCFG;
+    type OutputT = montyc_core::codegen::CgBlockCFG<()>;
+    type IndexT = NodeIndex;
+
+    fn make_output(&self) -> Self::OutputT {
+        let mut cfg = montyc_core::codegen::CgBlockCFG::new();
+
+        for _ in self.cfg.raw_nodes() {
+            cfg.add_node(vec![]);
+        }
+
+        cfg
     }
 
-    Ok(cg_cfg)
+    fn cfg_ref(&self) -> &Self::InputGraphT {
+        &self.cfg
+    }
+
+    fn cfg_mut_ref(&mut self) -> &mut Self::InputGraphT {
+        &mut self.cfg
+    }
+
+    fn visit_block(
+        &mut self,
+        cx: &SessionContext,
+        output: &mut Self::OutputT,
+        ix: Self::IndexT,
+        errors: &mut Vec<montyc_core::error::TypeError>,
+    ) -> Result<Vec<NodeIndex>, montyc_core::MontyError> {
+        let cg_block = self.analyze_block(cx, ix, errors)?;
+
+        if let Some(block) = output.node_weight_mut(ix) {
+            let _ = std::mem::replace(block, cg_block);
+        }
+
+        let edges = self
+            .cfg
+            .edges_directed(ix, EdgeDirection::Outgoing)
+            .map(|e| e.target())
+            .collect();
+
+        Ok(edges)
+    }
 }

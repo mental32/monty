@@ -35,4 +35,4 @@ pub enum CgInst {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CgBlockId(pub usize);
 
-pub type CgBlockCFG = petgraph::Graph<Vec<CgInst>, ()>;
+pub type CgBlockCFG<E = ()> = petgraph::Graph<Vec<CgInst>, E>;

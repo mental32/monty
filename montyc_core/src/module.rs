@@ -1,7 +1,5 @@
-use std::{
-    convert::{TryFrom, TryInto},
-    path::PathBuf,
-};
+use std::convert::{TryFrom, TryInto};
+use std::path::PathBuf;
 
 derive_everything! {
     #[repr(transparent)]

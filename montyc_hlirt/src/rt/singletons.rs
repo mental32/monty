@@ -31,6 +31,7 @@ pub struct Singletons {
     pub bytes_class: ObjectId,
     pub list_class: ObjectId,
     pub dict_class: ObjectId,
+    pub tuple_class: ObjectId,
 
     // Constants
     pub none_v: ObjectId,

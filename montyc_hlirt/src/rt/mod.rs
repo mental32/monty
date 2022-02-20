@@ -180,7 +180,7 @@ impl<Space: ObjectSpace> Runtime<Space> {
 }
 
 impl<Space: ObjectSpace> Runtime<Space> {
-    pub(crate) fn new_string(&mut self, string: &str) -> ObjectId {
+    pub fn new_string(&mut self, string: &str) -> ObjectId {
         let hash = self.hash(string);
         let key = DynamicSingleton::Str(hash);
 
@@ -278,7 +278,7 @@ impl<Space: ObjectSpace> Runtime<Space> {
         Ok(count)
     }
 
-    pub(crate) fn new_function(
+    pub fn new_function(
         &self,
         body: AnyFunc,
         params: Box<[(SpanRef, Option<ObjectId>)]>,

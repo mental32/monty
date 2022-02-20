@@ -2,7 +2,7 @@ use montyc_core::{dict::PyDictRaw, MapT, CLASS, MODULE, OBJECT};
 
 use crate::{
     exception::PyResult,
-    object::RawObject,
+    object::{GlobalsHook, RawObject},
     rt::{ModuleKey, Runtime},
     storage::ObjectSpace,
     ObjectId,
@@ -145,15 +145,34 @@ impl ObjectBuilder<{ MODULE }> {
     pub fn synthesise_within(self, rt: &mut Runtime) -> PyResult<ObjectId> {
         log::trace!("[ObjectBuilder::synthesise_within] synthesizing a module object");
 
-        let __dict__ = self.properties_into_dict(rt);
         let __class__ = rt.singletons.module_class;
         let module = rt.objects.insert_with(|alloc_id| PyValue::Module {
             mkey: ModuleKey::Object(alloc_id),
             inner: RawObject {
                 alloc_id,
-                __dict__,
+                __dict__: Default::default(),
                 __class__,
             },
+        });
+
+        let __dict__ = self.properties_into_dict(rt);
+
+        for (_, (_, v)) in __dict__.iter() {
+            rt.objects.with_object_mut(*v, |v| match v {
+                PyValue::Callable(AnyFunc::Native { hook, .. })
+                | PyValue::Callable(AnyFunc::Boxed { hook, .. })
+                    if hook.is_none() =>
+                {
+                    hook.replace(GlobalsHook::Globals(module));
+                }
+
+                _ => (),
+            });
+        }
+
+        rt.objects.with_object_mut(module, move |v| match v {
+            PyValue::Module { inner, .. } => inner.__dict__ = __dict__,
+            _ => unreachable!(),
         });
 
         Ok(module)

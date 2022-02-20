@@ -356,7 +356,17 @@ impl BackendImpl {
         queries: &dyn Queries,
         entry_ix: ValueId,
     ) -> MontyResult<ObjectModule> {
-        let fisa = self.codegen_settings().flags().clone();
+        let codegen_settings = self.codegen_settings();
+        let fisa = codegen_settings.flags().clone();
+
+        let alloc = self.data.decl_foreign_function(
+            "malloc",
+            signature!(
+                codegen_settings.default_call_conv(),
+                &[ir::types::I64],
+                codegen_settings.pointer_type()
+            ),
+        );
 
         let mut object_module = ObjectModule::new({
             let name = String::from("<empty>");
@@ -364,15 +374,6 @@ impl BackendImpl {
 
             ObjectBuilder::new(self.codegen_settings(), name, libcall_names).unwrap()
         });
-
-        let alloc = self.data.decl_foreign_function(
-            "malloc",
-            signature!(
-                self.codegen_settings().default_call_conv(),
-                &[ir::types::I64],
-                self.codegen_settings().pointer_type()
-            ),
-        );
 
         fn is_stubbed(func: &&CgFuncData) -> bool {
             match func.cfg.raw_nodes() {
@@ -447,7 +448,6 @@ impl BackendImpl {
 
 impl BackendImpl {
     pub fn new(opts: &CompilerOptions) -> Self {
-        // generate settings from provided options.
         let settings = Self::codegen_flags(opts);
 
         let cc = match opts {

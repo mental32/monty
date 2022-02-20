@@ -225,10 +225,10 @@ struct SourceFileLoader {
 
 impl SourceFileLoader {
     fn new_source_file_loader(cx: CallCx) -> PyResult<ObjectId> {
-        let ([_fullname, path], _) = cx
-            .parse_args_with(montyc_hlirt::argparse::args_opt_unboxed(
+        let [_fullname, path] = cx
+            .parse_args_with(montyc_hlirt::argparse::args_unboxed(
                 ["fullname", "path"],
-                [],
+                // [],
             ))
             .trace()?;
 
@@ -274,8 +274,7 @@ impl PyObject for SourceFileLoader {
 }
 
 fn path_hooks_for_file_finder(cx: CallCx) -> PyResult<ObjectId> {
-    let (args, _) = cx.parse_args_with(montyc_hlirt::argparse::args_opt(["path"], []))?;
-    let [path] = args.as_ref().clone();
+    let [path] = cx.parse_args_with(montyc_hlirt::argparse::args_unboxed(["path"]))?;
 
     let path = cx
         .ecx

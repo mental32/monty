@@ -83,6 +83,28 @@ impl<'a, 'b> CallCx<'a, 'b> {
         Self { ecx, args, globals }
     }
 
+    pub fn parse_args_v2<'c, P>(self, parser: P) -> PyResult<(Self, P::Extract)>
+    where
+        P: crate::argparse::Parser,
+        'b: 'c,
+    {
+        let args = self.args;
+
+        let (this, rem, ext) = parser.parse_from(self, args).unwrap();
+
+        if !rem.is_empty() {
+            let err = format!(
+                "takes {} positional arguments, but {} were given",
+                69420,
+                args.len()
+            );
+
+            return PyException::type_error().set_message(&err).into();
+        }
+
+        Ok((this, ext))
+    }
+
     pub fn parse_args_with<T, P>(&self, parser: P) -> PyResult<T>
     where
         P: FnOnce(&'b [ObjectId]) -> PyResult<(&'b [ObjectId], T)>,

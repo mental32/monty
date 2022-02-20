@@ -413,6 +413,17 @@ where
         self.define(frame, name.group(), func_obj)?;
         frame.values.insert(frame.current_inst_ix, func_obj);
 
+        let name_as_str = self.host.spanref_to_str(name);
+        let name_str_obj = self.rt.new_string(name_as_str);
+
+        let name_str_hash = self.rt.hash("__name__");
+        let name_slot = self.rt.new_string("__name__");
+
+        self.rt.objects.with_object_mut(func_obj, move |v| match v {
+            PyValue::Function { inner, .. } => inner.__dict__.insert(name_str_hash, (name_slot, name_str_obj)),
+            _ => unreachable!(),
+        });
+
         Ok(frame.next_inst())
     }
 
@@ -540,7 +551,7 @@ where
     ) -> Result<Option<ObjectId>, PyException> {
         log::trace!(
             "[EvaluationContext::define] defining variable({:?}) := {:?}",
-            var,
+            self.host.spangroup_to_str(var),
             value
         );
 
@@ -845,6 +856,8 @@ where
             const BUILTINS: &[&str] = &["int", "bool", "str"];
 
             if self.rt.singletons.builtins.is_uninit() {
+                log::warn!("builtins is unit, only defining int, bool, and str.");
+
                 let builtin_values = [
                     self.rt.singletons.int_class,
                     self.rt.singletons.bool_class,
@@ -863,16 +876,23 @@ where
                     self.define(&mut frame, name, value)?;
                 }
             } else if self.rt.singletons.builtins != self.rt.singletons.none_v {
-                for name in BUILTINS {
-                    let hash = self.rt.hash(&name);
+                let builtins_dict =
+                    self.rt
+                        .objects
+                        .with_object(self.rt.singletons.builtins, |builtins| match builtins {
+                            PyValue::Module { inner, .. } => inner.__dict__.clone(),
+                            _ => unreachable!(),
+                        });
 
-                    let (_, value) = self
-                        .getattr_direct_hash(self.rt.singletons.builtins, hash)
-                        .unwrap();
+                for (hash, (key, value)) in builtins_dict.iter() {
+                    let name = self.rt.objects.with_object(*key, |k| match k {
+                        PyValue::Str(st) => st.clone(),
+                        _ => unreachable!(),
+                    });
 
-                    let name = self.host.spangroup_of_hash(hash, &name);
+                    let name = self.host.spangroup_of_hash(*hash, &name);
 
-                    self.define(&mut frame, name, value)?;
+                    self.define(&mut frame, name, *value)?;
                 }
             }
         }

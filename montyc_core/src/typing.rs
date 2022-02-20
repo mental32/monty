@@ -118,7 +118,7 @@ builtins!(
     .2 = Float { "float", 8 },
     .3 = Str { "str", 8 },
     .4 = Bool { "bool", 8 },
-    .5 = None { "None", 8 },
+    .5 = None { "NoneType", 8 },
     .6 = Ellipsis { "ellipsis", 0 },
     .7 = Module { "module", 8 },
     .8 = Unknown { "unknown", 0 },

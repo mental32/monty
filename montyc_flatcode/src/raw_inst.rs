@@ -141,6 +141,37 @@ pub enum RawInst<V = usize, R = SpanRef> {
     },
 }
 
+pub trait InstVisitor<T, V = usize, R = SpanRef> {
+    fn visit_defn(
+        &mut self,
+        name: R,
+        params: &[(R, Option<V>)],
+        returns: Option<V>,
+        seq: usize,
+    ) -> T;
+    fn visit_class(&mut self, name: R) -> T;
+    fn visit_build_class(&mut self, klass: V, seq: usize) -> T;
+    fn visit_ref_as_str(&mut self, r: R) -> T;
+    fn visit_call(&mut self, callable: V, arguments: &[V]) -> T;
+    fn visit_set_var(&mut self, variable: R, value: V) -> T;
+    fn visit_use_var(&mut self, variable: R) -> T;
+    fn visit_get_attribute(&mut self, variable: R, value: V) -> T;
+    fn visit_set_attribute(&mut self, variable: R, attr: V, value: V) -> T;
+    fn visit_get_dunder(&mut self, object: V, dunder: &Dunder) -> T;
+    fn visit_set_dunder(&mut self, object: V, dunder: &Dunder, value: V) -> T;
+    fn visit_import(&mut self, path: &[R], relative: usize) -> T;
+    fn visit_const(&mut self, cst: &montyc_core::ast::Constant) -> T;
+    fn visit_tuple(&mut self, tple: &[V]) -> T;
+    fn visit_nop(&mut self) -> T;
+    fn visit_undef(&mut self) -> T;
+    fn visit_if(&mut self, test: V, truthy: Option<V>, falsey: Option<V>) -> T;
+    fn visit_br(&mut self, to: V) -> T;
+    fn visit_phi_jump(&mut self, recv: V, value: V) -> T;
+    fn visit_jump_target(&mut self) -> T;
+    fn visit_phi_recv(&mut self) -> T;
+    fn visit_return(&mut self, value: V) -> T;
+}
+
 fn format_vec_of_values(seq: &[usize]) -> String {
     seq.iter()
         .map(|value| format!("%{}", value))
@@ -235,17 +266,6 @@ impl Display for RawInst {
             RawInst::PhiRecv => write!(f, "phi-recv"),
             RawInst::Return { value } => write!(f, "return %{:?}", value),
             RawInst::Tuple(inner) => write!(f, "tuple [{}]", format_vec_of_values(inner)),
-            // RawInst::Privileged(inst) => match inst {
-            //     PrivInst::UseLocal { var } => write!(f, "use-local {:?}", var),
-            //     PrivInst::RefVal { val } => write!(f, "ref-val {:?}", val),
-            //     PrivInst::CallVal { val } => write!(f, "call-val {:?}", val),
-            //     PrivInst::TreatAsStructPointer { value } => {
-            //         write!(f, "into-member-pointer {:?}", value)
-            //     }
-            //     PrivInst::AccessMemberPointer { value, offset } => {
-            //         write!(f, "access-member-pointer {:?} at {:?}", value, offset)
-            //     }
-            // },
             RawInst::JumpTarget => write!(f, "jump-target"),
         }
     }

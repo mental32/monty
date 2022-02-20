@@ -73,6 +73,8 @@ pub trait EvalGlue {
         hash: u64,
     ) -> PyResult<(ObjectId, ObjectId)> {
         self.runtime_mut().objects.with_object(object, |this| {
+            log::trace!("[EvalGlue::getattr_direct_hash] {:?}", this);
+
             let result = match this {
                 PyValue::Module { inner, .. }
                 | PyValue::Any(inner)

@@ -1,9 +1,9 @@
 # pylint: skip-file
 
-from .__monty import extern
+from .__monty import intrinsic
 
 
-@extern
+@intrinsic
 class object:
     """The base class of the class hierarchy.
 
@@ -12,7 +12,16 @@ class object:
     """
 
 
-@extern
+@intrinsic
+class NoneType:
+    """The type of the singleton value None.
+
+    When called, it accepts no arguments and returns the singleton value
+    None.
+    """
+
+
+@intrinsic
 class type:
     """
     type(object_or_name, bases, dict)
@@ -21,7 +30,7 @@ class type:
     """
 
 
-@extern
+@intrinsic
 class function:
     """
     Create a function object.
@@ -39,7 +48,7 @@ class function:
     """
 
 
-@extern
+@intrinsic
 class bool:
     """bool(x) -> bool
 
@@ -52,7 +61,7 @@ class bool:
         ...
 
 
-@extern
+@intrinsic
 class int:
     def __add__(self, x: int) -> int:
         ...
@@ -70,7 +79,7 @@ class int:
         ...
 
 
-@extern
+@intrinsic
 class float:
     """
     float(x=0) -> float
@@ -80,7 +89,7 @@ class float:
     """
 
 
-@extern
+@intrinsic
 class str:
     """
     str(object='') -> str
@@ -96,7 +105,7 @@ class str:
     """
 
 
-@extern
+@intrinsic
 class tuple:
     def __getitem__(self, _index: int) -> object:
         ...
@@ -105,11 +114,11 @@ class tuple:
         ...
 
 
-@extern
+@intrinsic
 def id(__obj: object) -> int:
     ...
 
 
-@extern
+@intrinsic
 def isinstance(__obj: object, __class_or_tuple: type) -> bool:
     ...

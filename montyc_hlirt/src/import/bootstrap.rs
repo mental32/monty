@@ -18,6 +18,7 @@ use dashmap::DashMap;
 
 use montyc_core::{patma, MapT, SpanRef};
 
+use crate::argparse::Parser;
 use crate::eval::ctx::{CallCx, EvalGlue, EvaluationContext};
 use crate::exception::{PyException, PyResult, PyResultExt};
 use crate::object::{AnyFunc, GlobalsHook, IntoPyValue, PyObject, PyValue, SharedObject};
@@ -776,9 +777,10 @@ pub(crate) fn setup(
         let sfl_str = rt.new_string("SourceFileLoader");
 
         fn new_source_file_loader(cx: CallCx) -> PyResult<ObjectId> {
-            let ([_fullname, path], _) = cx
-                .parse_args_with(argparse::args_opt_unboxed(["fullname", "path"], []))
-                .trace()?;
+            let (cx, (_, path)) = argparse::arg("fullname")
+                .then_arg("path")
+                .parse_with_cx(cx)
+                .unwrap();
 
             let [loader] = [SourceFileLoader { path }]
                 .map(SharedObject::new)
@@ -800,8 +802,9 @@ pub(crate) fn setup(
 
     let path_hooks_for_file_finder = {
         let inner = |cx: CallCx| {
-            let (args, _) = cx.parse_args_with(argparse::args_opt(["path"], []))?;
-            let [path] = args.as_ref().clone();
+            // let (args, _) = cx.parse_args_with(argparse::args_opt(["path"], []))?;
+            // let [path] = args.as_ref().clone();
+            let (cx, (path,)) = argparse::arg("path").parse_with_cx(cx).unwrap();
 
             let path = cx
                 .ecx

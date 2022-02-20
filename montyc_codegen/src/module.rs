@@ -351,7 +351,7 @@ impl CodegenModule {
     /// Get the scalar type representation for some TypeId, or R64 if not defined.
     #[inline]
     pub fn get_scalar_type_of(&self, tid: TypeId) -> ir::Type {
-        self.types.get(&tid).cloned().unwrap_or(ir::types::R64)
+        self.types.get(&tid).cloned().unwrap_or(ir::types::I64)
     }
 
     /// Include a `hlir::Function` for codegen.

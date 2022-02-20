@@ -1,16 +1,9 @@
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use ahash::RandomState;
 use dashmap::DashMap;
 
-
-
-use crate::{
-    object::{PyValue},
-    ObjectId,
-};
+use crate::{object::PyValue, ObjectId};
 
 #[derive(Debug)]
 pub struct DefaultObjectSpace {
@@ -41,7 +34,7 @@ pub trait ObjectSpace {
     fn with_object<T>(&self, object: ObjectId, f: impl FnMut(&PyValue) -> T) -> T;
 
     /// Invoke the provided FnMut with a **mutable** reference to the PyValue associated with the given ObjectId.
-    fn with_object_mut<T>(&self, object: ObjectId, f: impl FnMut(&mut PyValue) -> T) -> T;
+    fn with_object_mut<T>(&self, object: ObjectId, f: impl FnOnce(&mut PyValue) -> T) -> T;
 
     /// The amount of objects in this space.
     fn size_hint(&self) -> Option<usize>;
@@ -83,7 +76,7 @@ impl ObjectSpace for DefaultObjectSpace {
         f(value)
     }
 
-    fn with_object_mut<T>(&self, object: ObjectId, mut f: impl FnMut(&mut PyValue) -> T) -> T {
+    fn with_object_mut<T>(&self, object: ObjectId, f: impl FnOnce(&mut PyValue) -> T) -> T {
         let mut entry = self.inner.get_mut(&object).unwrap();
         let value = entry.value_mut();
         f(value)
