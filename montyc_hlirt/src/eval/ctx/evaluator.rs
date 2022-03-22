@@ -420,7 +420,9 @@ where
         let name_slot = self.rt.new_string("__name__");
 
         self.rt.objects.with_object_mut(func_obj, move |v| match v {
-            PyValue::Function { inner, .. } => inner.__dict__.insert(name_str_hash, (name_slot, name_str_obj)),
+            PyValue::Function { inner, .. } => inner
+                .__dict__
+                .insert(name_str_hash, (name_slot, name_str_obj)),
             _ => unreachable!(),
         });
 

@@ -366,6 +366,7 @@ impl BackendImpl {
                 &[ir::types::I64],
                 codegen_settings.pointer_type()
             ),
+            None
         );
 
         let mut object_module = ObjectModule::new({
@@ -507,7 +508,13 @@ impl BackendImpl {
             None => unreachable!(),
         };
 
-        self.data.insert_function(value_id, cg_cfg, signature);
+        if func.is_extern {
+            let name = queries.spanref_to_str(func.name)?;
+            self.data
+                .decl_foreign_function(name, signature, Some(value_id.0));
+        } else {
+            self.data.insert_function(value_id, cg_cfg, signature);
+        }
 
         Ok(())
     }

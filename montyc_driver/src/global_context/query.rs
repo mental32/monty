@@ -170,8 +170,8 @@ impl Queries for SessionContext {
         let fn_obj = obj.unwrap();
         let rt_ref = self.const_runtime.borrow();
 
-        let fn_body = rt_ref.objects.with_object(fn_obj, |val| match val {
-            PyValue::Function { body, .. } => body.clone(),
+        let (fn_body, fn_dict) = rt_ref.objects.with_object(fn_obj, |val| match val {
+            PyValue::Function { body, inner, .. } => (body.clone(), inner.__dict__.clone()),
             _ => unreachable!(),
         });
 
@@ -193,12 +193,16 @@ impl Queries for SessionContext {
                         .replace((flatcode.clone(), Some(Rc::clone(&module))))
                 });
 
+                let extern_slot_hash = rt_ref.hash("__extern__");
+                let is_extern = fn_dict.get(extern_slot_hash).is_some();
+
                 Function {
                     value_id: TaggedValueId::func(value_id),
                     type_id,
 
                     mref: module.mref,
                     name,
+                    is_extern,
                 }
             }
 

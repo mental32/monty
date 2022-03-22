@@ -14,4 +14,7 @@ pub struct Function {
 
     /// The name of the function.
     pub name: SpanRef,
+
+    /// if the function is defined externally
+    pub is_extern: bool,
 }
