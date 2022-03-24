@@ -139,7 +139,7 @@ pub struct Annotation {
 
 impl AstObject for Annotation {
     fn into_ast_node(&self) -> AstNode {
-        todo!()
+        AstNode::Annotation(self.clone())
     }
 
     fn span(&self) -> Option<Span> {
@@ -150,11 +150,11 @@ impl AstObject for Annotation {
         self
     }
 
-    fn visit_with<U>(&self, _visitor: &mut dyn AstVisitor<U>, _span: Option<Span>) -> U
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
     where
         Self: Sized,
     {
-        todo!()
+        visitor.visit_annotation(self, span)
     }
 }
 

@@ -1,7 +1,7 @@
 //! Query trait implementation.
 #![deny(warnings)]
 
-use std::fmt;
+use std::{alloc::Layout, fmt};
 
 use montyc_core::{
     span::SpanRef,
@@ -29,6 +29,9 @@ pub trait Queries {
 
     /// Given some `ValueId` compute its type and return the corresponding `TypeId`.
     fn get_type_of(&self, val: ValueId) -> MontyResult<TypeId>;
+
+    /// Given a `ValueId` with a non-trivial memory layout (such that TypingContext on its own can not compute it.) calculate its layout.
+    fn get_layout_of(&self, val: ValueId) -> MontyResult<Layout>;
 
     /// Given a `ModuleRef` try and get its associated module data.
     fn get_module_data(&self, mref: ModuleRef) -> MontyResult<ModuleData>;

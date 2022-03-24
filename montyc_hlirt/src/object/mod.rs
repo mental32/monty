@@ -1,8 +1,20 @@
-use std::num::NonZeroU64;
+use std::{fmt::Debug, num::NonZeroU64};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From, Clone, Copy)]
 #[repr(transparent)]
 pub struct ObjectId(NonZeroU64);
+
+impl std::fmt::Debug for ObjectId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ObjectId")
+            .field(if self.0.get() == u64::MAX {
+                &"UNDEFINED" as &dyn Debug
+            } else {
+                &self.0 as &dyn Debug
+            })
+            .finish()
+    }
+}
 
 impl Default for ObjectId {
     fn default() -> Self {
@@ -15,6 +27,12 @@ impl From<u64> for ObjectId {
         NonZeroU64::new(n)
             .map(Self)
             .expect("ObjectIds must be non-zero.")
+    }
+}
+
+impl From<ObjectId> for u64 {
+    fn from(object_id: ObjectId) -> Self {
+        object_id.0.get()
     }
 }
 

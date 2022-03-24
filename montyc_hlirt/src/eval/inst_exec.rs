@@ -25,7 +25,10 @@ pub trait InstExec {
         log::trace!("[BoundEvaluationContext::eval] {:?}", inst);
 
         match op {
-            // RawInst::Privileged(_) => todo!(),
+            RawInst::SetAnnotation { .. } => {
+                // self.set_annotation(name, annotation);
+                Ok(frame.next_inst())
+            }
             RawInst::Tuple(_) => todo!(),
             RawInst::Undefined => todo!(),
 

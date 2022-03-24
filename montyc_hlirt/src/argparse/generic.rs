@@ -1,19 +1,6 @@
 #[derive(Debug)]
 pub struct Product<H, T: HList>(pub(crate) H, pub(crate) T);
 
-// pub type One<T> = (T,);
-
-// #[inline]
-// pub(crate) fn one<T>(val: T) -> One<T> {
-//     (val,)
-// }
-
-// #[derive(Debug)]
-// pub enum Either<T, U> {
-//     A(T),
-//     B(U),
-// }
-
 // Converts Product (and ()) into tuples.
 pub trait HList: Sized {
     type Tuple: Tuple<HList = Self>;
@@ -101,18 +88,6 @@ where
         (*self)()
     }
 }
-
-// impl<F, R> Func<crate::Rejection> for F
-// where
-//     F: Fn(crate::Rejection) -> R,
-// {
-//     type Output = R;
-
-//     #[inline]
-//     fn call(&self, arg: crate::Rejection) -> Self::Output {
-//         (*self)(arg)
-//     }
-// }
 
 macro_rules! product {
         ($H:expr) => { Product($H, ()) };

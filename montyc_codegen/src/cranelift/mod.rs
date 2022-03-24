@@ -21,6 +21,23 @@ use montyc_query::Queries;
 #[macro_use]
 pub(crate) mod macros {
     macro_rules! signature {
+        ($cc:expr, [ $( $arg:expr ),* ] , $ret:expr) => {{
+            let args: &[::cranelift_codegen::ir::Type] = [ $( $arg ),* ].as_slice();
+            let ret: ::cranelift_codegen::ir::Type = $ret;
+
+            let mut sig = ::cranelift_codegen::ir::Signature::new($cc);
+
+            sig.returns
+                .push(::cranelift_codegen::ir::AbiParam::new(ret));
+
+            for arg in args {
+                sig.params
+                    .push(::cranelift_codegen::ir::AbiParam::new(arg.clone()));
+            }
+
+            sig
+        }};
+
         ($cc:expr, $args:expr, $ret:expr) => {{
             let args: &[::cranelift_codegen::ir::Type] = $args;
             let ret: ::cranelift_codegen::ir::Type = $ret;
@@ -129,7 +146,7 @@ impl BackendImpl {
                 namespace: 0,
                 index: self.data.funcs_ordered().count() as u32 + 1,
             },
-            signature!(CallConv::SystemV, &[], ir::types::I64),
+            signature!(CallConv::SystemV, [], ir::types::I64),
         );
 
         let (entry_name, entry_sig) = entry;
@@ -366,7 +383,7 @@ impl BackendImpl {
                 &[ir::types::I64],
                 codegen_settings.pointer_type()
             ),
-            None
+            None,
         );
 
         let mut object_module = ObjectModule::new({

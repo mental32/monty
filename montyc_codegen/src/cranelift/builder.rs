@@ -17,14 +17,13 @@ use montyc_core::ast::Constant;
 use montyc_core::codegen::{CgBlockId, CgInst, Field};
 use montyc_core::{patma, MapT, PythonType, TypeId, TypingConstants, ValueId};
 
-use montyc_flatcode::{raw_inst::RawInst, FlatInst};
 use montyc_query::Queries;
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::EdgeDirection;
 
-use crate::backend::ir_type_of;
+use crate::cranelift::ir_type_of;
 use crate::tvalue::TValue;
 
 trait Allocatable {
@@ -39,7 +38,8 @@ impl Allocatable for TypeId {
     fn alloc_uninit(&self, fx: &mut Builder) -> ir::Value {
         let tcx = fx.host.tcx();
 
-        match tcx.get_python_type_of(*self).unwrap() {
+        let layout = match tcx.get_python_type_of(*self).unwrap() {
+            PythonType::Class { .. } => todo!(),
             PythonType::NoReturn => todo!(),
             PythonType::Any => todo!(),
             PythonType::Tuple { members } => {
@@ -51,28 +51,30 @@ impl Allocatable for TypeId {
                     )
                 };
 
-                assert_ne!(
-                    0,
-                    layout.size(),
-                    "{:?}",
-                    tcx.get_python_type_of(*self).unwrap()
-                );
-
-                let malloc_inst = fx.heap_alloc(
-                    <_ as std::convert::TryInto<i64>>::try_into(layout.size()).unwrap(),
-                );
-
-                patma!(*addr, [addr] in fx.inner.inst_results(malloc_inst)).unwrap()
+                layout
             }
+
             PythonType::List { inner } => todo!(),
             PythonType::Union { members } => todo!(),
             PythonType::Type { of } => todo!(),
-            PythonType::Instance { of } => todo!(),
+            PythonType::Instance { of: value } => fx.host.get_layout_of(value).unwrap(),
             PythonType::TypeVar { name } => todo!(),
             PythonType::Callable { params, ret } => todo!(),
             PythonType::Generic { args } => todo!(),
             PythonType::Builtin { inner } => todo!(),
-        }
+        };
+
+        assert_ne!(
+            0,
+            layout.size(),
+            "{:?}",
+            tcx.get_python_type_of(*self).unwrap()
+        );
+
+        let malloc_inst =
+            fx.heap_alloc(<_ as std::convert::TryInto<i64>>::try_into(layout.size()).unwrap());
+
+        patma!(*addr, [addr] in fx.inner.inst_results(malloc_inst)).unwrap()
     }
 
     fn initialize<I>(&self, fx: &mut Builder, addr: ir::Value, values: I)
@@ -82,6 +84,7 @@ impl Allocatable for TypeId {
         let kind = { fx.host.tcx().get_python_type_of(*self).unwrap().clone() };
 
         match kind {
+            PythonType::Class { .. } => todo!(),
             PythonType::NoReturn => todo!(),
             PythonType::Any => todo!(),
             PythonType::Tuple { members } => {
@@ -104,7 +107,7 @@ impl Allocatable for TypeId {
             PythonType::List { inner } => todo!(),
             PythonType::Union { members } => todo!(),
             PythonType::Type { of } => todo!(),
-            PythonType::Instance { of } => todo!(),
+            PythonType::Instance { of } => {}
             PythonType::TypeVar { name } => todo!(),
             PythonType::Callable { params, ret } => todo!(),
             PythonType::Generic { args } => todo!(),
@@ -147,7 +150,7 @@ impl Builder<'_, '_> {
         let pointer_type = self.cg_settings.pointer_type();
         let signature = self.inner.import_signature(signature!(
             self.cg_settings.default_call_conv(),
-            &[ir::types::I64],
+            [ir::types::I64],
             pointer_type
         ));
 
@@ -259,8 +262,12 @@ impl Builder<'_, '_> {
                         }
                     }
 
-                    CgInst::Jump { to } => {
-                        self.inner.ins().jump(blocks[&to], &[]);
+                    CgInst::Jump { to, with } => {
+                        let args = with
+                            .into_iter()
+                            .map(|v| self.values[&v].clone().as_value().clone())
+                            .collect::<Vec<_>>();
+                        self.inner.ins().jump(blocks[&to], args.as_slice());
                         break;
                     }
 

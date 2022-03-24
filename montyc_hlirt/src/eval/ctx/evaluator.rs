@@ -311,7 +311,11 @@ where
         let class_obj = self.rt.objects.insert(PyValue::Class {
             name: Some(name),
             parent: frame.frame_object,
-            inner: Default::default(),
+            inner: RawObject {
+                alloc_id: Default::default(),
+                __dict__: Default::default(),
+                __class__: Default::default(),
+            },
         });
 
         self.define(frame, name.group(), class_obj)?;

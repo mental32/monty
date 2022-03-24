@@ -7,5 +7,5 @@ def puts(x: str) -> None:
 
 
 def main() -> int:
-    puts("Hello, world!")
+    puts("C-like extern definitions are a thing!")
     return 0

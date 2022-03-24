@@ -177,6 +177,11 @@ pub enum PythonType {
     /// A variable annotated with `Type[C]` may accept values that are classes themselves.
     Type { of: TypeId },
 
+    Class {
+        object_id: u64,
+        members: Option<Vec<TypeId>>,
+    },
+
     /// The logical opposite of `Type[c]` used for lazilly resolving types in annotations when checking.
     Instance { of: crate::value::ValueId },
 
@@ -223,6 +228,16 @@ impl Property {
 pub struct Type {
     pub kind: PythonType,
     pub properties: MapT<String, Property>,
+}
+
+impl Type {
+    pub fn new_class(object_id: impl Into<u64>, members: Option<Vec<TypeId>>) -> Self {
+        let object_id = object_id.into();
+        Self {
+            kind: PythonType::Class { object_id, members },
+            properties: Default::default(),
+        }
+    }
 }
 
 impl From<PythonType> for Type {
@@ -397,21 +412,9 @@ pub trait TypingContext {
 
             PythonType::Any => I64_LAYOUT,
 
-            PythonType::Tuple { members } => {
-                let members = members.clone().unwrap();
-                let members = members
-                    .iter()
-                    .map(|tid| self.layout_of(*tid))
-                    .collect::<Vec<_>>();
-
-                let mut it = members.into_iter();
-
-                let (layout, _) = calculate_layout(&mut it);
-
-                layout
-            }
-
-            PythonType::Union { members } => {
+            PythonType::Class { members, .. }
+            | PythonType::Tuple { members }
+            | PythonType::Union { members } => {
                 let members = members.clone().unwrap_or_default();
                 let member_layouts = members
                     .iter()

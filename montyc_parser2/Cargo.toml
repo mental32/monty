@@ -1,0 +1,14 @@
+[package]
+name = "montyc_parser2"
+version = "0.99.0"
+edition = "2018"
+
+[dependencies]
+montyc_core = { path = "../montyc_core" }
+paste = "1.0.7"
+logos = "0.12"
+tracing = "0.1.34"
+chumsky = "0.8.0"
+# chumsky =  { git = "https://github.com/zesterer/chumsky", commit = "aad3ff7e7c6850e3af4e11e7d254b3cc2573973b"}
+derive_more = "0.99"
+ahash = { version = "0.7", features = ["std"] }

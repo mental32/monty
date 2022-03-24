@@ -2,7 +2,7 @@ use montyc_core::ast::Constant;
 use montyc_core::{patma, Span};
 
 use montyc_parser::ast::{
-    Assign, Atom, ClassDef, Expr, FunctionDef, IfChain, Import, Primary, Return, While,
+    Annotation, Assign, Atom, ClassDef, Expr, FunctionDef, IfChain, Import, Primary, Return, While,
 };
 use montyc_parser::{AstNode, AstObject, AstVisitor};
 
@@ -32,19 +32,79 @@ fn visit_const(this: &mut FlatCode, node: &Atom, span: Option<Span>) -> usize {
 }
 
 impl AstVisitor<usize> for FlatCode {
-    fn visit_module(&mut self, module: &montyc_parser::ast::Module, _: Option<Span>) -> usize {
-        for stmt in &module.body {
-            stmt.visit_with(self, None);
-        }
-
-        INVALID_VALUE
-    }
-
     fn visit_any(&mut self, o: &dyn AstObject) -> usize {
         match o.into_ast_node() {
             AstNode::Comment(_) => self.visit_pass(),
             node => todo!("{:#?}", node),
         }
+    }
+
+    fn visit_funcdef(&mut self, fndef: &FunctionDef, span: Option<Span>) -> usize {
+        let decorators: Vec<usize> = fndef
+            .decorator_list
+            .iter()
+            .rev()
+            .map(|dec| dec.visit_with(self, None))
+            .collect();
+
+        let params = match (&fndef.reciever, &fndef.args) {
+            (None, None) => vec![],
+            (Some(recv), None) => vec![(recv.inner.as_name().unwrap(), None)],
+
+            (recv, Some(params)) => {
+                let mut parameters = Vec::with_capacity(params.len() + 1);
+
+                if let Some(reciever) = recv {
+                    parameters.push((reciever.inner.as_name().unwrap(), None));
+                }
+
+                for (name, annotation) in params.iter() {
+                    let ann = annotation.as_ref().map(|ann| ann.visit_with(self, None));
+                    parameters.push((name.clone(), ann));
+                }
+
+                parameters
+            }
+        };
+
+        let returns = fndef.returns.as_ref().map(|r| r.visit_with(self, None));
+
+        let sequence_id = self.with_new_sequence(
+            fndef.body.len(),
+            SequenceType::Function,
+            (self.mref(), span.unwrap()),
+            |this| {
+                for node in fndef.body.iter() {
+                    node.visit_with(this, None);
+                }
+            },
+        );
+
+        self.sequences[sequence_id]
+            .ast
+            .replace(fndef.into_ast_node());
+
+        let name = fndef.name.inner.as_name().unwrap();
+        let mut func = self.inst(RawInst::Defn {
+            name: name,
+            params: params,
+            returns,
+            sequence_id,
+        });
+
+        self.inst(RawInst::SetVar {
+            variable: name,
+            value: func,
+        });
+
+        for dec in decorators {
+            func = self.inst(RawInst::Call {
+                callable: dec,
+                arguments: vec![func],
+            });
+        }
+
+        func
     }
 
     fn visit_expr(&mut self, expr: &Expr, span: Option<Span>) -> usize {
@@ -81,20 +141,6 @@ impl AstVisitor<usize> for FlatCode {
         visit_const(self, node, span)
     }
 
-    fn visit_ellipsis(&mut self, node: &Atom, span: Option<Span>) -> usize {
-        visit_const(self, node, span)
-    }
-
-    fn visit_bool(&mut self, node: &Atom, span: Option<Span>) -> usize {
-        visit_const(self, node, span)
-    }
-
-    // -- other visitors
-
-    fn visit_pass(&mut self) -> usize {
-        self.inst(RawInst::Nop)
-    }
-
     fn visit_name(&mut self, node: &Atom, span: Option<Span>) -> usize {
         let variable = patma!(name.clone(), Atom::Name(name) in node).unwrap();
         let value = self.inst(RawInst::UseVar { variable });
@@ -120,6 +166,16 @@ impl AstVisitor<usize> for FlatCode {
         }
 
         value
+    }
+
+    // -- other visitors
+
+    fn visit_ellipsis(&mut self, node: &Atom, span: Option<Span>) -> usize {
+        visit_const(self, node, span)
+    }
+
+    fn visit_bool(&mut self, node: &Atom, span: Option<Span>) -> usize {
+        visit_const(self, node, span)
     }
 
     fn visit_import(&mut self, import: &Import, span: Option<Span>) -> usize {
@@ -276,81 +332,17 @@ impl AstVisitor<usize> for FlatCode {
         class
     }
 
-    fn visit_funcdef(&mut self, fndef: &FunctionDef, span: Option<Span>) -> usize {
-        let decorators: Vec<usize> = fndef
-            .decorator_list
-            .iter()
-            .rev()
-            .map(|dec| dec.visit_with(self, None))
-            .collect();
-
-        let params = match (&fndef.reciever, &fndef.args) {
-            (None, None) => vec![],
-            (Some(recv), None) => vec![(recv.inner.as_name().unwrap(), None)],
-
-            (recv, Some(params)) => {
-                let mut parameters = Vec::with_capacity(params.len() + 1);
-
-                if let Some(reciever) = recv {
-                    parameters.push((reciever.inner.as_name().unwrap(), None));
-                }
-
-                for (name, annotation) in params.iter() {
-                    let ann = annotation.as_ref().map(|ann| ann.visit_with(self, None));
-                    parameters.push((name.clone(), ann));
-                }
-
-                parameters
-            }
-        };
-
-        let returns = fndef.returns.as_ref().map(|r| r.visit_with(self, None));
-
-        let sequence_id = self.with_new_sequence(
-            fndef.body.len(),
-            SequenceType::Function,
-            (self.mref(), span.unwrap()),
-            |this| {
-                for node in fndef.body.iter() {
-                    node.visit_with(this, None);
-                }
-            },
-        );
-
-        self.sequences[sequence_id]
-            .ast
-            .replace(fndef.into_ast_node());
-
-        let name = fndef.name.inner.as_name().unwrap();
-        let mut func = self.inst(RawInst::Defn {
-            name: name,
-            params: params,
-            returns,
-            sequence_id,
-        });
-
-        self.inst(RawInst::SetVar {
-            variable: name,
-            value: func,
-        });
-
-        for dec in decorators {
-            func = self.inst(RawInst::Call {
-                callable: dec,
-                arguments: vec![func],
-            });
-        }
-
-        func
-    }
-
     fn visit_ifstmt(&mut self, ifch: &IfChain, _: Option<Span>) -> usize {
         let branch_indices: Vec<_> = ifch
             .branches
             .iter()
             .enumerate()
             .map(|(_, branch)| {
-                let entry = self.inst(RawInst::JumpTarget);
+                let entry = if matches!(self.last_inst(), Some(crate::FlatInst { .. })) {
+                    self.sequences[self.sequence_index].inst.len() - 1
+                } else {
+                    self.inst(RawInst::JumpTarget)
+                };
 
                 let test = branch.inner.test.visit_with(self, None);
 
@@ -433,8 +425,9 @@ impl AstVisitor<usize> for FlatCode {
 
                 let inst = seq.inst.get_mut(*branch).unwrap();
 
-                if let RawInst::If { truthy, .. } = &mut inst.op {
+                if let RawInst::If { truthy, falsey, .. } = &mut inst.op {
                     truthy.replace(*body);
+                    falsey.replace(after_if_ch);
                 } else {
                     unreachable!();
                 }
@@ -466,6 +459,10 @@ impl AstVisitor<usize> for FlatCode {
         }
 
         INVALID_VALUE
+    }
+
+    fn visit_pass(&mut self) -> usize {
+        self.inst(RawInst::Nop)
     }
 
     fn visit_assign(&mut self, asn: &Assign, span: Option<Span>) -> usize {
@@ -523,7 +520,12 @@ impl AstVisitor<usize> for FlatCode {
     }
 
     fn visit_while(&mut self, while_: &While, _: Option<Span>) -> usize {
+        let to_start = self.inst(RawInst::JumpTarget);
         let start = self.inst(RawInst::JumpTarget);
+
+        self.sequences.get_mut(self.sequence_index).unwrap().inst[to_start].op =
+            RawInst::Br { to: start };
+
         let test = while_.test.inner.visit_with(self, None);
 
         let jump = self.inst(RawInst::If {
@@ -532,7 +534,7 @@ impl AstVisitor<usize> for FlatCode {
             falsey: None,
         });
 
-        self.inst(RawInst::JumpTarget);
+        let when_true = self.inst(RawInst::JumpTarget);
 
         for node in &while_.body {
             node.visit_with(self, None);
@@ -545,7 +547,7 @@ impl AstVisitor<usize> for FlatCode {
 
         seq.inst[jump].op = RawInst::If {
             test,
-            truthy: None,
+            truthy: Some(when_true),
             falsey: Some(or_else),
         };
 
@@ -718,5 +720,30 @@ impl AstVisitor<usize> for FlatCode {
         let attr = self.inst(RawInst::RefAsStr { r });
 
         self.inst(RawInst::GetAttribute { object, attr })
+    }
+
+    fn visit_module(&mut self, module: &montyc_parser::ast::Module, _: Option<Span>) -> usize {
+        for stmt in &module.body {
+            stmt.visit_with(self, None);
+        }
+
+        INVALID_VALUE
+    }
+
+    fn visit_annotation(
+        &mut self,
+        ann: &montyc_parser::ast::Annotation,
+        _span: Option<Span>,
+    ) -> usize {
+        let Annotation { name, kind } = ann;
+
+        let name = match name.inner.as_name() {
+            Some(sref) => sref,
+            None => todo!(),
+        };
+
+        let annotation = kind.visit_with(self, None);
+
+        self.inst(RawInst::SetAnnotation { name, annotation })
     }
 }

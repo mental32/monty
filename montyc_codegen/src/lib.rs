@@ -8,23 +8,17 @@ use montyc_query::Queries;
 #[cfg(feature = "cranelift")]
 pub mod cranelift;
 
-#[cfg(feature = "cranelift")]
-pub use cranelift as backend;
-
 #[cfg(feature = "llvm")]
 pub mod llvm;
 
-#[cfg(feature = "llvm")]
-pub use llvm as backend;
-
 pub(crate) mod tvalue;
 
-pub struct CgBackend(pub(crate) backend::BackendImpl);
+pub struct CgBackend<B>(pub(crate) B);
 
-impl CgBackend {
+impl CgBackend<cranelift::BackendImpl> {
     /// Construct a new codegen backend from provided options.
     pub fn new(opts: &CompilerOptions) -> Self {
-        let backend = backend::BackendImpl::new(opts);
+        let backend = cranelift::BackendImpl::new(opts);
 
         Self(backend)
     }

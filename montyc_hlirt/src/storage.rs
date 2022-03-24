@@ -42,7 +42,7 @@ pub trait ObjectSpace {
     /// Invoke the provided filter `f` with every object this space has until it returns `Some(T)`.
     fn filter_map<T>(&self, f: impl FnMut(ObjectId, &PyValue) -> Option<T>) -> Option<T>;
 
-    /// Invoke the provided function `f` with every object this space has until.
+    /// Invoke the provided function `f` with every object this space has.
     fn for_each(&self, f: impl FnMut(ObjectId, &PyValue));
 }
 

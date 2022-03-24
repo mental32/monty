@@ -1,162 +1,32 @@
-#![allow(dead_code)]
-
-use std::collections::VecDeque;
-
-use montyc_core::ast::Constant;
-use montyc_core::codegen::{CgBlockId, CgInst};
-use montyc_core::opts::CompilerOptions;
-use montyc_core::{
-    Function, MapT, ModuleRef, MontyError, MontyResult, PythonType, TypeError, TypeId,
-    TypingConstants, TypingContext, ValueId,
-};
-
-use montyc_flatcode::{raw_inst::RawInst, FlatInst};
-
+use montyc_core::{BuiltinType, TypingContext};
+use montyc_flatcode::FlatInst;
 use montyc_query::Queries;
-use petgraph::{data::DataMap, graph::NodeIndex, visit::EdgeRef, EdgeDirection};
+use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 
-use crate::prelude::SessionContext;
+use crate::global_context::SessionContext;
 
-/// run through a sequence of instructions and group linear sequences of instructions into "blocks"
-///
-/// blocks typically have a jump-target or phi-recv as the first instruction (unless its the first block.)
-/// and should end with a branch instruction, it is permitted for branching instructions to exist
-/// in between the first and last instruction in a block.
-///
-fn flatseq_to_blocks(inst: &[FlatInst]) -> Vec<Vec<FlatInst>> {
-    inst.iter().fold(vec![], |mut blocks, inst| {
-        match (&inst.op, blocks.last_mut()) {
-            (_, None) | (RawInst::JumpTarget | RawInst::PhiRecv, _) => {
-                log::trace!("[typeck::flatseq_to_blocks] %{} := {}", inst.value, inst.op);
-                blocks.push(vec![inst.clone()])
-            }
-
-            (_, Some(seq)) => {
-                log::trace!(
-                    "[typeck::flatseq_to_blocks]     %{} := {}",
-                    inst.value,
-                    inst.op
-                );
-
-                seq.push(inst.clone())
-            }
-        }
-
-        blocks
-    })
-}
-
-/// edge-type used to describe how blocks are connected.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum BlockCFGEdge {
-    IfTrue(usize),
-    IfFalse(usize),
-    OrElse(usize),
-    Direct(usize),
-}
-
-type BlockCFG = petgraph::graph::Graph<Vec<FlatInst>, BlockCFGEdge>;
-
-#[derive(Debug, Default)]
-struct BlockCFGBuilder(BlockCFG);
-
-impl BlockCFGBuilder {
-    fn new_from_blocks(blocks: Vec<Vec<FlatInst>>) -> (Self, Option<NodeIndex>) {
-        let mut cfg = BlockCFGBuilder::default();
-        let mut edges = vec![];
-
-        let mut block_indecies = cfg.append(blocks.iter()).peekable();
-        let entry = block_indecies.peek().cloned();
-
-        for block_index in block_indecies {
-            let block = &blocks[block_index.index()];
-
-            for (inst_ix, inst) in block.iter().enumerate() {
-                match inst.op {
-                    RawInst::If { truthy, falsey, .. } => {
-                        if let Some(t) = truthy {
-                            edges.push((block_index, t, BlockCFGEdge::IfTrue(inst_ix)));
-                        }
-
-                        if let Some(f) = falsey {
-                            edges.push((block_index, f, BlockCFGEdge::IfFalse(inst_ix)));
-                        }
-                    }
-
-                    RawInst::Br { to } => {
-                        if inst_ix > 0
-                            && matches!(block[inst_ix - 1].op, RawInst::If { falsey: None, .. })
-                        {
-                            edges.push((block_index, to, BlockCFGEdge::OrElse(inst_ix)));
-                        } else {
-                            edges.push((block_index, to, BlockCFGEdge::Direct(inst_ix)));
-                        }
-                    }
-
-                    _ => continue,
-                }
-            }
-        }
-
-        for (from, to, edge) in edges {
-            let to = cfg.find_block_of_val(to).unwrap();
-            cfg.connect_nodes(from, to, edge);
-        }
-
-        (cfg, entry)
-    }
-
-    fn append<'a, I, T>(&'a mut self, it: I) -> impl Iterator<Item = NodeIndex> + 'a
-    where
-        I: Iterator<Item = T> + 'a,
-        T: AsRef<[FlatInst]>,
-    {
-        it.map(move |block| self.0.add_node(block.as_ref().to_owned()))
-    }
-
-    fn find_block_of_val(&self, value: usize) -> Option<NodeIndex> {
-        self.0.node_weights().enumerate().find_map(|(ix, seq)| {
-            seq.iter()
-                .any(|inst| inst.value == value)
-                .then(|| NodeIndex::from(ix as u32))
-        })
-    }
-
-    fn connect_nodes(&mut self, from: NodeIndex, to: NodeIndex, edge: BlockCFGEdge) {
-        self.0.add_edge(from, to, edge);
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Binding {
-    block: NodeIndex,
-    inst: usize,
-    type_id: TypeId,
-}
-
-#[derive(Debug, Default)]
-struct Variable(Vec<Binding>);
-
-type ErrorTy = TypeError;
+use super::*;
+use super::{block_cfg::BlockCFGBuilder, cfg_reducer::CFGReducer};
 
 /// Akin to Pytype's VM this is a virtual machine for abstract interpretation of code.
 #[derive(Debug)]
-struct TypingMachine {
-    cfg: BlockCFG,
-    return_t: TypeId,
-    entry: Option<NodeIndex>,
-    mref: ModuleRef,
-    locals: MapT<u32, Variable>,
-    nonlocals: MapT<usize, ValueId>,
-    values: MapT<usize, TypeId>,
+pub struct TypingMachine {
+    pub(crate) cfg: BlockCFG,
+    pub(crate) return_t: TypeId,
+    pub(crate) entry: Option<NodeIndex>,
+    pub(crate) mref: ModuleRef,
+    pub(crate) locals: MapT<u32, Variable>,
+    pub(crate) nonlocals: MapT<usize, ValueId>,
+    pub(crate) values: MapT<usize, TypeId>,
 }
 
 impl TypingMachine {
-    fn new(blocks: Vec<Vec<FlatInst>>, return_t: TypeId, mref: ModuleRef) -> Self {
-        let (BlockCFGBuilder(cfg), entry) = BlockCFGBuilder::new_from_blocks(blocks);
+    pub fn new(blocks: Vec<Vec<FlatInst>>, return_t: TypeId, mref: ModuleRef) -> Self {
+        let (bcfg, entry) = BlockCFGBuilder::new_from_blocks(blocks);
 
         Self {
-            cfg,
+            cfg: bcfg.0,
             entry,
             return_t,
             mref,
@@ -200,6 +70,15 @@ impl TypingMachine {
             );
 
             match &inst.op {
+                RawInst::SetAnnotation { name, annotation } => {
+                    let (inst, block) = Self::find_inst(cfg, *annotation).unwrap();
+
+                    match inst.op {
+                        RawInst::UseVar { variable } => todo!(),
+                        _ => todo!("annotation is too complex, can only refer to names."),
+                    }
+                }
+
                 RawInst::Defn { .. } | RawInst::Class { .. } | RawInst::Import { .. } => {
                     todo!("{:#?}", inst)
                 }
@@ -209,6 +88,7 @@ impl TypingMachine {
 
                     cg_block.push(CgInst::Jump {
                         to: CgBlockId(block.index()),
+                        with: vec![],
                     });
                 }
 
@@ -248,6 +128,7 @@ impl TypingMachine {
 
                         cg_block.push(CgInst::Jump {
                             to: CgBlockId(block.index()),
+                            with: vec![],
                         });
                     }
                 },
@@ -313,72 +194,85 @@ impl TypingMachine {
                         }
 
                         Some(Variable(bindings)) => {
-                            // HACK:
-                            //     we should be using some kind of separate binding graph
-                            //     where the names are nodes and the edges are control flow edges
-                            //     so that we can use a dominance algorithm as a rough check whether
-                            //     a binding is potentially unbound.
+                            let vfg = BlockCFGBuilder(cfg.clone()).variable_flowgraph(cx); // TODO(mental): build this once and cache that.
+
+                            panic!("{:#?}", vfg);
+
+                            // let defs: Vec<Defs> = vfg.block(block_ix).unwrap().def_blocks(variable);
+
+                            // defs.foo;
+                            //                             let mut bindings_it = Some(block_ix)
+                            //                                 .into_iter()
+                            //                                 .chain(
+                            //                                     cfg.edges_directed(block_ix, EdgeDirection::Incoming)
+                            //                                         .map(|e| e.source())
+                            //                                         .filter(|ix| *ix < block_ix),
+                            //                                 )
+                            //                                 .map(|ix| (ix, bindings.iter().find(|b| b.block == ix).cloned()));
                             //
-                            //     but I'm not quite sure how to go about implementing this right now...
-                            //     the current implementation works as follows:
+                            //                             let variable_types = if let Some((index, binding)) = bindings_it.next()
+                            //                             {
+                            //                                 assert_eq!(index, block_ix);
                             //
-                            //     * given a list of block indecies: the first index is the current block. the rest are the indecies of the blocks immediately preceding it.
-                            //     * for every block in the list: find an binding that references it `bindings.iter().find(|b| b.block == ix)`
-                            //     * if the first index has a binding, use that. everything is ok.
-                            //     * otherwise look at the rest of the indecies and assert they all contain a binding.
-                            //     * the result is a vec of types that describes a union of what the type of the variable may be.
-
-                            let mut bindings_it = Some(block_ix)
-                                .into_iter()
-                                .chain(
-                                    cfg.edges_directed(block_ix, EdgeDirection::Incoming)
-                                        .map(|e| e.source()),
-                                )
-                                .map(|ix| (ix, bindings.iter().find(|b| b.block == ix).cloned()));
-
-                            let variable_types = if let Some((index, binding)) = bindings_it.next()
-                            {
-                                assert_eq!(index, block_ix);
-
-                                match binding {
-                                    Some(Binding { type_id, .. }) => vec![type_id],
-
-                                    None => {
-                                        // no binding in current block, inspect the immediate predecessors.
-
-                                        let mut types = ahash::AHashSet::with_capacity(
-                                            bindings_it.size_hint().0,
-                                        );
-
-                                        for (_, binding) in bindings_it {
-                                            match binding {
-                                            Some(Binding { type_id, .. }) => { types.insert(type_id); },
-
-                                            None => todo!("all immediate predecessors must contain a variable binding."),
-                                        }
-                                        }
-
-                                        types.into_iter().collect()
-                                    }
-                                }
-                            } else {
-                                todo!("unbound local variable.");
-                            };
-
-                            let var_t = match variable_types.as_slice() {
-                                [] => todo!("unbound local variable."),
-
-                                [one] => *one,
-
-                                _ => cx.tcx().insert(
-                                    PythonType::Union {
-                                        members: Some(variable_types),
-                                    }
-                                    .into(),
-                                ),
-                            };
-
-                            value_types.insert(inst.value, var_t);
+                            //                                 match binding {
+                            //                                     Some(Binding { type_id, .. }) => vec![type_id],
+                            //
+                            //                                     None => {
+                            //                                         // no binding in current block, inspect the immediate predecessors.
+                            //
+                            //                                         let mut types = ahash::AHashSet::with_capacity(
+                            //                                             bindings_it.size_hint().0,
+                            //                                         );
+                            //
+                            //                                         for (ix, binding) in bindings_it {
+                            //                                             log::trace!("{ix:?} {block_ix:?}");
+                            //
+                            //                                             match binding {
+                            //                                                 Some(Binding { type_id, .. }) => {
+                            //                                                     types.insert(type_id);
+                            //                                                 }
+                            //                                                 None => {
+                            //                                                     log::trace!("no binding in {ix:?} checking predecessors.");
+                            //
+                            //                                                     for ix_pred in cfg
+                            //                                                         .edges_directed(ix, EdgeDirection::Incoming)
+                            //                                                         .map(|e| e.source())
+                            //                                                         .filter(|i| *i < ix)
+                            //                                                     {
+                            //                                                         log::trace!("{ix_pred:?} is a predecessor to {ix:?}");
+                            //                                                         if let Some(binding) = dbg!(bindings
+                            //                                                             .iter()
+                            //                                                             .find(|b| b.block == ix_pred)
+                            //                                                             .cloned())
+                            //                                                         {
+                            //                                                             types.insert(binding.type_id);
+                            //                                                         }
+                            //                                                     }
+                            //                                                 }
+                            //                                             }
+                            //                                         }
+                            //
+                            //                                         // assert!(n_bound != 0);
+                            //                                         types.into_iter().collect()
+                            //                                     }
+                            //                                 }
+                            //                             } else {
+                            //                                 todo!("unbound local variable.");
+                            //                             };
+                            //
+                            //                             let var_t = match variable_types.as_slice() {
+                            //                                 [] => todo!("unbound local variable."),
+                            //
+                            //                                 [one] => *one,
+                            //
+                            //                                 _ => cx.tcx().insert(
+                            //                                     PythonType::Union {
+                            //                                         members: Some(variable_types),
+                            //                                     }
+                            //                                     .into(),
+                            //                                 ),
+                            //                             };
+                            value_types.insert(inst.value, todo!());
 
                             cg_block.push(CgInst::ReadLocalVar {
                                 var: variable.clone(),
@@ -400,6 +294,10 @@ impl TypingMachine {
                     let callable_pytype = cx.tcx().get_python_type_of(callable_t).unwrap();
 
                     match callable_pytype {
+                        PythonType::Class { object_id, members } => {
+                            todo!()
+                        }
+
                         PythonType::Instance { .. } => todo!(),
                         PythonType::NoReturn => todo!(),
                         PythonType::Any => todo!(),
@@ -555,7 +453,14 @@ impl TypingMachine {
                         }
 
                         PythonType::Generic { .. } => todo!(),
-                        PythonType::Builtin { .. } => todo!(),
+                        PythonType::Builtin { inner } => match inner {
+                            BuiltinType::Type => {
+                                let klass = nonlocals[callable];
+                                todo!();
+                                // let init = cx.typing_context.get_property(base_t, name)
+                            }
+                            _ => unimplemented!(),
+                        },
                     }
                 }
 
@@ -650,7 +555,15 @@ impl TypingMachine {
                     value_types.insert(inst.value, type_id);
                 }
 
-                RawInst::PhiJump { .. } => todo!(),
+                RawInst::PhiJump { recv, value } => {
+                    let (_, block) = Self::find_inst(cfg, *recv).unwrap();
+                    let to = CgBlockId(block.index());
+                    cg_block.push(CgInst::Jump {
+                        to,
+                        with: vec![*value],
+                    });
+                }
+
                 RawInst::PhiRecv => todo!(),
 
                 RawInst::Return { value } => {
@@ -670,6 +583,8 @@ impl TypingMachine {
             }
         }
 
+        assert!(!cg_block.is_empty());
+
         Ok(cg_block)
     }
 
@@ -681,144 +596,6 @@ impl TypingMachine {
         }
 
         None
-    }
-}
-
-/// Run the TypingMachine on the supplied function `fun`.
-///
-/// This routine performs abstract interpretation of the provided function
-/// whilst analyzing and performing type correctess verification (typechecking)
-///
-/// As a side effect if the context build options are set to `Build` then `CgInst`
-/// instructions will be emitted for later codegen.
-///
-pub fn typecheck(
-    cx: &SessionContext,
-    fun: &mut Function,
-) -> MontyResult<montyc_core::codegen::CgBlockCFG> {
-    log::trace!(
-        "[typeck::typecheck] typechecking funtion: {:?}",
-        fun.value_id
-    );
-
-    let code = cx.get_function_flatcode(fun.value_id)?;
-
-    match &cx.opts {
-        CompilerOptions::Check { libstd, input } => todo!(),
-        CompilerOptions::Build { .. } => {
-            let (return_t, params_t) = match cx.tcx().get_python_type_of(fun.type_id).unwrap() {
-                PythonType::Callable { ret, params } => (ret, params),
-                _ => unreachable!(),
-            };
-
-            let mut tm = TypingMachine::new(flatseq_to_blocks(code.inst()), return_t, fun.mref);
-            let entry = match tm.entry {
-                Some(entry) => entry,
-                None => unreachable!("code should always have one block."),
-            };
-
-            if let Some(montyc_parser::AstNode::FuncDef(f)) = code.ast {
-                for ((sref, _), type_id) in f
-                    .args
-                    .unwrap_or_default()
-                    .into_iter()
-                    .zip(params_t.unwrap_or_default().into_iter())
-                {
-                    let var = tm.locals.entry(sref.group()).or_default();
-
-                    var.0.push(Binding {
-                        block: entry,
-                        inst: 0,
-                        type_id,
-                    });
-                }
-            }
-
-            let mut cg_cfg = tm.visit(cx, entry)?;
-
-            for edge in tm.cfg.edge_indices() {
-                if let Some((start, end)) = tm.cfg.edge_endpoints(edge) {
-                    cg_cfg.update_edge(start, end, ());
-                }
-            }
-
-            Ok(cg_cfg)
-        }
-    }
-}
-
-trait GraphLike<IndexT> {
-    fn n_nodes(&self) -> usize;
-}
-
-trait CFGReducer {
-    type IndexT: Eq + Ord + std::fmt::Debug + Copy;
-    type InputGraphT: GraphLike<Self::IndexT>;
-    type OutputT;
-
-    fn make_output(&self) -> Self::OutputT;
-
-    fn cfg_ref(&self) -> &Self::InputGraphT;
-    fn cfg_mut_ref(&mut self) -> &mut Self::InputGraphT;
-
-    fn visit_block(
-        &mut self,
-        cx: &SessionContext,
-        output: &mut Self::OutputT,
-        ix: Self::IndexT,
-        errors: &mut Vec<montyc_core::error::TypeError>,
-    ) -> MontyResult<Vec<Self::IndexT>>;
-
-    fn visit(&mut self, cx: &SessionContext, entry: Self::IndexT) -> MontyResult<Self::OutputT> {
-        let cfg_capacity = self.cfg_ref().n_nodes();
-
-        let mut blocks_processed = Vec::with_capacity(cfg_capacity);
-        let mut blocks_to_analyze = VecDeque::with_capacity(cfg_capacity);
-
-        blocks_to_analyze.push_front(entry);
-
-        let mut errors = Vec::with_capacity(16);
-        let mut output = self.make_output();
-
-        while let Some(ix) = blocks_to_analyze.pop_front() {
-            errors.clear();
-
-            let insert_at = match blocks_processed.binary_search(&ix) {
-                Ok(_) => continue,
-                Err(index) => index,
-            };
-
-            let output_nodes = self.visit_block(cx, &mut output, ix, &mut errors)?;
-
-            if let [] = errors.as_slice() {
-                blocks_processed.insert(insert_at, ix);
-
-                for node in output_nodes {
-                    if let Ok(_) = blocks_processed.binary_search(&node) {
-                        continue;
-                    }
-
-                    if let None = blocks_to_analyze.iter().find(|ix| **ix == node) {
-                        blocks_to_analyze.push_back(node)
-                    }
-                }
-
-                log::trace!(
-                    "[typeck::typecheck] blocks to analyze: {:?}",
-                    blocks_to_analyze
-                );
-            } else {
-                todo!("{:#?}", errors)
-            }
-        }
-
-        Ok(output)
-    }
-}
-
-impl GraphLike<NodeIndex> for BlockCFG {
-    fn n_nodes(&self) -> usize {
-        self.raw_nodes().len()
     }
 }
 
@@ -854,7 +631,7 @@ impl CFGReducer for TypingMachine {
     ) -> Result<Vec<NodeIndex>, montyc_core::MontyError> {
         let cg_block = self.analyze_block(cx, ix, errors)?;
 
-        if let Some(block) = output.node_weight_mut(ix) {
+        if let Some(block) = dbg!(output.node_weight_mut(ix)) {
             let _ = std::mem::replace(block, cg_block);
         }
 

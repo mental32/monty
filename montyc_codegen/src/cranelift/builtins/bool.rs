@@ -5,7 +5,7 @@ use cranelift_object::ObjectModule;
 
 use montyc_core::{TypeId, TypingConstants};
 
-use crate::backend::BackendImpl;
+use crate::cranelift::BackendImpl;
 
 pub(crate) fn bool_bool(
     _cx: &BackendImpl,

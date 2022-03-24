@@ -14,7 +14,7 @@ pub enum Field {
 #[derive(Debug, Clone)]
 #[rustfmt::skip]
 pub enum CgInst {
-    Jump { to: CgBlockId },
+    Jump { to: CgBlockId, with: Vec<usize> },
     JumpIfTrue { to: CgBlockId, ctrl: usize },
     JumpIfFalse { to: CgBlockId, ctrl: usize },
 

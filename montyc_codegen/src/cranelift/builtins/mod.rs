@@ -5,7 +5,7 @@ use cranelift_object::ObjectModule;
 
 use montyc_core::{MapT, TypeId};
 
-use crate::backend::BackendImpl;
+use crate::cranelift::BackendImpl;
 
 type BuiltinStub =
     fn(&BackendImpl, &mut ObjectModule) -> (cranelift_codegen::ir::Function, TypeId, &'static str);

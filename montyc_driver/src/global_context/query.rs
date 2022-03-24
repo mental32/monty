@@ -1,4 +1,4 @@
-use montyc_core::{codegen::CgInst, patma, Function, TaggedValueId, TypeId, ValueId};
+use montyc_core::{codegen::CgInst, patma, Function, Property, TaggedValueId, TypeId, ValueId};
 use montyc_hlirt::object::AnyFunc;
 use montyc_parser::AstNode;
 
@@ -28,6 +28,39 @@ impl Queries for SessionContext {
                     ty
                 );
 
+                if ty == TypingConstants::Type {
+                    let object_id = self
+                        .value_store
+                        .with_metadata(val, |m| m.object_id)
+                        .unwrap()
+                        .unwrap();
+
+                    let mut ty = Type::new_class(object_id, None);
+
+                    for (_, (k, v)) in self
+                        .const_runtime
+                        .borrow()
+                        .objects
+                        .with_object(object_id, |val| match val {
+                            PyValue::Class { inner, .. } => inner.__dict__.clone(),
+                            _ => unimplemented!(),
+                        })
+                        .iter()
+                    {
+                        let attr_name = self
+                            .const_runtime
+                            .borrow()
+                            .objects
+                            .with_object(*k, |m| m.as_str().unwrap().to_string());
+
+                        let property = Property::new(type_id, value);
+
+                        ty.properties.insert(attr_name, property);
+                    }
+
+                    return Ok(self.typing_context.insert(ty));
+                }
+
                 self.value_store.with_metadata_mut(val, |m| {
                     m.type_id.replace(ty);
                 });
@@ -37,6 +70,26 @@ impl Queries for SessionContext {
 
             None => Err(MontyError::None),
         }
+    }
+
+    fn get_layout_of(&self, val: ValueId) -> MontyResult<std::alloc::Layout> {
+        let type_id = self.get_type_of(val)?;
+        let ty = self
+            .tcx()
+            .get_python_type_of(type_id)
+            .ok_or(MontyError::None)?;
+
+        let layout = match dbg!(ty) {
+            PythonType::Builtin {
+                inner: BuiltinType::Type,
+            } => self
+                .tcx()
+                .layout_of(self.tcx().tuple(vec![TypingConstants::I64])),
+
+            _ => self.tcx().layout_of(type_id),
+        };
+
+        Ok(layout)
     }
 
     fn get_module_data(&self, mref: ModuleRef) -> MontyResult<ModuleData> {

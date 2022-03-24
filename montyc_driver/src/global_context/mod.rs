@@ -9,6 +9,7 @@ use ahash::AHashSet;
 use dashmap::DashMap;
 
 use montyc_hlirt::argparse::{ObjectParserExt, Parser};
+use montyc_hlirt::ObjectSpace;
 
 use montyc_hlirt::rt::singletons::Singletons;
 use parking_lot::Mutex;
@@ -24,7 +25,7 @@ use montyc_flatcode::FlatCode;
 use montyc_hlirt::ctx::{CallCx, EvalGlue};
 use montyc_hlirt::object::{FuncLike, IntoPyValue, ObjectBuilder, PyValue, ReadyCallable};
 use montyc_hlirt::rt::{AcceptInput, Runtime, RuntimeHost, RuntimeHostExt};
-use montyc_hlirt::{argparse, ObjectId, ObjectSpace, PyException, PyResult, PyResultExt};
+use montyc_hlirt::{argparse, ObjectId, PyException, PyResult, PyResultExt};
 use montyc_parser::{AstObject, SpanInterner};
 use montyc_query::Queries;
 
@@ -300,6 +301,7 @@ impl TypingContext for TypingData {
                 } = self;
 
                 match root {
+                    PythonType::Class { object_id, members } => todo!(),
                     PythonType::Instance { of } => write!(
                         f,
                         "Instance of {}",
@@ -1298,7 +1300,10 @@ impl SessionContext {
     }
 
     fn compute_type_of(&self, rt: &Runtime, val: ValueId) -> MontyResult<TypeId> {
-        log::trace!("[SessionContext::compute_type_of] {:?}", val);
+        log::trace!(
+            "[SessionContext::compute_type_of] called with value={:?}",
+            val
+        );
 
         let obj = self
             .value_store
@@ -1307,7 +1312,8 @@ impl SessionContext {
             .unwrap(); // TODO: handle values that do not have an object repr.
 
         rt.objects.with_object(obj, |v| {
-            log::trace!("[SessionContext::compute_type_of] {:?} is {:?}", obj, v)
+            log::trace!("[SessionContext::compute_type_of] {:?} is {:?}", val, obj);
+            log::trace!("[SessionContext::compute_type_of] {:?} is {}", obj, v)
         });
 
         let object_class = rt.class_of(obj);

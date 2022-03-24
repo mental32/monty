@@ -8,19 +8,14 @@ use montyc_parser::ast::{InfixOp, UnaryOp};
 pub enum Dunder {
     /// unary dunders i.e. __neg__
     Unary(UnaryOp),
-
     /// infix dunders i.e. __add__
     Infix(InfixOp),
-
     /// __get_item__
     GetItem,
-
     /// __set_item__
     SetItem,
-
     /// __doc__
     DocComment,
-
     /// __bool__
     AsBool,
 }
@@ -139,6 +134,11 @@ pub enum RawInst<V = usize, R = SpanRef> {
     Return {
         value: V,
     },
+
+    SetAnnotation {
+        name: R,
+        annotation: V,
+    },
 }
 
 pub trait InstVisitor<T, V = usize, R = SpanRef> {
@@ -182,6 +182,9 @@ fn format_vec_of_values(seq: &[usize]) -> String {
 impl Display for RawInst {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            RawInst::SetAnnotation { name, annotation } => {
+                write!(f, "set-annotation {:?} {:?}", name, annotation)
+            }
             RawInst::RefAsStr { r } => write!(f, "ref-as-str {:?}", r),
 
             RawInst::BuildClass { sequence, class } => {

@@ -38,6 +38,7 @@ pub enum AstNode {
     Attr(models::Primary),
     Ret(models::Return),
     While(models::While),
+    Annotation(models::Annotation),
     Pass,
 }
 
@@ -246,6 +247,10 @@ pub trait AstVisitor<T = ()> {
 
     fn visit_module(&mut self, module: &Module, _span: Option<Span>) -> T {
         self.visit_any(module)
+    }
+
+    fn visit_annotation(&mut self, ann: &Annotation, _span: Option<Span>) -> T {
+        self.visit_any(ann)
     }
 }
 

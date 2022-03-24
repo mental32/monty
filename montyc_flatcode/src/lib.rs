@@ -127,6 +127,10 @@ impl FlatCode {
         }
     }
 
+    fn last_inst(&self) -> Option<&FlatInst> {
+        self.sequences.get(self.sequence_index)?.inst.last()
+    }
+
     #[track_caller]
     fn set_span_for_values<A>(&mut self, values: A, span: Span)
     where
@@ -139,6 +143,7 @@ impl FlatCode {
         }
     }
 
+    #[track_caller]
     fn with_new_sequence(
         &mut self,
         size_hint: usize,

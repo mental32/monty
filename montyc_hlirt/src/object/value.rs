@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{fmt::Display, rc::Rc};
 
 use montyc_core::{dict::PyDictRaw, patma, SpanRef};
 use montyc_flatcode::FlatCode;
@@ -226,6 +226,21 @@ pub enum PyValue {
     /// to express within the runtime.
     ///
     Dynamic(SharedObject),
+}
+
+impl Display for PyValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PyValue::Function {
+                params, returns, ..
+            } => write!(
+                f,
+                "Function {{ params: {}, returns: {returns:?} }}",
+                params.len()
+            ),
+            _ => write!(f, "{self:?}"),
+        }
+    }
 }
 
 impl PyValue {
