@@ -1,0 +1,9 @@
+[package]
+name = "cranelift-structbuf"
+version = "0.99.0"
+edition = "2018"
+
+[dependencies]
+cranelift-codegen = "0.77.0"
+cranelift-frontend = "0.77.0"
+tinyvec = "1.5.0"

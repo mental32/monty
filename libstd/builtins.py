@@ -1,6 +1,9 @@
-from __monty import extern
+# pylint: skip-file
 
-@extern
+from .__monty import intrinsic
+
+
+@intrinsic
 class object:
     """The base class of the class hierarchy.
 
@@ -8,7 +11,17 @@ class object:
     instance that has no instance attributes and cannot be given any.
     """
 
-@extern
+
+@intrinsic
+class NoneType:
+    """The type of the singleton value None.
+
+    When called, it accepts no arguments and returns the singleton value
+    None.
+    """
+
+
+@intrinsic
 class type:
     """
     type(object_or_name, bases, dict)
@@ -17,7 +30,25 @@ class type:
     """
 
 
-@extern
+@intrinsic
+class function:
+    """
+    Create a function object.
+
+    code
+        a code object
+    globals
+        the globals dictionary
+    name
+        a string that overrides the name from the code object
+    argdefs
+        a tuple that specifies the default argument values
+    closure
+        a tuple that supplies the bindings for free variables
+    """
+
+
+@intrinsic
 class bool:
     """bool(x) -> bool
 
@@ -26,29 +57,29 @@ class bool:
     The class bool is a subclass of the class int, and cannot be subclassed.
     """
 
+    def __bool__(self) -> bool:
+        ...
 
-@extern
+
+@intrinsic
 class int:
-    """
-    int([x]) -> integer
-    int(x, base=10) -> integer
+    def __add__(self, x: int) -> int:
+        ...
 
-    Convert a number or string to an integer, or return 0 if no arguments
-    are given.  If x is a number, return x.__int__().  For floating point
-    numbers, this truncates towards zero.
+    def __sub__(self, x: int) -> int:
+        ...
 
-    If x is not a number or if base is given, then x must be a string,
-    bytes, or bytearray instance representing an integer literal in the
-    given base.  The literal can be preceded by '+' or '-' and be surrounded
-    by whitespace.  The base defaults to 10.  Valid bases are 0 and 2-36.
-    Base 0 means to interpret the base from the string as an integer literal.
+    def __eq__(self, x: int) -> bool:
+        ...
 
-        >>> int('0b100', base=0)
-        4
-    """
+    def __ne__(self, x: int) -> bool:
+        ...
+
+    def __bool__(self) -> bool:
+        ...
 
 
-@extern
+@intrinsic
 class float:
     """
     float(x=0) -> float
@@ -58,7 +89,7 @@ class float:
     """
 
 
-@extern
+@intrinsic
 class str:
     """
     str(object='') -> str
@@ -74,8 +105,20 @@ class str:
     """
 
 
-@extern
-def id(__obj: object) -> int: ...
+@intrinsic
+class tuple:
+    def __getitem__(self, _index: int) -> object:
+        ...
 
-@extern
-def isinstance(__obj: object, __class_or_tuple: type) -> bool: ...
+    def __setitem__(self, _index: int, _value: object) -> object:
+        ...
+
+
+@intrinsic
+def id(__obj: object) -> int:
+    ...
+
+
+@intrinsic
+def isinstance(__obj: object, __class_or_tuple: type) -> bool:
+    ...

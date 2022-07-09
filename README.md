@@ -1,73 +1,82 @@
 <h1 align="center">Monty</h1>
 
-<h1 align="center">A Strongly Typed Python Dialect</h1>
+<h1 align="center">A compiler for strongly typed Python.</h1>
 
 ## Index
 
 - [Index](#index)
 - [Brief](#brief)
+  - [How does Monty differ from regular Python or the typing semantics of other type checkers?](#how-does-monty-differ-from-regular-python-or-the-typing-semantics-of-other-type-checkers)
 - [Building the compiler](#building-the-compiler)
-- [Using the compiler](#using-the-compiler)
-- [Just some thoughts on how we can keep the dynamic feeling.](#just-some-thoughts-on-how-we-can-keep-the-dynamic-feeling)
-  - ["automatic unions"](#automatic-unions)
-  - ["Type narrowing"](#type-narrowing)
-  - ["Deviated instance types"](#deviated-instance-types)
-  - [Compile time (or "comptime") execution](#compile-time-or-comptime-execution)
+  - [Crate/Repository Layout](#craterepository-layout)
 - [Related projects](#related-projects)
   - ["prior art"](#prior-art)
 
 ## Brief
 
-Monty `(/ˈmɒntɪ/)` is an attempt to provide a completely organic alternative
-dialect of Python equipped with a stronger, safer, and smarter type system.
+Monty `(/ˈmɒntɪ/)` is a gradually typed, statically compilable Python.
+With some baked in tricks to make it feel as dynamic as regular Python.
 
-At a high level monty can be closely compared with what TypeScript does for
-JavaScript. The core contrast between Monty and TypeScript however is
-that TS is a strict syntactical superset of JS, Monty is a strict syntactical
-subset of Python; meaning that TS adds backwards incompatible syntax to JS
-where Monty disallows existing Python syntax and semantics in a backwards
-compatible manner.
+### How does Monty differ from regular Python or the typing semantics of other type checkers?
 
-Monty is intended to be compiled to native executable binaries or WASM via the
-use of [cranelift] (and maybe [llvm] if support for that ever lands.)
+1. The most notable difference is that code in the global scope gets run at compile time instead of at program startup.
+
+This is done for several reasons however the most important one is generally to make importing a static (at-compile-time)
+process rather than a lazy (at-program-startup-time) task.
+
+The attitude monty has towards code is that all the business logic should be tucked away neatly organized behind
+classes and functions, anything that is in the module/global scope should only be there to initialize and define
+those classes and functions.
+
+The compile-time runtime is bounded so that programs may not hog time or infinitely execute. I/O is also restricted
+and sandboxed by default prompting the terminal when code attempts to open files, bind or connect sockets, and read
+input.
+
+1. Monty by default will accept (parse, comptime eval) **any** Python code. It may not, however, compile it all.
+
+In the interest of making it easy to gradually port existing Python code so that monty can compile it: the compiler will parse
+all modern Python (3.8+) code and it will submit the code through compile-time evaluation. this means that it is completely legal
+to have Python code which monty cant compile (e.g. async/await, macros, etc...) alongside code that monty can compile.
+
+It is a compilation error if monty discovers a call into code that it can not compile. All the extra code that isn't compilable is
+still parsed, evaluated, and managed internally to make it usable for compile-time evaluation, or third-party analysis.
+
+3. Monty typing takes after pytype, pyright, and pyre.
+
+Monty takes direct inspiration from the three mainstream checkers: [pytype] (google), [pyright] (microsoft), [pyre] (facebook).
+
+Like pytype: monty relies [heavily on inference and is lenient instead of strict](https://github.com/google/pytype#how-is-pytype-different-from-other-type-checkers)
+
+Monty learnt about narrowing and guards from pyright [and supports many of the same guard and narrowing patterns](https://github.com/microsoft/pyright/blob/main/docs/type-concepts.md#type-narrowing)
+
+A lot of existing code in monty is designed to be embeddable and query-able [similar to pyre](https://pyre-check.org/docs/querying-pyre/).
 
 ## Building the compiler
 
-You will need the a recent nightly version of rust (`1.53.0-nightly` or so) in order to build.
+You will need a fairly recent version of rustc, I am building locally with 1.57.
+After that it's as simple as running: `cargo run --bin montyc -- --help`
 
-after that it's as simple as running `cargo build`
+### Crate/Repository Layout
 
-## Using the compiler
+* `/montyc` is the compiler binary, it is a thin wrapper around `montyc_driver`
+* `/montyc_driver` is where all the magic happens, type checking/inference, calls into codegen, etc...
+* `/montyc_codegen` is where codegen providers are, currently only Cranelift is supported but I'd like to support both LLVM and GCC in the future.
+* `/montyc_hlirt` is a High Level Interpreter Runtime (HLIRT) and is a minimal but geniune Python interpreter used mainly for compile time evaluation.
+* `/montyc_query` is where the query interface is defined for the driver.
+* `/montyc_flatcode` is where AST -> FlatCode lowering happens.
+* `/montyc_parser` is the parser implementation.
+* `/montyc_core` is where all fundamental types used in this project go to live.
 
-It is **strongly** advised to use `clang` and enable the `mold` linker.
-I suggest you download and install both since they (especially mold) will
-improve the final steps of compile time performance.
+<!-- 
+## What Monty can do to feel dynamic.
 
-Make sure to check the compilers help command with `--help` as it will be more
-up to date than this example.
+This section is a work in progress and it documents a few ideas
+that I'm exploring to see if I can remove the typical hassle of
+working with a strongly-typed, compiled language.
 
-The compiler aims to be easy to use, invoking the following command will produce
-a mostly statically linked binary named `./file` (or `./file.exe` if using windows)
+### "automatic unionization"
 
-```
-./montyc ./path/to/file.py
-```
-
-you may also specify the path to the local C compiler via `--cc="path/to/cc"`
-and a linker via `--ld="path/to/ld"`
-
-## Just some thoughts on how we can keep the dynamic feeling.
-
-Apart from the regular semantics of interpreter Python, Monty will disallow
-parts of the language selectively (depending on how hard the feature is to
-translate to compiled code.)
-
-### "automatic unions"
-
-It's useful to be able to represent multiple types of values within one object.
-_cough cough_ polymorphism _cough cough_
-
-Variables, in Monty, may only have one type per scope.
+In Monty variables may only have one type per scope.
 you may not re-assign a value to a variable with a different type.
 
 ```py
@@ -76,18 +85,30 @@ def badly_typed():
     this = "foo"
 ```
 
-You may however have a union of types, which is represented like a tagged union
-in C or an enum in Rust. `typing.Union[T, ...]` is the Pythonic way to annotate
-a union explicitly but in Monty you may use the newer literal syntax `T | U` from
-[PEP604]:
+You may however have a union of types, which is internally represented like a tagged
+union in C or an enum in Rust.
+
+`typing.Union[T, ...]` is the traditional way to annotate a union explicitly but in
+Monty you may use the newer literal syntax `T | U` from [PEP604]:
 
 ```py
-def correctly_typed():
+def foo():
     this: int | str = 1
     this = "foo"
 ```
+```py
+def bar() -> int | bool:
+    if random.randrange(0, 2):
+        return 1
+    else:
+        return False
+```
+```py
+def baz(qux: str | list[str]) -> int | bool:
+    ...
+```
 
-But wait! say you have the following code:
+And it even works with inference:
 
 ```py
 def foo() -> int:
@@ -100,17 +121,8 @@ def baz(control: bool):
     x = foo() if control else bar()
 ```
 
-What's the type of `x` in the function `baz` now?
-
-Some might expect this to be a type error after all `foo` and `bar` return
-incompatible types and they try get associated with `x` but this isn't the case
-unless you explicitly annotate `x` to be one of `int` or `str`.
-
-What happens instead is that the compiler will "synthesize" (create) a union
-type for you so the type of `x` will be:
-
- * `int | str` or
- * `Union[int, str]`.
+Here the type of `x` in `baz` is inferred to be `Union[int, str]` depending on
+the value of `control`.
 
 ### "Type narrowing"
 
@@ -131,60 +143,7 @@ else:
     # exhaustive-ness checks will allow `x` to be treated as a list of strings here.
 ```
 
-### "Deviated instance types"
-
-Inspired from [this section of the RPython documentation][rpython-instances] Deviated Instance Types
-work very similarly. For example take the following class:
-
-```py
-class Thing:
-    attr1: int
-    attr2: list[str]
-```
-
-The memory layout of class `Thing` we'll call "Layout 1" will contain an integer and a list and by default
-that's all that was said about the class so that's all monty can do with it for now any other attribute access
-either getting or setting will invoke a type error to be reported to the user.
-
-Here's where the idea of "deviating" an "instance"s "type" comes in:
-
-```py
-THING = Thing()
-THING.attr3 = "blah blah"
-```
-
-This value would constant at runtime but lazily initialized at compile time but that's besides the point.
-
-`THING` is an instance of `Thing` meaning the layout of the constant is specified in the class definition.
-but we then try and set an attribute on the instance and at first glance it looks like an error but it actually
-lets us do very clever things with the way we model values and types with monty.
-
-The memory layout of `THING` is now "Layout 1, 0" (read as the first diverged layout from 1) and in rough
-C pseudo code will be structured something like:
-
-```c
-struct Thing_Layout_1 {
-    integer_type attr1;
-    list_str_type attr2; 
-}
-
-struct Thing_Layout_1_0 {
-    Thing_Layout_1 head;
-    string_type attr3;
-}
-```
-
-If `THING` were not to be a constant and instead a static module-level variable then you
-are also free to set and modify the value of `THING.attr3` ala
-
-```py
-thing = Thing()
-
-def whatever(blah: str, n: int):
-    thing.attr3 = blah * n
-```
-
-### Compile time (or "comptime") execution
+### Staged computation of module-level code (aka "comptime"/"consteval")
 
 The biggest difference between regular Python and Monty is how the module-level
 is evaluated.
@@ -209,7 +168,7 @@ Assuming most global-scope level logic is there to act as a sort of
 Of course in a completely dynamic environment we don't have to restrict the user
 like we would when compiling the code regularly, so in that case most things that
 would be rejected normally are perfectly fine such as: `exec`, `eval`, 
-`globals`, `locals`, dynamic class creation, and functions with untyped arguments.
+`globals`, `locals`, dynamic class creation, and functions with untyped arguments. -->
 
 ## Related projects
 

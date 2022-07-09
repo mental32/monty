@@ -1,56 +1,41 @@
-use montyc::{context::GlobalContext, CompilerOptions};
+use montyc_driver::prelude::{CompilerOptions, SessionContext};
 
 use structopt::StructOpt;
 
-fn main() -> std::io::Result<()> {
+fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let opts = CompilerOptions::from_args();
-    let file = opts.input.clone();
-    // let isa = opts.codegen_settings();
+    let opts_verified = match opts.clone().verify() {
+        Ok(i) => i,
+        Err(mut errors) => {
+            for err in errors.drain(..) {
+                eprintln!("error: {}", err);
+            }
 
-    let v_opts = opts.clone().verify();
-
-    let mut global_context = GlobalContext::initialize(&v_opts);
-    let _ = global_context.include_module(&file);
-
-    let show_ir_for = 
-    if let Some(name) = opts.show_ir {
-        Some(global_context.span_ref.borrow_mut().push_grouped(0..name.len(), &name, "<eval>".into()))
-    } else {
-        None
+            std::process::exit(1);
+        }
     };
 
-    let mut cctx = global_context.as_codegen_module();
+    let gcx = match SessionContext::initialize(&opts_verified) {
+        Ok(cx) => cx,
 
-    if let Some(name) = show_ir_for {
-        cctx.build_pending_functions();
+        Err((cx, err)) => {
+            // TODO: cx.fmt_error(err)
+            eprintln!("error: {}", err);
+            std::process::exit(1)
+        }
+    };
 
-        match cctx.get_func_named(name) {
-            Some(st) => eprintln!("{}", st),
-            None => eprintln!("No function found."),
+    match opts {
+        CompilerOptions::Check { input, .. } => {
+            gcx.include_module(input, "__main__")?;
         }
 
-        std::process::exit(0);
+        CompilerOptions::Build { .. } => {
+            montyc_codegen::compile(&opts, &gcx)?;
+        }
     }
 
-    let object = cctx.finish(None::<&str>);
-    let object = object.to_str().unwrap();
-
-    let cc = opts.cc.unwrap_or("cc".into());
-
-    let output = opts.output.unwrap_or_else(|| {
-        file.file_stem()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
-            .into()
-    });
-
-    let output = output.to_str().unwrap();
-
-    std::process::Command::new(cc)
-        .args(&[object, "-o", output, "-no-pie"])
-        .status()
-        .map(|_| ())
+    Ok(())
 }

@@ -1,0 +1,38 @@
+[package]
+name = "montyc_driver"
+version = "0.99.0"
+authors = ["mental <mentalfoss@gmail.com>"]
+edition = "2018"
+description = "A Strongly Typed, Flexible, and Compiled Python Dialect"
+documentation = "https://docs.rs/montyc"
+readme = "README.md"
+repository = "https://github.com/mental32/monty"
+license = "MIT"
+
+[dependencies]
+montyc_parser = { path = "../montyc_parser" }
+montyc_core = { path = "../montyc_core" }
+montyc_hlirt = { path = "../montyc_hlirt" }
+montyc_codegen = { path = "../montyc_codegen" }
+montyc_query = { path = "../montyc_query" }
+montyc_flatcode = { path = "../montyc_flatcode" }
+
+# "make my life easier" dependencies
+derive_more = "0.99"
+thiserror = "1"
+petgraph = "0.6"
+dashmap = "5.0.0"
+parking_lot = "0.11.2"
+
+# Logging dependencies
+log = "0.4.14"
+
+target-lexicon = "0.12.0"
+ahash = { version = "0.7.4", features = ["std"] }
+tempfile = "3.2"
+
+# error reporting
+ariadne = "0.1.3"
+yansi = "0.5.0"
+logos = "0.12"
+atomic = "0.5.1"
