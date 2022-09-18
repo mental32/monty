@@ -5,7 +5,10 @@ edition = "2021"
 
 [dependencies]
 montyc_lexer = { path = "../montyc_lexer" }
+montyc_ast = { path = "../montyc_ast" }
 montyc_query = { path = "../montyc_query" }
+montyc_core_types = { path = "../montyc_core_types" }
 
 ariadne = "0.1.5"
 chumsky = "0.8.0"
+ahash = "0.8.0"

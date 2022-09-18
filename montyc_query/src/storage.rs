@@ -109,6 +109,10 @@ impl Storage {
         I: Hash + PartialEq<I> + 'static,
         V: 'static,
     {
+        if let StorageImpl::Phantom = self.0 {
+            return;
+        }
+
         let query_input = Box::new(input) as Box<dyn DynQueryInput>;
         let key = (TypeId::of::<Q>(), query_input);
 

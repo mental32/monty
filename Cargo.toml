@@ -1,14 +1,15 @@
 [workspace]
 members = [
     # "montyc",
-    "montyc_parser",
-    "montyc_lexer",
-    # "montyc_driver",
+    "montyc_ast/",
+    "montyc_parser/",
+    "montyc_lexer/",
+    "montyc_core_types/",
     # "montyc_hlirt",
     # "montyc_codegen",
-    "montyc_query",
-    "montyc_hlist",
-    "montyc_test_suite",
+    "montyc_query/",
+    "montyc_hlist/",
+    "montyc_test_suite/",
     # "montyc_flatcode",
     # "montyc_hlirt",
 ]

@@ -1,4 +1,3 @@
-use futures::TryFuture;
 use montyc_hlist::{Func, Tuple};
 
 use crate::and_then::AndThen;

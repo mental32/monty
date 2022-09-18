@@ -1,8 +1,5 @@
-use std::{
-    convert::Infallible,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use futures::Future;
 

@@ -1,27 +1,101 @@
 //! Tokenizer, which is helpfully generated for us by Logos.
 
-use logos::Logos;
+use std::iter::FromIterator;
 
-// use montyc_query::query;
+use logos::Logos;
 
 pub type Span = logos::Span;
 
-// query! {
-//     impl Lexer {
-//         let Input = <InputTy>;
-//         let Output = <OutputTy>;
+/// `SpanRef`s are lightweight references to `SpanData`s
+///
+/// They are made up of two `u32`s the first is a group identifier
+/// and the second is a distinct identifier.
+///
+/// Every distinct identifier uniquely refers to a span in a file somewhere,
+/// the group identifiers allow for cheap string and identifier equality checks
+/// e.g. all variable names `a` will have the same group identifier but different
+/// distinct identifiers.
+///
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SpanRef(u32, u32);
 
-//         fn [tokens/Tokens](&self, input: std::sync::Arc<str>) -> Vec<(PyToken, Span)> {
+impl From<(u32, u32)> for SpanRef {
+    fn from((a, b): (u32, u32)) -> Self {
+        Self(a, b)
+    }
+}
 
-//         }
-//     }
-// }
+impl SpanRef {
+    /// Get the group identifier of the span ref.
+    ///
+    /// Multiple spans with the same hash are considered to be in the same group.
+    ///
+    #[inline]
+    pub fn group(&self) -> u32 {
+        self.0
+    }
 
-pub fn tokens<I>(input: I) -> Vec<(PyToken, Span)>
+    /// Get the distinct identifier of the span ref.
+    ///
+    /// This is a unique identifier for the span in the file.
+    ///
+    #[inline]
+    pub fn distinct(&self) -> u32 {
+        self.1
+    }
+}
+
+/// parse the input string with the lexer and collect it into the generic output type `O`
+///
+/// # Examples
+///
+/// ```
+/// use montyc_lexer::{tokens, PyToken};
+///
+/// let tok: Vec<_> = tokens("foo(1, 2, await)");
+/// assert_eq!(tok.len(), 10);
+/// assert!(matches!(
+///     tok.as_slice(),
+///     [
+///      (PyToken::RawIdent, _),
+///      (PyToken::LParen, _),
+///      (PyToken::Digits(1), _),
+///      (PyToken::Comma, _),
+///      (PyToken::Whitespace, _),
+///      (PyToken::Digits(2), _),
+///      (PyToken::Comma, _),
+///      (PyToken::Whitespace, _),
+///      (PyToken::Await, _),
+///      (PyToken::RParen, _),
+///     ]
+/// ));
+/// ```
+pub fn tokens<I, O>(input: I) -> O
 where
     I: AsRef<str>,
+    O: FromIterator<(PyToken, Span)>,
 {
-    PyToken::lexer(input.as_ref()).spanned().collect()
+    lex(input.as_ref()).spanned().collect::<O>()
+}
+
+pub fn lex<'a>(input: &'a str) -> logos::Lexer<'a, PyToken> {
+    PyToken::lexer(input)
+}
+
+pub trait Lexer {
+    fn span(&self) -> Span;
+
+    fn slice(&self) -> &str;
+}
+
+impl<'source> Lexer for logos::Lexer<'source, PyToken> {
+    fn span(&self) -> Span {
+        self.span()
+    }
+
+    fn slice(&self) -> &str {
+        self.slice()
+    }
 }
 
 #[derive(Debug, Logos, PartialEq, Copy, Clone, Hash, Eq)]
@@ -223,4 +297,9 @@ pub enum PyToken {
 
     #[regex("[a-zA-Z_][_a-zA-Z0-9]*")]
     RawIdent,
+
+    // -- used for interning
+    IdentRef(SpanRef),
+    CommentRef(SpanRef),
+    StringRef(SpanRef),
 }

@@ -20,36 +20,6 @@
 //! the call site. query functions are just functions, there is nothing extra that gets generated
 //! inline with the function definition that extends the interface magically.
 //!
-//! ### Examples
-//!
-//! ```
-//! use montyc_query::prelude::*;
-//!
-//! struct Db;
-//! impl QueryDatabase for Db {}
-//!
-//! fn calculate_length<DB: QueryDatabase>(db: &DB, st: &'static str) -> usize {
-//!     st.len()
-//! }
-//!
-//! fn main() {
-//!     let mut db = Db;
-//!
-//!     // query functions are just functions
-//!     let raw = calculate_length(&(), "foo");
-//!
-//!     // to wrap a function and produce a "query function" which performs memoization.
-//!     // alternatively: calculate_length.into_query(); is also possible.
-//!     let wrapped_fn = QueryAndDatabase::new(&db, calculate_length);
-//!
-//!     // first call to the query function will result in a cache miss and the underlying function will be run.
-//!     let foo_1 = wrapped_fn.call("foo");
-//!     // calculate_length doesn't get run again since it has memoized the input "foo" in the first run to the output `3_usize`
-//!     let foo_2 = wrapped_fn.call("foo");
-//!
-//!     assert_eq!(foo_1, foo_2);
-//! }
-//! ```
 
 pub(crate) mod and_then;
 pub mod any;
