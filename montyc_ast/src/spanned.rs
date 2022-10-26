@@ -15,6 +15,10 @@ impl<T> Spanned<T> {
         Self { inner: t, span }
     }
 
+    pub fn span_to<U>(&self, other: &Spanned<U>) -> montyc_lexer::Span {
+        self.span.start..other.span.end
+    }
+
     pub fn map<U, F>(self, f: F) -> Spanned<U>
     where
         F: FnOnce(T) -> U,

@@ -3,6 +3,9 @@
 
 #![forbid(unsafe_code)]
 #![warn(warnings)]
+#![feature(trace_macros)]
+
+use chumsky::Parser;
 
 pub(crate) mod spanned {
     pub use montyc_ast::spanned::*;
@@ -29,16 +32,27 @@ pub mod prelude {
 
 pub(crate) type Token = (montyc_lexer::PyToken, montyc_lexer::Span);
 
-pub fn parse<I>(input: I) -> Result<ast::module::Module, ()>
+pub type Error = ();
+pub type Output<T> = (
+    Option<montyc_ast::spanned::Spanned<T>>,
+    Vec<chumsky::error::Simple<Token>>,
+);
+
+#[inline]
+pub fn parse<I>(input: I) -> Result<Output<ast::module::Module>, Error>
 where
     I: AsRef<str>,
 {
     let input = input.as_ref();
-    let tokens: Vec<Token> = montyc_lexer::tokens(input);
+    let lexer = montyc_lexer::lex(input);
+    let sr = crate::span_interner::SpanInterner::new();
 
-    todo!();
+    let tokens: Vec<Token> = crate::token_stream_iter::TokenStreamIter {
+        bound: sr.get(input, ()).unwrap(),
+        lexer,
+    }
+    .map(|res| res.unwrap())
+    .collect();
 
-    // let (output, errors) = comb::module().parse_recovery(tokens);
-
-    // todo!("{:?}", (output, errors))
+    Ok(comb::module().parse_recovery(tokens))
 }

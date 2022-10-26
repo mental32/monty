@@ -5,7 +5,7 @@ use super::*;
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expr(Spanned<expr::Expr>),
-    // FnDef(FunctionDef),
+    FnDef(Spanned<funcdef::FunctionDef>),
     // Ret(Return),
     // Asn(Assign),
     // Ann(Annotation),
@@ -21,7 +21,7 @@ impl AstObject for Statement {
         match self {
             Self::Pass => AstNode::Pass,
             Self::Expr(node) => node.into_ast_node(),
-            // Self::FnDef(node) => node.into_ast_node(),
+            Self::FnDef(node) => node.into_ast_node(),
             // Self::Ret(node) => node.into_ast_node(),
             // Self::Asn(node) => node.into_ast_node(),
             // Self::Ann(node) => node.into_ast_node(),
@@ -35,7 +35,7 @@ impl AstObject for Statement {
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
         match self {
             Statement::Expr(ref e) => e,
-            // Statement::FnDef(ref f) => f,
+            Statement::FnDef(ref f) => f,
             // Statement::Ret(ref r) => r,
             // Statement::Asn(ref a) => a,
             // Statement::Ann(ref a) => a,

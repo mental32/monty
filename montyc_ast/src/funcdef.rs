@@ -7,10 +7,16 @@ use super::statement::Statement;
 use super::{AstNode, AstObject};
 
 #[derive(Debug, Clone)]
+pub struct FunctionDefParam {
+    pub named: SpanRef,
+    pub annotation: Option<Spanned<Expr>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionDef {
-    pub reciever: Option<Spanned<Atom>>,
+    // pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
-    pub args: Option<Vec<(SpanRef, Option<Spanned<Expr>>)>>,
+    pub args: Vec<Spanned<FunctionDefParam>>,
     pub body: Vec<Spanned<Statement>>,
     pub decorator_list: Vec<Spanned<Primary>>,
     pub returns: Option<Spanned<Expr>>,
@@ -40,10 +46,7 @@ impl AstObject for FunctionDef {
 
 impl FunctionDef {
     pub fn is_dynamically_typed(&self) -> bool {
-        self.args
-            .as_ref()
-            .map(|args| args.iter().any(|arg| arg.1.is_none()))
-            .unwrap_or(false)
+        self.args.iter().any(|arg| arg.inner.annotation.is_none())
     }
 
     pub fn is_ellipsis_stubbed(&self) -> bool {
