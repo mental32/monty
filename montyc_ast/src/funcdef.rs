@@ -18,7 +18,7 @@ pub struct FunctionDef {
     pub name: Spanned<Atom>,
     pub args: Vec<Spanned<FunctionDefParam>>,
     pub body: Vec<Spanned<Statement>>,
-    pub decorator_list: Vec<Spanned<Primary>>,
+    pub decorator_list: Vec<Spanned<Expr>>,
     pub returns: Option<Spanned<Expr>>,
     // type_comment: Option<Expr>,
 }

@@ -1,5 +1,6 @@
 //! The collection of various AST nodes.
 
+pub mod assign;
 pub mod atom;
 pub mod expr;
 pub mod funcdef;
@@ -53,7 +54,7 @@ pub enum AstNode {
     //     ClassDef(models::ClassDef),
     FuncDef(funcdef::FunctionDef),
     If(ifstmt::IfChain),
-    //     Assign(models::Assign),
+    Assign(assign::Assign),
     Int(atom::Atom),
     Str(atom::Atom),
     Comment(atom::Atom),

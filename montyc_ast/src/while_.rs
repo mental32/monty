@@ -14,17 +14,6 @@ impl AstObject for While {
         AstNode::While(self.clone())
     }
 
-    // fn span(&self) -> Option<Span> {
-    //     Some(
-    //         self.test.span.start
-    //             ..self
-    //                 .body
-    //                 .last()
-    //                 .map(|node| node.span.end)
-    //                 .unwrap_or(self.test.span.end),
-    //     )
-    // }
-
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
         self
     }

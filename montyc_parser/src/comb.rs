@@ -2,8 +2,10 @@ use chumsky::prelude::*;
 
 use montyc_ast::expr::Expr;
 use montyc_ast::funcdef::{FunctionDef, FunctionDefParam};
+use montyc_ast::ifstmt::{If, IfChain};
 use montyc_ast::spanned::Spanned;
 use montyc_ast::statement::Statement;
+use montyc_ast::while_;
 use montyc_lexer::PyToken;
 
 use crate::ast::atom::Atom;
@@ -46,61 +48,61 @@ mod tokens {
     }
 
     token_parser![
-        (true_,       "tokens::true_",      PyToken::True);
-        (false_,      "tokens::false_",     PyToken::False);
-        (none,        "tokens::none",       PyToken::None);
-        (is,          "tokens::is",         PyToken::Is);
-        (or,          "tokens::or",         PyToken::Or);
-        (not,         "tokens::not",        PyToken::Not);
-        (await_,      "tokens::await",      PyToken::Await);
-        (async_,      "tokens::async",      PyToken::Async);
-        (if_,         "tokens::if",         PyToken::If);
-        (elif,        "tokens::elif",       PyToken::Elif);
-        (else_,       "tokens::else",       PyToken::Else);
-        (classdef,    "tokens::classdef",   PyToken::ClassDef);
-        (fndef,       "tokens::fndef",      PyToken::FnDef);
-        (return_,     "tokens::return",     PyToken::Return);
-        (while_,      "tokens::while",      PyToken::While);
-        (pass,        "tokens::pass",       PyToken::Pass);
-        (continue_,   "tokens::continue",   PyToken::Continue);
-        (in_,         "tokens::in",         PyToken::In);
-        (break_,      "tokens::break",      PyToken::Break);
-        (from,        "tokens::from",       PyToken::From);
-        (import,      "tokens::import",     PyToken::Import);
-        (raise,       "tokens::raise",      PyToken::Raise);
-        (assert,      "tokens::assert",     PyToken::Assert);
-        (del,         "tokens::del",        PyToken::Del);
-        (global,      "tokens::global",     PyToken::Global);
-        (yield_,      "tokens::yield",      PyToken::Yield);
-        (nonlocal,    "tokens::nonlocal",   PyToken::Nonlocal);
-        (ellipsis,    "tokens::ellipsis",   PyToken::Ellipsis);
-        (lparen,      "tokens::lparen",     PyToken::LParen);
-        (rparen,      "tokens::rparen",     PyToken::RParen);
-        (lbracket,    "tokens::lbracket",   PyToken::LBracket);
-        (rbracket,    "tokens::rbracket",   PyToken::RBracket);
-        (lbrace,      "tokens::lbrace",     PyToken::LBrace);
-        (rbrace,      "tokens::rbrace",     PyToken::RBrace);
-        (at,          "tokens::at",         PyToken::At);
-        (escape,      "tokens::escape",     PyToken::Escape);
-        (div,         "tokens::div",        PyToken::Div);
-        (caret,       "tokens::caret",      PyToken::Caret);
-        (comma,       "tokens::comma",      PyToken::Comma);
-        (equal,       "tokens::equal",      PyToken::Equal);
-        (dot,         "tokens::dot",        PyToken::Dot);
-        (and,         "tokens::and",        PyToken::And);
-        (colon,       "tokens::colon",      PyToken::Colon);
-        (plus,        "tokens::plus",       PyToken::Plus);
-        (minus,       "tokens::minus",      PyToken::Minus);
-        (star,        "tokens::star",       PyToken::Star);
-        (tilde,       "tokens::tilde",      PyToken::Tilde);
-        (modulo,      "tokens::modulo",     PyToken::Modulo);
-        (lessthan,    "tokens::lessthan",   PyToken::LessThan);
-        (pipe,        "tokens::pipe",       PyToken::Pipe);
-        (greaterthan, "tokens::greaterthan",PyToken::GreaterThan);
-        (bang,        "tokens::bang",       PyToken::Bang);
-        (newline,     "tokens::newline",    PyToken::Newline);
-        (formfeed,    "tokens::formfeed",   PyToken::FormFeed);
-        (whitespace,  "tokens::whitespace", PyToken::Whitespace)
+        (true_,       "<true_>",      PyToken::True);
+        (false_,      "<false_>",     PyToken::False);
+        (none,        "<none>",       PyToken::None);
+        (is,          "<is>",         PyToken::Is);
+        (or,          "<or>",         PyToken::Or);
+        (not,         "<not>",        PyToken::Not);
+        (await_,      "<await>",      PyToken::Await);
+        (async_,      "<async>",      PyToken::Async);
+        (if_,         "<if>",         PyToken::If);
+        (elif,        "<elif>",       PyToken::Elif);
+        (else_,       "<else>",       PyToken::Else);
+        (classdef,    "<classdef>",   PyToken::ClassDef);
+        (fndef,       "<fndef>",      PyToken::FnDef);
+        (return_,     "<return>",     PyToken::Return);
+        (while_,      "<while>",      PyToken::While);
+        (pass,        "<pass>",       PyToken::Pass);
+        (continue_,   "<continue>",   PyToken::Continue);
+        (in_,         "<in>",         PyToken::In);
+        (break_,      "<break>",      PyToken::Break);
+        (from,        "<from>",       PyToken::From);
+        (import,      "<import>",     PyToken::Import);
+        (raise,       "<raise>",      PyToken::Raise);
+        (assert,      "<assert>",     PyToken::Assert);
+        (del,         "<del>",        PyToken::Del);
+        (global,      "<global>",     PyToken::Global);
+        (yield_,      "<yield>",      PyToken::Yield);
+        (nonlocal,    "<nonlocal>",   PyToken::Nonlocal);
+        (ellipsis,    "<ellipsis>",   PyToken::Ellipsis);
+        (lparen,      "<lparen>",     PyToken::LParen);
+        (rparen,      "<rparen>",     PyToken::RParen);
+        (lbracket,    "<lbracket>",   PyToken::LBracket);
+        (rbracket,    "<rbracket>",   PyToken::RBracket);
+        (lbrace,      "<lbrace>",     PyToken::LBrace);
+        (rbrace,      "<rbrace>",     PyToken::RBrace);
+        (at,          "<at>",         PyToken::At);
+        (escape,      "<escape>",     PyToken::Escape);
+        (div,         "<div>",        PyToken::Div);
+        (caret,       "<caret>",      PyToken::Caret);
+        (comma,       "<comma>",      PyToken::Comma);
+        (equal,       "<equal>",      PyToken::Equal);
+        (dot,         "<dot>",        PyToken::Dot);
+        (and,         "<and>",        PyToken::And);
+        (colon,       "<colon>",      PyToken::Colon);
+        (plus,        "<plus>",       PyToken::Plus);
+        (minus,       "<minus>",      PyToken::Minus);
+        (star,        "<star>",       PyToken::Star);
+        (tilde,       "<tilde>",      PyToken::Tilde);
+        (modulo,      "<modulo>",     PyToken::Modulo);
+        (lessthan,    "<lessthan>",   PyToken::LessThan);
+        (pipe,        "<pipe>",       PyToken::Pipe);
+        (greaterthan, "<greaterthan>",PyToken::GreaterThan);
+        (bang,        "<bang>",       PyToken::Bang);
+        (newline,     "<newline>",    PyToken::Newline);
+        (formfeed,    "<formfeed>",   PyToken::FormFeed);
+        (whitespace,  "<whitespace>", PyToken::Whitespace)
     ];
 }
 
@@ -190,7 +192,9 @@ pub fn atom() -> p!(Spanned<Atom>; Clone) {
 }
 
 #[track_caller]
-pub fn primary() -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>> {
+pub fn primary(
+    expr: impl Parser<Token, Spanned<Expr>, Error = Simple<Token>> + Clone + 'static,
+) -> p!(Spanned<Primary>; Clone) {
     recursive(|pr| {
         let wrapped_atom = atom()
             .map(|at| at.replace_with(Primary::Atomic))
@@ -204,18 +208,13 @@ pub fn primary() -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>> 
             P: Parser<Token, Spanned<Primary>, Error = Simple<Token>>,
             Q: Parser<Token, Spanned<Primary>, Error = Simple<Token>> + Clone,
         {
-            let dot = select! {
-                (PyToken::Dot, _) => PyToken::Dot,
-            };
-
             // <dotted> := <wAtom> DOT <primary>+
             // <primary> := <dotted> | <wAtom>
             wrapped_atom
                 .clone()
                 .then(
-                    dot.ignored()
-                        .then(recurse.or(wrapped_atom))
-                        .map(|((), r)| r)
+                    tokens::dot()
+                        .ignore_then(recurse.or(wrapped_atom))
                         .repeated()
                         .at_least(1),
                 )
@@ -231,6 +230,7 @@ pub fn primary() -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>> 
         }
 
         fn call_expr<P>(
+            expr: impl Parser<Token, Spanned<Expr>, Error = Simple<Token>> + Clone,
             wrapped_atom: P,
         ) -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>>
         where
@@ -240,7 +240,7 @@ pub fn primary() -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>> 
 
             let items = atom()
                 .map(|i| i.replace_with(Primary::Atomic).replace_with(Expr::Primary))
-                .or(expr())
+                .or(expr)
                 .padded_by(whitespace)
                 .separated_by(tokens::comma())
                 .at_least(1);
@@ -260,21 +260,14 @@ pub fn primary() -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>> 
         }
 
         fn subscript<P>(
+            expr: impl Parser<Token, Spanned<Expr>, Error = Simple<Token>> + Clone,
             wrapped_atom: P,
         ) -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>>
         where
             P: Parser<Token, Spanned<Primary>, Error = Simple<Token>>,
         {
-            let lbracket = select! {
-                (PyToken::LBracket, _) => PyToken::LBracket,
-            };
-
-            let rbracket = select! {
-                (PyToken::RBracket, _) => PyToken::RBracket,
-            };
-
             wrapped_atom
-                .then(expr().delimited_by(lbracket, rbracket))
+                .then(expr.delimited_by(tokens::lbracket(), tokens::rbracket()))
                 .map(|(value, index)| {
                     let value = Box::new(value);
                     let index = Box::new(index);
@@ -286,21 +279,12 @@ pub fn primary() -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>> 
                 })
         }
 
-        let whitespace = select! {
-            (PyToken::Whitespace, _) => PyToken::Whitespace,
-        }
-        .repeated();
-
-        let await_ = select! {
-            (PyToken::Await, _) => PyToken::Await,
-        };
-
-        let awaited = await_
-            .then_ignore(whitespace)
+        let awaited = tokens::await_()
+            .then_ignore(tokens::whitespace().repeated())
             .repeated()
             .at_least(1)
             .then(pr.clone())
-            .map(|(mut waits, primary): (Vec<PyToken>, Spanned<Primary>)| {
+            .map(|(mut waits, primary): (Vec<_>, Spanned<Primary>)| {
                 let span = primary.span.clone();
                 let mut acc = if let Some(_) = waits.pop() {
                     Primary::Await(Box::new(primary))
@@ -317,16 +301,18 @@ pub fn primary() -> impl Parser<Token, Spanned<Primary>, Error = Simple<Token>> 
 
         awaited
             .or(dotted(pr.clone(), wrapped_atom.clone()))
-            .or(call_expr(wrapped_atom.clone()))
-            .or(subscript(wrapped_atom.clone()))
+            .or(call_expr(expr.clone(), wrapped_atom.clone()))
+            .or(subscript(expr.clone(), wrapped_atom.clone()))
     })
     .debug("primary()")
 }
 
-pub fn expr() -> impl Parser<Token, Spanned<crate::ast::expr::Expr>, Error = Simple<Token>> {
-    let wrapped_atom = atom().map(|at| at.replace_with(Primary::Atomic));
-
-    wrapped_atom.map(|p| p.replace_with(Expr::Primary))
+pub fn expr() -> p!(Spanned<crate::ast::expr::Expr>; Clone) {
+    recursive(|ex| {
+        primary(ex)
+            .map(|p| p.replace_with(Expr::Primary))
+            .or(atom().map(|a| a.replace_with(Primary::Atomic).replace_with(Expr::Primary)))
+    })
 }
 
 /// annotated_identifier := <ident> [":" <expr>]
@@ -348,16 +334,19 @@ pub fn annotated_identifier_list(
 }
 
 #[track_caller]
+pub fn indent(prefix: usize) -> p!(()) {
+    tokens::whitespace().repeated().exactly(prefix).map(|_| ())
+}
+
+#[track_caller]
 pub fn indented_block<F, P, T>(prefix: usize, f: F) -> p!(Vec<T>)
 where
-    F: Fn() -> P + 'static,
-    P: Parser<Token, T, Error = Simple<Token>> + 'static,
+    F: Fn() -> P + Clone + 'static,
+    P: Parser<Token, T, Error = Simple<Token>> + Clone + 'static,
     T: 'static,
 {
-    tokens::whitespace()
-        .repeated()
-        .exactly(prefix)
-        .then_with(move |_| f())
+    indent(prefix)
+        .then_with(move |()| f())
         .separated_by(tokens::newline())
         .at_least(1)
         .debug("indented_block")
@@ -371,16 +360,19 @@ pub fn funcdef(indent: usize) -> impl Parser<Token, Spanned<FunctionDef>, Error 
         .ignore_then(tokens::whitespace().repeated().or_not())
         .ignore_then(expr());
 
-    let decorator = tokens::at()
-        .ignore_then(primary())
-        .debug("funcdef.decorator");
+    let decorator = tokens::at().ignore_then(expr()).debug("funcdef.decorator");
 
     let decorator_list = decorator
         .separated_by(tokens::newline())
         .debug("funcdef.decorator_list");
 
-    let body =
-        tokens::newline().ignore_then(indented_block(indent + 4, move || statement(indent + 4)));
+    let prefix = indent + 4;
+    let body = tokens::newline()
+        .ignore_then(indented_block(prefix, move || statement(prefix)))
+        .or(chumsky::primitive::any()
+            .rewind()
+            .then_with(|_| statement(0))
+            .map(|s| vec![s]));
 
     decorator_list
         .then(tokens::fndef())
@@ -401,7 +393,7 @@ pub fn funcdef(indent: usize) -> impl Parser<Token, Spanned<FunctionDef>, Error 
         )
         .map(
             |(decorator_list, fndef, name, args, returns, body): (
-                Vec<Spanned<Primary>>,          // ["@" <primary>]*
+                Vec<Spanned<_>>,                // ["@" <primary>]*
                 Spanned<PyToken>,               //"def"
                 Spanned<Atom>,                  // <ident>
                 Vec<Spanned<FunctionDefParam>>, // "(" (<ident> (":" <expr>)?),* ")"
@@ -423,14 +415,122 @@ pub fn funcdef(indent: usize) -> impl Parser<Token, Spanned<FunctionDef>, Error 
         .debug("funcdef")
 }
 
-pub fn statement(indent: usize) -> impl Parser<Token, Spanned<Statement>, Error = Simple<Token>> {
+pub fn if_stmt(indent: usize) -> p!(Spanned<montyc_ast::ifstmt::IfChain>) {
+    let indent = indent + 4;
+    let body = |prefix: usize| {
+        tokens::newline()
+            .ignore_then(indented_block(prefix, move || statement(prefix)))
+            .or(chumsky::primitive::any()
+                .rewind()
+                .then_with(|_| statement(0))
+                .map(|s| vec![s]))
+            .then_ignore(tokens::newline().or_not())
+    };
+
+    let rest = expr().then_ignore(tokens::colon().padded_by(tokens::whitespace().repeated()));
+
+    let head = tokens::if_()
+        .then_ignore(tokens::whitespace().repeated().at_least(1))
+        .ignore_then(rest.clone().then(body(indent)));
+
+    let mid = head.then(
+        tokens::elif()
+            .then_ignore(tokens::whitespace().repeated().at_least(1))
+            .ignore_then(rest.clone().then(body(indent)))
+            .repeated(),
+    );
+
+    let tail = mid.then(
+        tokens::else_()
+            .then_ignore(tokens::whitespace().repeated())
+            .ignore_then(tokens::colon())
+            .then_ignore(tokens::whitespace().repeated())
+            .ignore_then(body(indent))
+            .or_not(),
+    );
+
+    tail.map(
+        |(((if_test, if_body), elif), else_): (
+            (
+                (
+                    montyc_ast::spanned::Spanned<_>,
+                    Vec<montyc_ast::spanned::Spanned<Statement>>,
+                ),
+                Vec<(
+                    montyc_ast::spanned::Spanned<_>,
+                    Vec<montyc_ast::spanned::Spanned<Statement>>,
+                )>,
+            ),
+            Option<Vec<montyc_ast::spanned::Spanned<Statement>>>,
+        )| { (if_test, if_body, elif, else_) },
+    )
+    .map(|(if_test, if_body, elif, orelse)| {
+        let start = if_test.span.start;
+        let end = orelse
+            .as_ref()
+            .and_then(|e| e.last())
+            .map(|l| l.span.end)
+            .or(elif
+                .last()
+                .as_ref()
+                .and_then(|l| l.1.last())
+                .map(|l| l.span.end))
+            .unwrap_or(if_test.span.end);
+
+        let span = start..end;
+
+        let mut branches: Vec<_> = elif
+            .into_iter()
+            .map(|(test, body)| Spanned::new(If { test, body }, span.clone()))
+            .collect();
+
+        branches.insert(
+            0,
+            Spanned::new(
+                If {
+                    test: if_test,
+                    body: if_body,
+                },
+                span.clone(),
+            ),
+        );
+
+        let ifch = IfChain { branches, orelse };
+
+        Spanned::new(ifch, span)
+    })
+}
+
+pub fn while_(indent: usize) -> p!(Spanned<while_::While>) {
+    let prefix = indent + 4;
+
+    let while_loop = tokens::while_()
+        .ignore_then(tokens::whitespace().repeated())
+        .ignore_then(expr())
+        .then_ignore(tokens::colon())
+        .then(tokens::newline().ignore_then(indented_block(prefix, move || statement(prefix))));
+
+    while_loop.map(
+        |(test, body): (
+            montyc_ast::spanned::Spanned<montyc_ast::expr::Expr>,
+            Vec<montyc_ast::spanned::Spanned<montyc_ast::statement::Statement>>,
+        )| {
+            let span = test.span.start..body.last().map(|s| s.span.end).unwrap_or(test.span.end);
+            let while_ = while_::While { test, body };
+
+            Spanned::new(while_, span)
+        },
+    )
+}
+
+pub fn statement(
+    indent: usize,
+) -> impl Parser<Token, Spanned<Statement>, Error = Simple<Token>> + Clone {
     let comment = select! {
         (PyToken::Comment, _) => PyToken::Comment,
     };
 
-    let wrapped_primary = primary()
-        .map(|p| p.replace_with(Expr::Primary))
-        .or(expr())
+    let wrapped_primary = expr()
         .map(|expr| expr.replace_with(Statement::Expr))
         .then_ignore(comment.or_not())
         .boxed()
@@ -440,7 +540,29 @@ pub fn statement(indent: usize) -> impl Parser<Token, Spanned<Statement>, Error 
         .map(|fndef| fndef.replace_with(Statement::FnDef))
         .boxed();
 
-    fndef.or(wrapped_primary)
+    let import = tokens::import()
+        .ignore_then(tokens::whitespace().repeated())
+        .ignore_then(
+            ident()
+                .map(|id| id.replace_with(Primary::Atomic))
+                .separated_by(tokens::dot()),
+        )
+        .map(|dotted_names| {
+            let span = dotted_names.first().map(|f| f.span.clone()).unwrap_or(0..0);
+            let import = montyc_ast::import::Import::Names(dotted_names);
+            Spanned::new(import, span).replace_with(Statement::Import)
+        })
+        .boxed();
+
+    let ifch = if_stmt(indent)
+        .map(|ifch| ifch.replace_with(Statement::If))
+        .boxed();
+
+    let whl = while_(indent)
+        .map(|whl| whl.replace_with(Statement::While))
+        .boxed();
+
+    whl.or(ifch).or(import).or(fndef).or(wrapped_primary)
 }
 
 pub fn module() -> impl Parser<Token, Spanned<crate::ast::module::Module>, Error = Simple<Token>> {
@@ -576,14 +698,14 @@ mod test {
     #[test]
     pub fn primary_parsing_dot_access() {
         let stream = lex("a.b");
-        let out = (super::primary()).parse(stream).unwrap();
+        let out = super::expr().parse(stream).unwrap();
 
         let (left, right) = expect_attr(out);
         expect_name(*left);
         expect_name(*right);
 
         let stream = lex("a.b.c");
-        let out = (super::primary()).parse(stream).unwrap();
+        let out = super::expr().parse(stream).unwrap();
 
         let (left, right) = expect_attr(out);
         expect_name(*left);
@@ -595,14 +717,14 @@ mod test {
     #[test]
     pub fn primary_parsing_call_expr() {
         let stream = lex("a()");
-        let out = (super::primary()).parse(stream).unwrap();
+        let out = super::expr().parse(stream).unwrap();
 
         let (func, args) = Some(out).map(expect_call).unwrap();
         expect_name(*func);
         assert!(args.is_none(), "{args:?}");
 
         let stream = lex("a.b()");
-        let out = (super::primary()).parse(stream).unwrap();
+        let out = super::expr().parse(stream).unwrap();
 
         let (left, right) = Some(out).map(expect_attr).unwrap();
         expect_name(*left);
@@ -615,11 +737,101 @@ mod test {
     #[test]
     pub fn primary_parsing_subscript() {
         let stream = lex("a[0]");
-        let out = (super::primary()).parse(stream).unwrap();
+        let out = super::expr().parse(stream).unwrap();
 
         let (obj, index) = expect_subscript(out);
         expect_name(*obj);
         expect_int(*index);
+    }
+
+    #[test]
+    pub fn import_parsing() {
+        let stream = lex("import x");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::Import(imp) => match imp.inner {
+                montyc_ast::import::Import::Names(names) => assert_eq!(names.len(), 1),
+                montyc_ast::import::Import::From { .. } => panic!(),
+            },
+            _ => unimplemented!(),
+        }
+
+        let stream = lex("import x.y");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::Import(imp) => match imp.inner {
+                montyc_ast::import::Import::Names(names) => assert_eq!(names.len(), 2),
+                montyc_ast::import::Import::From { .. } => panic!(),
+            },
+            _ => unimplemented!(),
+        }
+    }
+
+    #[test]
+    pub fn while_parsing() {
+        let stream = lex("while True:\n    1");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::While(whl) => {
+                let whl = whl.inner;
+                expect_int(whl.body[0].clone());
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    #[test]
+    pub fn ifch_parsing() {
+        let stream = lex("if x:\n    1");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::If(ifch) => {
+                let ifch = ifch.inner;
+                assert_eq!(ifch.branches.len(), 1);
+                assert!(ifch.orelse.is_none());
+            }
+            _ => unimplemented!(),
+        }
+
+        let stream = lex("if x:\n    1\nelse:\n    2");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::If(ifch) => {
+                let ifch = ifch.inner;
+                assert_eq!(ifch.branches.len(), 1);
+                assert!(ifch.orelse.is_some());
+            }
+            _ => unimplemented!(),
+        }
+
+        let stream = lex("if x:\n    1\nelif True:\n    2");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::If(ifch) => {
+                let ifch = ifch.inner;
+                assert_eq!(ifch.branches.len(), 2);
+                assert!(ifch.orelse.is_none());
+            }
+            _ => unimplemented!(),
+        }
+
+        let stream = lex("if x:\n    1\nelif True:\n    4\nelse:\n    2");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::If(ifch) => {
+                let ifch = ifch.inner;
+                assert_eq!(ifch.branches.len(), 2);
+                assert!(ifch.orelse.is_some());
+            }
+            _ => unimplemented!(),
+        }
     }
 
     #[test]

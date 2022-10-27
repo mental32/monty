@@ -7,12 +7,12 @@ pub enum Statement {
     Expr(Spanned<expr::Expr>),
     FnDef(Spanned<funcdef::FunctionDef>),
     // Ret(Return),
-    // Asn(Assign),
+    Asn(Spanned<assign::Assign>),
     // Ann(Annotation),
-    // Import(Import),
+    Import(Spanned<import::Import>),
     // Class(ClassDef),
-    // If(IfChain),
-    // While(While),
+    If(Spanned<ifstmt::IfChain>),
+    While(Spanned<while_::While>),
     Pass,
 }
 
@@ -23,12 +23,12 @@ impl AstObject for Statement {
             Self::Expr(node) => node.into_ast_node(),
             Self::FnDef(node) => node.into_ast_node(),
             // Self::Ret(node) => node.into_ast_node(),
-            // Self::Asn(node) => node.into_ast_node(),
+            Self::Asn(node) => node.into_ast_node(),
             // Self::Ann(node) => node.into_ast_node(),
-            // Self::Import(node) => node.into_ast_node(),
+            Self::Import(node) => node.into_ast_node(),
             // Self::Class(node) => node.into_ast_node(),
-            // Self::If(node) => node.into_ast_node(),
-            // Self::While(node) => node.into_ast_node(),
+            Self::If(node) => node.into_ast_node(),
+            Self::While(node) => node.into_ast_node(),
         }
     }
 
@@ -37,12 +37,12 @@ impl AstObject for Statement {
             Statement::Expr(ref e) => e,
             Statement::FnDef(ref f) => f,
             // Statement::Ret(ref r) => r,
-            // Statement::Asn(ref a) => a,
+            Statement::Asn(ref a) => a,
             // Statement::Ann(ref a) => a,
-            // Statement::Import(ref i) => i,
+            Statement::Import(ref i) => i,
             // Statement::Class(ref c) => c,
-            // Statement::If(ref i) => i,
-            // Statement::While(ref w) => w,
+            Statement::If(ref i) => i,
+            Statement::While(ref w) => w,
             Statement::Pass => self,
         }
     }
