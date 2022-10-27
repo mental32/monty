@@ -1,7 +1,7 @@
 use montyc_lexer::SpanRef;
 
 use crate::spanned::Spanned;
-use crate::{atom::Atom, expr::Expr, primary::Primary};
+use crate::{atom::Atom, expr::Expr};
 
 use super::statement::Statement;
 use super::{AstNode, AstObject};

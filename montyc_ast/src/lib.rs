@@ -1,57 +1,25 @@
 //! The collection of various AST nodes.
 
+pub mod ann;
 pub mod assign;
 pub mod atom;
+pub mod classdef;
 pub mod expr;
 pub mod funcdef;
 pub mod ifstmt;
 pub mod import;
+pub mod module;
 pub mod primary;
+pub mod return_;
 pub mod spanned;
-pub mod while_;
-pub mod module {
-    use super::statement::Statement;
-    use super::{AstNode, AstObject};
-
-    use crate::spanned::Spanned;
-
-    #[derive(Debug, Clone, Default)]
-    pub struct Module {
-        pub body: Vec<Spanned<Statement>>,
-    }
-
-    impl AstObject for Module {
-        fn into_ast_node(&self) -> AstNode {
-            todo!()
-        }
-
-        // fn span(&self) -> Option<Span> {
-        //     match self.body.as_slice() {
-        //         [] => None,
-        //         [item] => item.span(),
-        //         [head, .., tail] => Some(head.span.start..tail.span.end),
-        //     }
-        // }
-
-        fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
-            todo!()
-        }
-
-        // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-        // where
-        //     Self: Sized,
-        // {
-        //     visitor.visit_module(self, span)
-        // }
-    }
-}
 pub mod statement;
+pub mod while_;
 
 /// An explicit enumeration of all AST nodes.
 #[derive(Debug, Clone)]
 pub enum AstNode {
     Import(import::Import),
-    //     ClassDef(models::ClassDef),
+    ClassDef(classdef::ClassDef),
     FuncDef(funcdef::FunctionDef),
     If(ifstmt::IfChain),
     Assign(assign::Assign),
@@ -71,9 +39,9 @@ pub enum AstNode {
     Subscript(primary::Primary),
     Call(primary::Primary),
     Attr(primary::Primary),
-    //     Ret(models::Return),
+    Ret(return_::Return),
     While(while_::While),
-    //     Annotation(models::Annotation),
+    Annotation(ann::Annotation),
     Pass,
 }
 

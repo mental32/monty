@@ -1,3 +1,5 @@
+use montyc_lexer::PyToken;
+
 use crate::spanned::Spanned;
 
 use super::*;
@@ -6,27 +8,27 @@ use super::*;
 pub enum Statement {
     Expr(Spanned<expr::Expr>),
     FnDef(Spanned<funcdef::FunctionDef>),
-    // Ret(Return),
+    Ret(Spanned<return_::Return>),
     Asn(Spanned<assign::Assign>),
-    // Ann(Annotation),
+    Ann(Spanned<ann::Annotation>),
     Import(Spanned<import::Import>),
-    // Class(ClassDef),
+    Class(Spanned<classdef::ClassDef>),
     If(Spanned<ifstmt::IfChain>),
     While(Spanned<while_::While>),
-    Pass,
+    Pass(Spanned<PyToken>),
 }
 
 impl AstObject for Statement {
     fn into_ast_node(&self) -> AstNode {
         match self {
-            Self::Pass => AstNode::Pass,
+            Self::Pass(_) => AstNode::Pass,
             Self::Expr(node) => node.into_ast_node(),
             Self::FnDef(node) => node.into_ast_node(),
-            // Self::Ret(node) => node.into_ast_node(),
+            Self::Ret(node) => node.into_ast_node(),
             Self::Asn(node) => node.into_ast_node(),
-            // Self::Ann(node) => node.into_ast_node(),
+            Self::Ann(node) => node.into_ast_node(),
             Self::Import(node) => node.into_ast_node(),
-            // Self::Class(node) => node.into_ast_node(),
+            Self::Class(node) => node.into_ast_node(),
             Self::If(node) => node.into_ast_node(),
             Self::While(node) => node.into_ast_node(),
         }
@@ -36,14 +38,14 @@ impl AstObject for Statement {
         match self {
             Statement::Expr(ref e) => e,
             Statement::FnDef(ref f) => f,
-            // Statement::Ret(ref r) => r,
+            Statement::Ret(ref r) => r,
             Statement::Asn(ref a) => a,
-            // Statement::Ann(ref a) => a,
+            Statement::Ann(ref a) => a,
             Statement::Import(ref i) => i,
-            // Statement::Class(ref c) => c,
+            Statement::Class(ref c) => c,
             Statement::If(ref i) => i,
             Statement::While(ref w) => w,
-            Statement::Pass => self,
+            Statement::Pass(_) => self,
         }
     }
 

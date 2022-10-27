@@ -5,7 +5,7 @@ use montyc_ast::funcdef::{FunctionDef, FunctionDefParam};
 use montyc_ast::ifstmt::{If, IfChain};
 use montyc_ast::spanned::Spanned;
 use montyc_ast::statement::Statement;
-use montyc_ast::while_;
+use montyc_ast::{ann, assign, classdef, return_, while_};
 use montyc_lexer::PyToken;
 
 use crate::ast::atom::Atom;
@@ -317,8 +317,7 @@ pub fn expr() -> p!(Spanned<crate::ast::expr::Expr>; Clone) {
 
 /// annotated_identifier := <ident> [":" <expr>]
 /// annotated_identifier_list = (<annotated_identifier> ",")*
-pub fn annotated_identifier_list(
-) -> impl Parser<Token, Vec<Spanned<FunctionDefParam>>, Error = Simple<Token>> {
+pub fn annotated_identifier_list() -> p!(Vec<Spanned<FunctionDefParam>>) {
     ident()
         .then(tokens::colon().ignore_then(expr()).or_not())
         .map(|(arg, ann)| {
@@ -352,7 +351,7 @@ where
         .debug("indented_block")
 }
 
-pub fn funcdef(indent: usize) -> impl Parser<Token, Spanned<FunctionDef>, Error = Simple<Token>> {
+pub fn funcdef(indent: usize) -> p!(Spanned<FunctionDef>) {
     let parameters = annotated_identifier_list().delimited_by(tokens::lparen(), tokens::rparen());
 
     let return_type_annotation = tokens::minus()
@@ -523,9 +522,52 @@ pub fn while_(indent: usize) -> p!(Spanned<while_::While>) {
     )
 }
 
-pub fn statement(
-    indent: usize,
-) -> impl Parser<Token, Spanned<Statement>, Error = Simple<Token>> + Clone {
+pub fn classdef(indent: usize) -> p!(Spanned<classdef::ClassDef>) {
+    let prefix = indent + 4;
+
+    tokens::classdef()
+        .then_ignore(tokens::whitespace().repeated())
+        .then(ident())
+        .then_ignore(tokens::whitespace().repeated())
+        .then(
+            expr()
+                .padded_by(tokens::whitespace().repeated())
+                .separated_by(tokens::comma())
+                .or_not(),
+        )
+        .then_ignore(tokens::whitespace().repeated())
+        .then_ignore(tokens::colon())
+        .then(tokens::newline().ignore_then(indented_block(prefix, move || statement(prefix))))
+        .map(
+            |(((_, name), _), body): (
+                (
+                    (
+                        montyc_ast::spanned::Spanned<montyc_lexer::PyToken>,
+                        montyc_ast::spanned::Spanned<Atom>,
+                    ),
+                    Option<Vec<montyc_ast::spanned::Spanned<montyc_ast::expr::Expr>>>,
+                ),
+                Vec<montyc_ast::spanned::Spanned<Statement>>,
+            )| {
+                let span = 0..0;
+                let classdef = classdef::ClassDef { name, body };
+                Spanned::new(classdef, span)
+            },
+        )
+}
+
+pub fn return_() -> p!(Spanned<return_::Return>; Clone) {
+    tokens::return_()
+        .then_ignore(tokens::whitespace().repeated().at_least(1))
+        .ignore_then(expr())
+        .map(|ex| {
+            let span = ex.span.clone();
+            let ret = return_::Return { val: ex };
+            Spanned::new(ret, span)
+        })
+}
+
+pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
     let comment = select! {
         (PyToken::Comment, _) => PyToken::Comment,
     };
@@ -562,10 +604,74 @@ pub fn statement(
         .map(|whl| whl.replace_with(Statement::While))
         .boxed();
 
-    whl.or(ifch).or(import).or(fndef).or(wrapped_primary)
+    let ret = return_()
+        .map(|ret| ret.replace_with(Statement::Ret))
+        .boxed();
+
+    let classdef = classdef(indent)
+        .map(|klass| klass.replace_with(Statement::Class))
+        .boxed();
+
+    let pass = tokens::pass()
+        .map(|p| p.replace_with(Statement::Pass))
+        .boxed();
+
+    let annotation = ident()
+        .then_ignore(tokens::whitespace().repeated())
+        .then(
+            tokens::colon()
+                .then(tokens::whitespace().repeated())
+                .ignore_then(expr())
+                .then_ignore(tokens::whitespace().repeated()),
+        )
+        .map(|(name, ann)| {
+            let span = 0..0;
+            let assign = ann::Annotation {
+                name,
+                annotation: ann,
+            };
+
+            Spanned::new(assign, span).replace_with(Statement::Ann)
+        })
+        .boxed();
+
+    let assign = ident()
+        .then_ignore(tokens::whitespace().repeated())
+        .then(
+            tokens::colon()
+                .then(tokens::whitespace().repeated())
+                .ignore_then(expr())
+                .then_ignore(tokens::whitespace().repeated())
+                .or_not(),
+        )
+        .then_ignore(tokens::equal())
+        .then_ignore(tokens::whitespace().repeated())
+        .then(expr())
+        .map(|((name, ann), val)| {
+            let span = 0..0;
+            let assign = assign::Assign {
+                name,
+                annotation: ann,
+                value: val,
+            };
+
+            Spanned::new(assign, span).replace_with(Statement::Asn)
+        })
+        .boxed();
+
+    assign
+        .or(annotation)
+        .or(pass)
+        .or(classdef)
+        .or(ret)
+        .or(whl)
+        .or(ifch)
+        .or(import)
+        .or(fndef)
+        .or(wrapped_primary)
 }
 
-pub fn module() -> impl Parser<Token, Spanned<crate::ast::module::Module>, Error = Simple<Token>> {
+pub fn module() -> p!(Spanned<crate::ast::module::Module>) {
     statement(0)
         .separated_by(tokens::newline().repeated())
         .map(|stmts| {
@@ -624,6 +730,19 @@ mod test {
 
         match node {
             AstNode::Tuple(Atom::Tuple(_)) => (),
+            n => panic!("{n:#?}"),
+        }
+    }
+
+    #[track_caller]
+    fn expect_bool<A>(a: A)
+    where
+        A: AstObject,
+    {
+        let node = a.into_ast_node();
+
+        match node {
+            AstNode::Bool(_) => (),
             n => panic!("{n:#?}"),
         }
     }
@@ -831,6 +950,77 @@ mod test {
                 assert!(ifch.orelse.is_some());
             }
             _ => unimplemented!(),
+        }
+    }
+
+    #[test]
+    pub fn return_parsing() {
+        let stream = lex("return True");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::Ret(r) => {
+                expect_bool(r.inner.val.clone());
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    pub fn annotation_parsing() {
+        let stream = lex("a: b");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::Ann(asn) => {
+                let asn = asn.inner;
+                expect_name(asn.name);
+                expect_name(asn.annotation);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    pub fn assign_parsing() {
+        let stream = lex("a = b");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::Asn(asn) => {
+                let asn = asn.inner;
+                expect_name(asn.name);
+                expect_name(asn.value);
+                assert!(asn.annotation.is_none())
+            }
+            _ => panic!(),
+        }
+
+        let stream = lex("a: c = b");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::Asn(asn) => {
+                let asn = asn.inner;
+                expect_name(asn.name);
+                expect_name(asn.value);
+                assert!(asn.annotation.is_some())
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    pub fn classdef_parsing() {
+        let stream = lex("class Foo:\n    pass");
+        let out = super::statement(0).parse(stream).unwrap().inner;
+
+        match out {
+            Statement::Class(klass) => {
+                let klass = klass.inner;
+                expect_name(klass.name);
+            }
+            _ => panic!(),
         }
     }
 
