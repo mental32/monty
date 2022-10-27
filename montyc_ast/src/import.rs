@@ -13,7 +13,7 @@ pub struct ImportDecl {
     pub alias: Option<SpanRef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Import {
     Names(Vec<Spanned<Primary>>),
     From {

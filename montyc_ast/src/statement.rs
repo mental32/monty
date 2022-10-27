@@ -4,7 +4,7 @@ use crate::spanned::Spanned;
 
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Statement {
     Expr(Spanned<expr::Expr>),
     FnDef(Spanned<funcdef::FunctionDef>),
@@ -15,7 +15,7 @@ pub enum Statement {
     Class(Spanned<classdef::ClassDef>),
     If(Spanned<ifstmt::IfChain>),
     While(Spanned<while_::While>),
-    Pass(Spanned<PyToken>),
+    Pass(Spanned<Pass>),
 }
 
 impl AstObject for Statement {

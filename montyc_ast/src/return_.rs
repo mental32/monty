@@ -2,7 +2,7 @@ use crate::expr::Expr;
 use crate::spanned::Spanned;
 use crate::AstObject;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Return {
     pub value: Option<Spanned<Expr>>,
 }

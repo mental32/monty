@@ -4,7 +4,7 @@ use crate::primary::Primary;
 use crate::spanned::Spanned;
 use crate::AstObject;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Assign {
     pub name: Spanned<Primary>,
     pub annotation: Option<Spanned<Expr>>,

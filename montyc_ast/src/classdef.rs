@@ -7,7 +7,7 @@ use crate::AstVisitor;
 use super::statement::Statement;
 use super::{AstNode, AstObject};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClassDef {
     pub name: Spanned<Atom>,
     pub body: Vec<Spanned<Statement>>,

@@ -7,7 +7,7 @@ use super::atom::Atom;
 use super::expr::Expr;
 use super::{AstNode, AstObject};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Primary {
     Atomic(Spanned<Atom>),
 
@@ -30,7 +30,7 @@ pub enum Primary {
     },
 
     /// `(await +)+<primary>`
-    Await(Box<Spanned<Primary>>),
+    Await(Box<Spanned<Expr>>),
 }
 
 impl AstObject for Primary {

@@ -13,7 +13,7 @@ pub enum BranchTail {
     If(Spanned<If>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct If {
     pub test: Spanned<Expr>,
     pub body: Vec<Spanned<Statement>>,
@@ -36,7 +36,7 @@ impl AstObject for If {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IfChain {
     pub branches: Vec<Spanned<If>>,
     pub orelse: Option<Vec<Spanned<Statement>>>,

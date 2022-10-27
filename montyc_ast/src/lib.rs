@@ -43,7 +43,7 @@ impl fmt::Display for Constant {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Pass;
 
 impl AstObject for Pass {
@@ -64,7 +64,7 @@ impl AstObject for Pass {
 }
 
 /// An explicit enumeration of all AST nodes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum AstNode {
     Import(import::Import),
     ClassDef(classdef::ClassDef),

@@ -6,7 +6,7 @@ use crate::AstVisitor;
 use super::expr::Expr;
 use super::{AstNode, AstObject};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Atom {
     None,
     Ellipsis,

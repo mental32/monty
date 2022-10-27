@@ -1,0 +1,102 @@
+{
+    "inner": {
+        "FnDef": {
+            "inner": {
+                "args": [
+                    {
+                        "inner": {
+                            "annotation": null,
+                            "named": [
+                                1,
+                                1
+                            ]
+                        },
+                        "span": {
+                            "end": 9,
+                            "start": 8
+                        }
+                    },
+                    {
+                        "inner": {
+                            "annotation": null,
+                            "named": [
+                                2,
+                                2
+                            ]
+                        },
+                        "span": {
+                            "end": 12,
+                            "start": 11
+                        }
+                    }
+                ],
+                "body": [
+                    {
+                        "inner": {
+                            "Pass": {
+                                "inner": null,
+                                "span": {
+                                    "end": 28,
+                                    "start": 24
+                                }
+                            }
+                        },
+                        "span": {
+                            "end": 28,
+                            "start": 24
+                        }
+                    }
+                ],
+                "decorator_list": [],
+                "name": {
+                    "inner": {
+                        "Name": [
+                            0,
+                            0
+                        ]
+                    },
+                    "span": {
+                        "end": 7,
+                        "start": 4
+                    }
+                },
+                "returns": {
+                    "inner": {
+                        "Primary": {
+                            "inner": {
+                                "Atomic": {
+                                    "inner": {
+                                        "Name": [
+                                            3,
+                                            3
+                                        ]
+                                    },
+                                    "span": {
+                                        "end": 18,
+                                        "start": 17
+                                    }
+                                }
+                            },
+                            "span": {
+                                "end": 18,
+                                "start": 17
+                            }
+                        }
+                    },
+                    "span": {
+                        "end": 18,
+                        "start": 17
+                    }
+                }
+            },
+            "span": {
+                "end": 3,
+                "start": 0
+            }
+        }
+    },
+    "span": {
+        "end": 3,
+        "start": 0
+    }
+}

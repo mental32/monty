@@ -15,9 +15,9 @@ pub mod ast {
     pub use montyc_ast::*;
 }
 
-pub(crate) mod comb;
-pub(crate) mod span_interner;
-pub(crate) mod token_stream_iter;
+pub mod comb;
+pub mod span_interner;
+pub mod token_stream_iter;
 
 pub mod prelude {
     //! common exports, ast models and such.

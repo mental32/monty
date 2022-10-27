@@ -16,7 +16,9 @@ pub type Span = logos::Span;
 /// e.g. all variable names `a` will have the same group identifier but different
 /// distinct identifiers.
 ///
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct SpanRef(u32, u32);
 
 impl From<(u32, u32)> for SpanRef {

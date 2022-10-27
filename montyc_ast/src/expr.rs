@@ -7,7 +7,7 @@ use super::atom::Atom;
 use super::primary::Primary;
 use super::{AstNode, AstObject};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum UnaryOp {
     Invert,
     Not,
@@ -26,7 +26,7 @@ impl AsRef<str> for UnaryOp {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum InfixOp {
     Add,
     Sub,
@@ -92,7 +92,7 @@ impl AsRef<str> for InfixOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Expr {
     If {
         test: Box<Spanned<Expr>>,

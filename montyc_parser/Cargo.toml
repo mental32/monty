@@ -12,3 +12,7 @@ montyc_core_types = { path = "../montyc_core_types" }
 ariadne = "0.1.5"
 chumsky = "0.8.0"
 ahash = "0.8.0"
+
+[dev-dependencies]
+serde = "1.0.147"
+serde_json = "1.0.87"

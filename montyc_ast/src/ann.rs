@@ -3,7 +3,7 @@ use crate::expr::Expr;
 use crate::spanned::Spanned;
 use crate::AstObject;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Annotation {
     pub name: Spanned<Atom>,
     pub annotation: Spanned<Expr>,

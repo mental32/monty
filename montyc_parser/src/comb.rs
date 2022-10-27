@@ -280,11 +280,11 @@ pub fn primary(
         }
 
         let awaited = tokens::await_()
-            .then_ignore(tokens::whitespace().repeated())
+            .then_ignore(tokens::whitespace().repeated().at_least(1))
             .repeated()
             .at_least(1)
-            .then(pr.clone())
-            .map(|(mut waits, primary): (Vec<_>, Spanned<Primary>)| {
+            .then(expr.clone())
+            .map(|(mut waits, primary): (Vec<_>, Spanned<_>)| {
                 let span = primary.span.clone();
                 let mut acc = if let Some(_) = waits.pop() {
                     Primary::Await(Box::new(primary))
@@ -293,7 +293,10 @@ pub fn primary(
                 };
 
                 while let Some(_) = waits.pop() {
-                    acc = Primary::Await(Box::new(Spanned::new(acc, span.clone())))
+                    acc = Primary::Await(Box::new(Spanned::new(
+                        Expr::Primary(Spanned::new(acc, span.clone())),
+                        span.clone(),
+                    )));
                 }
 
                 Spanned::new(acc, span.clone())
@@ -319,7 +322,13 @@ pub fn expr() -> p!(Spanned<crate::ast::expr::Expr>; Clone) {
 /// annotated_identifier_list = (<annotated_identifier> ",")*
 pub fn annotated_identifier_list() -> p!(Vec<Spanned<FunctionDefParam>>) {
     ident()
-        .then(tokens::colon().ignore_then(expr()).or_not())
+        .then_ignore(tokens::whitespace().repeated())
+        .then(
+            tokens::colon()
+                .then_ignore(tokens::whitespace().repeated())
+                .ignore_then(expr())
+                .or_not(),
+        )
         .map(|(arg, ann)| {
             let span = arg.span.start..ann.as_ref().map(|ann| ann.span.end).unwrap_or(arg.span.end);
             let param = FunctionDefParam {
@@ -329,6 +338,7 @@ pub fn annotated_identifier_list() -> p!(Vec<Spanned<FunctionDefParam>>) {
 
             Spanned::new(param, span)
         })
+        .padded_by(tokens::whitespace().repeated())
         .separated_by(tokens::comma())
 }
 
@@ -619,7 +629,7 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         .debug("statement().classdef");
 
     let pass = tokens::pass()
-        .map(|p| p.replace_with(Statement::Pass))
+        .map(|p| p.replace(montyc_ast::Pass).replace_with(Statement::Pass))
         .boxed()
         .debug("statement().pass");
 

@@ -8,8 +8,8 @@ pub struct TokenStreamIter<'source, 'data, L, M>
 where
     L: Lexer + Iterator<Item = Token> + 'source,
 {
-    pub(crate) bound: BoundMutInterner<'source, 'data, M>,
-    pub(crate) lexer: L,
+    pub bound: BoundMutInterner<'source, 'data, M>,
+    pub lexer: L,
 }
 
 impl<'source, 'data, L, M> Iterator for TokenStreamIter<'source, 'data, L, M>

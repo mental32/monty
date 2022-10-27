@@ -7,13 +7,13 @@ use crate::{atom::Atom, expr::Expr};
 use super::statement::Statement;
 use super::{AstNode, AstObject};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FunctionDefParam {
     pub named: SpanRef,
     pub annotation: Option<Spanned<Expr>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FunctionDef {
     // pub reciever: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,

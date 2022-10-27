@@ -5,7 +5,7 @@ use crate::spanned::Spanned;
 use crate::statement::Statement;
 use crate::{AstNode, AstObject, AstVisitor};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct While {
     pub test: Spanned<Expr>,
     pub body: Vec<Spanned<Statement>>,
