@@ -1,4 +1,7 @@
+use montyc_lexer::Span;
+
 use crate::spanned::Spanned;
+use crate::AstVisitor;
 
 use super::atom::Atom;
 use super::primary::Primary;
@@ -127,41 +130,24 @@ impl AstObject for Expr {
         }
     }
 
-    // fn span(&self) -> Option<Span> {
-    //     Some(match self {
-    //         Expr::BinOp { left, right, .. }
-    //         | Expr::If {
-    //             body: left,
-    //             orelse: right,
-    //             ..
-    //         } => left.span.start..right.span.end,
-
-    //         Expr::Named {
-    //             target: left,
-    //             value: right,
-    //         } => left.span.start..right.span.start,
-
-    //         Expr::Unary { value: inner, .. } => inner.span.clone(),
-    //         Expr::Primary(inner) => inner.span.clone(),
-    //     })
-    // }
-
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
         self
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     match self {
-    //         Expr::If { .. } => visitor.visit_ternary(self, span.or(self.span())),
-    //         Expr::BinOp { .. } => visitor.visit_binop(self, span.or(self.span())),
-    //         Expr::Unary { .. } => visitor.visit_unary(self, span.or(self.span())),
-    //         Expr::Named { .. } => visitor.visit_named_expr(self, span.or(self.span())),
-    //         Expr::Primary(primary) => primary.visit_with(visitor, span.or(primary.span())),
-    //     }
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        match self {
+            Expr::If { .. } => visitor.visit_ternary(self, span),
+            Expr::BinOp { .. } => visitor.visit_binop(self, span),
+            Expr::Unary { .. } => visitor.visit_unary(self, span),
+            Expr::Named { .. } => visitor.visit_named_expr(self, span),
+            Expr::Primary(primary) => {
+                primary.visit_with(visitor, span.or(Some(primary.span.clone())))
+            }
+        }
+    }
 }
 
 impl PartialEq for Expr {

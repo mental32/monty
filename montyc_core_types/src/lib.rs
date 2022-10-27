@@ -7,23 +7,21 @@
 
 #[macro_use]
 pub(crate) mod macros {
-    // macro_rules! derive_everything {
-    //     { $t:item } => {
-    //         #[derive(
-    //             Debug,
-    //             PartialEq,
-    //             Eq,
-    //             PartialOrd,
-    //             Ord,
-    //             Hash,
-    //             Clone,
-    //             Copy,
-    //             derive_more::From,
-    //             derive_more::Into,
-    //         )]
-    //         $t
-    //     };
-    // }
+    macro_rules! derive_everything {
+        { $t:item } => {
+            #[derive(
+                Debug,
+                PartialEq,
+                Eq,
+                PartialOrd,
+                Ord,
+                Hash,
+                Clone,
+                Copy,
+            )]
+            $t
+        };
+    }
 
     #[macro_export]
     macro_rules! patma {
@@ -37,12 +35,11 @@ pub(crate) mod macros {
     }
 }
 
-// pub mod ast;
 // pub mod codegen;
 // pub mod dict;
 // pub mod error;
 // pub mod func;
-// pub mod module;
+pub mod module;
 // pub mod opts;
 // pub mod span;
 // pub mod typing;

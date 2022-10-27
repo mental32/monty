@@ -21,7 +21,7 @@ pub enum Statement {
 impl AstObject for Statement {
     fn into_ast_node(&self) -> AstNode {
         match self {
-            Self::Pass(_) => AstNode::Pass,
+            Self::Pass(_) => AstNode::Pass(super::Pass),
             Self::Expr(node) => node.into_ast_node(),
             Self::FnDef(node) => node.into_ast_node(),
             Self::Ret(node) => node.into_ast_node(),
@@ -49,21 +49,21 @@ impl AstObject for Statement {
         }
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     match self {
-    //         Statement::Expr(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::FnDef(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::Ret(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::Asn(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::Ann(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::Import(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::Class(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::If(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::While(inner) => inner.visit_with(visitor, span.or(self.span())),
-    //         Statement::Pass => visitor.visit_pass(),
-    //     }
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        match self {
+            Statement::Expr(inner) => inner.visit_with(visitor, span),
+            Statement::FnDef(inner) => inner.visit_with(visitor, span),
+            Statement::Ret(inner) => inner.visit_with(visitor, span),
+            Statement::Asn(inner) => inner.visit_with(visitor, span),
+            Statement::Ann(inner) => inner.visit_with(visitor, span),
+            Statement::Import(inner) => inner.visit_with(visitor, span),
+            Statement::Class(inner) => inner.visit_with(visitor, span),
+            Statement::If(inner) => inner.visit_with(visitor, span),
+            Statement::While(inner) => inner.visit_with(visitor, span),
+            Statement::Pass(_) => super::Pass.visit_with(visitor, span),
+        }
+    }
 }

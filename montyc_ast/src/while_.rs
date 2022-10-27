@@ -1,7 +1,9 @@
+use montyc_lexer::Span;
+
 use crate::expr::Expr;
 use crate::spanned::Spanned;
 use crate::statement::Statement;
-use crate::{AstNode, AstObject};
+use crate::{AstNode, AstObject, AstVisitor};
 
 #[derive(Debug, Clone)]
 pub struct While {
@@ -18,10 +20,10 @@ impl AstObject for While {
         self
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     visitor.visit_while(self, span)
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_while(self, span)
+    }
 }

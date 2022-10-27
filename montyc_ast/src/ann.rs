@@ -17,4 +17,15 @@ impl AstObject for Annotation {
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
         self
     }
+
+    fn visit_with<U>(
+        &self,
+        visitor: &mut dyn crate::AstVisitor<U>,
+        span: Option<montyc_lexer::Span>,
+    ) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_annotation(self, span)
+    }
 }

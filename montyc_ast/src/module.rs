@@ -1,7 +1,10 @@
+use montyc_lexer::Span;
+
 use super::statement::Statement;
 use super::{AstNode, AstObject};
 
 use crate::spanned::Spanned;
+use crate::AstVisitor;
 
 #[derive(Debug, Clone, Default)]
 pub struct Module {
@@ -17,10 +20,10 @@ impl AstObject for Module {
         todo!()
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     visitor.visit_module(self, span)
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_module(self, span)
+    }
 }

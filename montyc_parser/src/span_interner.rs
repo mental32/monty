@@ -4,6 +4,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use ahash::{AHashMap, RandomState};
+
 use montyc_core_types::utils::SSAMap;
 use montyc_lexer::SpanRef;
 

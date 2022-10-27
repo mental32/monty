@@ -1,6 +1,7 @@
-use montyc_lexer::SpanRef;
+use montyc_lexer::{Span, SpanRef};
 
 use crate::spanned::Spanned;
+use crate::AstVisitor;
 use crate::{atom::Atom, expr::Expr};
 
 use super::statement::Statement;
@@ -36,12 +37,12 @@ impl AstObject for FunctionDef {
         self
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     visitor.visit_funcdef(self, span.or(self.span()))
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_funcdef(self, span)
+    }
 }
 
 impl FunctionDef {

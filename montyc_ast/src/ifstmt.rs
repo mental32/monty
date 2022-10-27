@@ -1,5 +1,8 @@
+use montyc_lexer::Span;
+
 use crate::expr::Expr;
 use crate::spanned::Spanned;
+use crate::AstVisitor;
 
 use super::statement::Statement;
 use super::{AstNode, AstObject};
@@ -25,12 +28,12 @@ impl AstObject for If {
         self
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     visitor.visit_expr(&self.test.inner, span.or(self.span()))
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_expr(&self.test.inner, span)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -48,10 +51,10 @@ impl AstObject for IfChain {
         self
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     visitor.visit_ifstmt(self, span.or(self.span()))
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_ifstmt(self, span)
+    }
 }

@@ -1,6 +1,7 @@
-use montyc_lexer::SpanRef;
+use montyc_lexer::{Span, SpanRef};
 
 use crate::spanned::Spanned;
+use crate::AstVisitor;
 
 use super::atom::Atom;
 use super::expr::Expr;
@@ -60,18 +61,18 @@ impl AstObject for Primary {
         self
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     match self {
-    //         Primary::Atomic(atom) => atom.visit_with(visitor, span.or(atom.span())),
-    //         Primary::Subscript { .. } => visitor.visit_subscript(self, span.or(self.span())),
-    //         Primary::Call { .. } => visitor.visit_call(self, span.or(self.span())),
-    //         Primary::Attribute { .. } => visitor.visit_attr(self, span.or(self.span())),
-    //         Primary::Await(_) => todo!(),
-    //     }
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        match self {
+            Primary::Atomic(atom) => atom.visit_with(visitor, span),
+            Primary::Subscript { .. } => visitor.visit_subscript(self, span),
+            Primary::Call { .. } => visitor.visit_call(self, span),
+            Primary::Attribute { .. } => visitor.visit_attr(self, span),
+            Primary::Await(_) => todo!(),
+        }
+    }
 }
 
 impl Primary {

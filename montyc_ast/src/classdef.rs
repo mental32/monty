@@ -1,7 +1,8 @@
-use montyc_lexer::SpanRef;
+use montyc_lexer::Span;
 
+use crate::atom::Atom;
 use crate::spanned::Spanned;
-use crate::{atom::Atom, expr::Expr};
+use crate::AstVisitor;
 
 use super::statement::Statement;
 use super::{AstNode, AstObject};
@@ -21,10 +22,10 @@ impl AstObject for ClassDef {
         self
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     visitor.visit_funcdef(self, span.or(self.span()))
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_classdef(self, span)
+    }
 }

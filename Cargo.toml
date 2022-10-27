@@ -10,7 +10,7 @@ members = [
     "montyc_query/",
     "montyc_hlist/",
     "montyc_test_suite/",
-    # "montyc_flatcode",
+    "montyc_flatcode/",
     # "montyc_hlirt",
 ]
 

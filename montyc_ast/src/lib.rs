@@ -1,5 +1,7 @@
 //! The collection of various AST nodes.
 
+use montyc_lexer::Span;
+
 pub mod ann;
 pub mod assign;
 pub mod atom;
@@ -14,6 +16,52 @@ pub mod return_;
 pub mod spanned;
 pub mod statement;
 pub mod while_;
+
+use std::fmt;
+
+#[derive(Debug, Clone)]
+#[allow(missing_docs)]
+pub enum Constant {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(montyc_lexer::SpanRef),
+    None,
+    Ellipsis,
+}
+
+impl fmt::Display for Constant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Constant::Int(n) => write!(f, "{}", n),
+            Constant::Float(n) => write!(f, "{}", n),
+            Constant::Bool(b) => write!(f, "{}", b),
+            Constant::String(s) => write!(f, "{:?}", s),
+            Constant::None => write!(f, "None"),
+            Constant::Ellipsis => write!(f, "<ellipsis: ...>"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Pass;
+
+impl AstObject for Pass {
+    fn into_ast_node(&self) -> AstNode {
+        AstNode::Pass(self.clone())
+    }
+
+    fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
+        self
+    }
+
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        visitor.visit_pass(self, span)
+    }
+}
 
 /// An explicit enumeration of all AST nodes.
 #[derive(Debug, Clone)]
@@ -42,7 +90,7 @@ pub enum AstNode {
     Ret(return_::Return),
     While(while_::While),
     Annotation(ann::Annotation),
-    Pass,
+    Pass(Pass),
 }
 
 // impl AstNode {
@@ -72,25 +120,22 @@ impl AstObject for AstNode {
         unimplemented!()
     }
 
-    //     fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    //     where
-    //         Self: Sized,
-    //     {
-    //         if let Self::Pass = self {
-    //             visitor.visit_pass()
-    //         } else {
-    //             match self {
-    //                 AstNode::Import(import) => import.visit_with(visitor, span),
-    //                 AstNode::ClassDef(classdef) => classdef.visit_with(visitor, span),
-    //                 AstNode::FuncDef(fndef) => fndef.visit_with(visitor, span),
-    //                 AstNode::If(ifch) => ifch.visit_with(visitor, span),
-    //                 AstNode::Assign(asn) => asn.visit_with(visitor, span),
-    //                 AstNode::Ret(ret) => ret.visit_with(visitor, span),
-    //                 AstNode::Str(st) => st.visit_with(visitor, span),
-    //                 _ => todo!("{:?}", self),
-    //             }
-    //         }
-    //     }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        match self {
+            AstNode::Import(import) => import.visit_with(visitor, span),
+            AstNode::ClassDef(classdef) => classdef.visit_with(visitor, span),
+            AstNode::FuncDef(fndef) => fndef.visit_with(visitor, span),
+            AstNode::If(ifch) => ifch.visit_with(visitor, span),
+            AstNode::Assign(asn) => asn.visit_with(visitor, span),
+            AstNode::Ret(ret) => ret.visit_with(visitor, span),
+            AstNode::Str(st) => st.visit_with(visitor, span),
+            AstNode::Pass(pass) => pass.visit_with(visitor, span),
+            _ => todo!("{:?}", self),
+        }
+    }
 }
 
 // impl From<AstNode> for Box<dyn AstObject> {
@@ -118,10 +163,10 @@ pub trait AstObject {
     /// The inner unspanned AST object.
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject;
 
-    // /// Invoke the appropriate visitor method for this current AST node.
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized;
+    /// Invoke the appropriate visitor method for this current AST node.
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized;
 }
 
 impl<T> AstObject for spanned::Spanned<T>
@@ -132,131 +177,124 @@ where
         self.inner.into_ast_node()
     }
 
-    // fn span(&self) -> Option<Span> {
-    //     Some(self.span.clone())
-    // }
-
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
         &self.inner
     }
 
-    // fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
-    // where
-    //     Self: Sized,
-    // {
-    //     self.inner.visit_with(visitor, span.or(self.span()))
-    // }
+    fn visit_with<U>(&self, visitor: &mut dyn AstVisitor<U>, span: Option<Span>) -> U
+    where
+        Self: Sized,
+    {
+        self.inner
+            .visit_with(visitor, span.or(Some(self.span.clone())))
+    }
 }
 
-// /// A visitor trait used for walking an AST object.
-// pub trait AstVisitor<T = ()> {
-//     fn visit_any(&mut self, _: &dyn AstObject) -> T;
+/// A visitor trait used for walking an AST object.
+pub trait AstVisitor<T = ()> {
+    fn visit_any(&mut self, _: &dyn AstObject) -> T;
 
-//     fn visit_funcdef(&mut self, fndef: &FunctionDef, _span: Option<Span>) -> T {
-//         self.visit_any(fndef)
-//     }
+    fn visit_pass(&mut self, pass: &Pass, _span: Option<Span>) -> T {
+        self.visit_any(pass)
+    }
 
-//     fn visit_expr(&mut self, expr: &Expr, _span: Option<Span>) -> T {
-//         self.visit_any(expr)
-//     }
+    fn visit_funcdef(&mut self, fndef: &funcdef::FunctionDef, _span: Option<Span>) -> T {
+        self.visit_any(fndef)
+    }
 
-//     fn visit_int(&mut self, int: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(int)
-//     }
+    fn visit_expr(&mut self, expr: &expr::Expr, _span: Option<Span>) -> T {
+        self.visit_any(expr)
+    }
 
-//     fn visit_float(&mut self, node: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(node)
-//     }
+    fn visit_int(&mut self, int: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(int)
+    }
 
-//     fn visit_str(&mut self, node: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(node)
-//     }
+    fn visit_float(&mut self, node: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(node)
+    }
 
-//     fn visit_none(&mut self, node: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(node)
-//     }
+    fn visit_str(&mut self, node: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(node)
+    }
 
-//     fn visit_name(&mut self, node: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(node)
-//     }
+    fn visit_none(&mut self, node: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(node)
+    }
 
-//     fn visit_tuple(&mut self, node: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(node)
-//     }
+    fn visit_name(&mut self, node: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(node)
+    }
 
-//     fn visit_ellipsis(&mut self, node: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(node)
-//     }
+    fn visit_tuple(&mut self, node: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(node)
+    }
 
-//     fn visit_bool(&mut self, node: &Atom, _span: Option<Span>) -> T {
-//         self.visit_any(node)
-//     }
+    fn visit_ellipsis(&mut self, node: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(node)
+    }
 
-//     fn visit_import(&mut self, import: &Import, _span: Option<Span>) -> T {
-//         self.visit_any(import)
-//     }
+    fn visit_bool(&mut self, node: &atom::Atom, _span: Option<Span>) -> T {
+        self.visit_any(node)
+    }
 
-//     fn visit_classdef(&mut self, classdef: &ClassDef, _span: Option<Span>) -> T {
-//         self.visit_any(classdef)
-//     }
+    fn visit_import(&mut self, import: &import::Import, _span: Option<Span>) -> T {
+        self.visit_any(import)
+    }
 
-//     fn visit_ifstmt(&mut self, ifch: &IfChain, _span: Option<Span>) -> T {
-//         self.visit_any(ifch)
-//     }
+    fn visit_classdef(&mut self, classdef: &classdef::ClassDef, _span: Option<Span>) -> T {
+        self.visit_any(classdef)
+    }
 
-//     fn visit_pass(&mut self) -> T {
-//         self.visit_any(&Statement::Pass)
-//     }
+    fn visit_ifstmt(&mut self, ifch: &ifstmt::IfChain, _span: Option<Span>) -> T {
+        self.visit_any(ifch)
+    }
 
-//     fn visit_assign(&mut self, asn: &Assign, _span: Option<Span>) -> T {
-//         self.visit_any(asn)
-//     }
+    fn visit_assign(&mut self, asn: &assign::Assign, _span: Option<Span>) -> T {
+        self.visit_any(asn)
+    }
 
-//     fn visit_return(&mut self, ret: &Return, _span: Option<Span>) -> T {
-//         self.visit_any(ret)
-//     }
+    fn visit_return(&mut self, ret: &return_::Return, _span: Option<Span>) -> T {
+        self.visit_any(ret)
+    }
 
-//     fn visit_while(&mut self, while_: &While, _span: Option<Span>) -> T {
-//         self.visit_any(while_)
-//     }
+    fn visit_while(&mut self, while_: &while_::While, _span: Option<Span>) -> T {
+        self.visit_any(while_)
+    }
 
-//     fn visit_binop(&mut self, expr: &Expr, _span: Option<Span>) -> T {
-//         self.visit_any(expr)
-//     }
+    fn visit_binop(&mut self, expr: &expr::Expr, _span: Option<Span>) -> T {
+        self.visit_any(expr)
+    }
 
-//     fn visit_unary(&mut self, unary: &Expr, _span: Option<Span>) -> T {
-//         self.visit_any(unary)
-//     }
+    fn visit_unary(&mut self, unary: &expr::Expr, _span: Option<Span>) -> T {
+        self.visit_any(unary)
+    }
 
-//     fn visit_ternary(&mut self, ternary: &Expr, _span: Option<Span>) -> T {
-//         self.visit_any(ternary)
-//     }
+    fn visit_ternary(&mut self, ternary: &expr::Expr, _span: Option<Span>) -> T {
+        self.visit_any(ternary)
+    }
 
-//     fn visit_named_expr(&mut self, expr: &Expr, _span: Option<Span>) -> T {
-//         self.visit_any(expr)
-//     }
+    fn visit_named_expr(&mut self, expr: &expr::Expr, _span: Option<Span>) -> T {
+        self.visit_any(expr)
+    }
 
-//     fn visit_call(&mut self, call: &Primary, _span: Option<Span>) -> T {
-//         self.visit_any(call)
-//     }
+    fn visit_call(&mut self, call: &primary::Primary, _span: Option<Span>) -> T {
+        self.visit_any(call)
+    }
 
-//     fn visit_subscript(&mut self, call: &Primary, _span: Option<Span>) -> T {
-//         self.visit_any(call)
-//     }
+    fn visit_subscript(&mut self, call: &primary::Primary, _span: Option<Span>) -> T {
+        self.visit_any(call)
+    }
 
-//     fn visit_attr(&mut self, attr: &Primary, _span: Option<Span>) -> T {
-//         self.visit_any(attr)
-//     }
+    fn visit_attr(&mut self, attr: &primary::Primary, _span: Option<Span>) -> T {
+        self.visit_any(attr)
+    }
 
-//     fn visit_module(&mut self, module: &Module, _span: Option<Span>) -> T {
-//         self.visit_any(module)
-//     }
+    fn visit_module(&mut self, module: &module::Module, _span: Option<Span>) -> T {
+        self.visit_any(module)
+    }
 
-//     fn visit_annotation(&mut self, ann: &Annotation, _span: Option<Span>) -> T {
-//         self.visit_any(ann)
-//     }
-// }
-
-// pub use models::*;
-
-// pub mod models;
+    fn visit_annotation(&mut self, ann: &ann::Annotation, _span: Option<Span>) -> T {
+        self.visit_any(ann)
+    }
+}

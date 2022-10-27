@@ -333,6 +333,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "montyc_flatcode"
+version = "0.99.0"
+dependencies = [
+ "montyc_ast",
+ "montyc_core_types",
+ "montyc_lexer",
+ "montyc_parser",
+]
+
+[[package]]
 name = "montyc_hlist"
 version = "0.1.0"
 

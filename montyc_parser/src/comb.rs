@@ -559,10 +559,10 @@ pub fn classdef(indent: usize) -> p!(Spanned<classdef::ClassDef>) {
 pub fn return_() -> p!(Spanned<return_::Return>; Clone) {
     tokens::return_()
         .then_ignore(tokens::whitespace().repeated().at_least(1))
-        .ignore_then(expr())
+        .ignore_then(expr().or_not())
         .map(|ex| {
-            let span = ex.span.clone();
-            let ret = return_::Return { val: ex };
+            let span = ex.as_ref().map(|ex| ex.span.clone()).unwrap_or(0..0);
+            let ret = return_::Return { value: ex };
             Spanned::new(ret, span)
         })
 }
@@ -572,15 +572,16 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         (PyToken::Comment, _) => PyToken::Comment,
     };
 
-    let wrapped_primary = expr()
+    let w_expr = expr()
         .map(|expr| expr.replace_with(Statement::Expr))
         .then_ignore(comment.or_not())
         .boxed()
-        .debug("wrapped_primary");
+        .debug("statement().expr");
 
     let fndef = funcdef(indent)
         .map(|fndef| fndef.replace_with(Statement::FnDef))
-        .boxed();
+        .boxed()
+        .debug("statement().fndef");
 
     let import = tokens::import()
         .ignore_then(tokens::whitespace().repeated())
@@ -594,27 +595,33 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
             let import = montyc_ast::import::Import::Names(dotted_names);
             Spanned::new(import, span).replace_with(Statement::Import)
         })
-        .boxed();
+        .boxed()
+        .debug("statement().import");
 
     let ifch = if_stmt(indent)
         .map(|ifch| ifch.replace_with(Statement::If))
-        .boxed();
+        .boxed()
+        .debug("statement().ifch");
 
     let whl = while_(indent)
         .map(|whl| whl.replace_with(Statement::While))
-        .boxed();
+        .boxed()
+        .debug("statement().while");
 
     let ret = return_()
         .map(|ret| ret.replace_with(Statement::Ret))
-        .boxed();
+        .boxed()
+        .debug("statement().return");
 
     let classdef = classdef(indent)
         .map(|klass| klass.replace_with(Statement::Class))
-        .boxed();
+        .boxed()
+        .debug("statement().classdef");
 
     let pass = tokens::pass()
         .map(|p| p.replace_with(Statement::Pass))
-        .boxed();
+        .boxed()
+        .debug("statement().pass");
 
     let annotation = ident()
         .then_ignore(tokens::whitespace().repeated())
@@ -633,9 +640,11 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
 
             Spanned::new(assign, span).replace_with(Statement::Ann)
         })
-        .boxed();
+        .boxed()
+        .debug("statement().annotation");
 
     let assign = ident()
+        .map(|id| id.replace_with(Primary::Atomic))
         .then_ignore(tokens::whitespace().repeated())
         .then(
             tokens::colon()
@@ -657,7 +666,8 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
 
             Spanned::new(assign, span).replace_with(Statement::Asn)
         })
-        .boxed();
+        .boxed()
+        .debug("statement().assign");
 
     assign
         .or(annotation)
@@ -668,7 +678,7 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         .or(ifch)
         .or(import)
         .or(fndef)
-        .or(wrapped_primary)
+        .or(w_expr)
 }
 
 pub fn module() -> p!(Spanned<crate::ast::module::Module>) {
@@ -960,7 +970,7 @@ mod test {
 
         match out {
             Statement::Ret(r) => {
-                expect_bool(r.inner.val.clone());
+                expect_bool(r.inner.value.unwrap().clone());
             }
             _ => unreachable!(),
         }
