@@ -12,6 +12,7 @@ members = [
     "montyc_test_suite/",
     "montyc_flatcode/",
     # "montyc_hlirt",
+    "montyc_vfs/",
 ]
 
 keyword = ["compilers", "typecheckers", "monty", "python"]
