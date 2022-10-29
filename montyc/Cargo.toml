@@ -1,0 +1,15 @@
+[package]
+name = "montyc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+montyc_driver = { path = "../montyc_driver" }
+
+clap = { version = "4.0.18", features = ["derive"] }
+tokio = { version = "1.21.2", features = ["full"] }
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter", "std", "fmt"] }
+tracing-flame = "0.2.0"
+no-panic = "0.1.16"
+miette = { version = "5.4.1", features = ["fancy"] }

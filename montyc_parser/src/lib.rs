@@ -32,27 +32,28 @@ pub mod prelude {
 
 pub(crate) type Token = (montyc_lexer::PyToken, montyc_lexer::Span);
 
-pub type Error = ();
-pub type Output<T> = (
-    Option<montyc_ast::spanned::Spanned<T>>,
-    Vec<chumsky::error::Simple<Token>>,
-);
+pub type Error = chumsky::error::Simple<Token>;
+pub type Output<T> = (Option<montyc_ast::spanned::Spanned<T>>, Vec<Error>);
 
 #[inline]
-pub fn parse<I>(input: I) -> Result<Output<ast::module::Module>, Error>
+pub fn parse<I, M>(
+    span_interner: &crate::span_interner::SpanInterner<M>,
+    input_module_ref: M,
+    input: I,
+) -> Output<ast::module::Module>
 where
     I: AsRef<str>,
+    M: Clone,
 {
     let input = input.as_ref();
     let lexer = montyc_lexer::lex(input);
-    let sr = crate::span_interner::SpanInterner::new();
 
     let tokens: Vec<Token> = crate::token_stream_iter::TokenStreamIter {
-        bound: sr.get(input, ()).unwrap(),
+        bound: span_interner.get(input, input_module_ref).unwrap(),
         lexer,
     }
     .map(|res| res.unwrap())
     .collect();
 
-    Ok(comb::module().parse_recovery(tokens))
+    comb::module().parse_recovery(tokens)
 }

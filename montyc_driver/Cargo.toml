@@ -1,0 +1,15 @@
+[package]
+name = "montyc_driver"
+version = "0.99.0"
+edition = "2021"
+
+[dependencies]
+montyc_lexer = { path = "../montyc_lexer" }
+montyc_parser = { path = "../montyc_parser" }
+montyc_ast = { path = "../montyc_ast" }
+montyc_vfs = { path = "../montyc_vfs" }
+montyc_flatcode = { path = "../montyc_flatcode" }
+montyc_typing = { path = "../montyc_typing" }
+montyc_core_types = { path = "../montyc_core_types" }
+
+thiserror = "1.0.37"

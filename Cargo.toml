@@ -1,17 +1,17 @@
 [workspace]
 members = [
-    # "montyc",
+    "montyc/",
     "montyc_ast/",
     "montyc_parser/",
     "montyc_lexer/",
     "montyc_core_types/",
-    # "montyc_hlirt",
+    "montyc_interpreter/",
     "montyc_codegen/",
     "montyc_query/",
     "montyc_hlist/",
     "montyc_test_suite/",
     "montyc_flatcode/",
-    # "montyc_hlirt",
+    "montyc_driver/",
     "montyc_typing/",
     "montyc_pyproject/",
     "montyc_vfs/",
@@ -25,10 +25,12 @@ keyword = ["compilers", "typecheckers", "monty", "python"]
 codegen-units = 16
 lto = "off"
 incremental = false
+debug = true
 
 [profile.release]
 codegen-units = 1
 lto = "fat"
 opt-level = "s"
 debug-assertions = false
-debug = 0
+debug = true
+
