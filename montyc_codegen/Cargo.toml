@@ -1,0 +1,8 @@
+[package]
+name = "montyc_codegen"
+version = "0.99.0"
+edition = "2021"
+
+[dependencies]
+montyc_core_types = { path = "../montyc_core_types" }
+montyc_flatcode = { path = "../montyc_flatcode" }

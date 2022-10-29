@@ -6,7 +6,7 @@ members = [
     "montyc_lexer/",
     "montyc_core_types/",
     # "montyc_hlirt",
-    # "montyc_codegen",
+    "montyc_codegen/",
     "montyc_query/",
     "montyc_hlist/",
     "montyc_test_suite/",
