@@ -7,13 +7,15 @@ use montyc_ast::funcdef::{FunctionDef, FunctionDefParam};
 use montyc_ast::ifstmt::IfChain;
 use montyc_ast::import::Import;
 use montyc_ast::module::Module;
+use montyc_ast::primary::Primary;
 use montyc_ast::return_::Return;
 use montyc_ast::while_::While;
-use montyc_ast::{AstVisitor, Constant};
+use montyc_ast::{AstNode, AstObject, AstVisitor, Constant};
 
-use montyc_core_types::patma;
+use montyc_core::patma;
 use montyc_lexer::Span;
-use montyc_parser::prelude::*;
+use montyc_parser::ast::atom::Atom;
+use montyc_parser::ast::expr::Expr;
 
 use super::raw_inst::{Dunder, RawInst};
 use super::{FlatCode, INVALID_VALUE};
@@ -307,7 +309,7 @@ impl AstVisitor<usize> for FlatCode {
 
                     match node.inner.into_ast_node() {
                         AstNode::FuncDef(def) => {
-                            let function = def.visit_with(this, None);
+                            let function = def.visit_with(this, Some(node.span.clone()));
 
                             let setter =
                                 this.sequences[this.sequence_index].inst.last_mut().unwrap();

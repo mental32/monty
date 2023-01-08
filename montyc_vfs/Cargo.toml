@@ -1,7 +1,0 @@
-[package]
-name = "montyc_vfs"
-version = "0.99.0"
-edition = "2021"
-
-[dependencies]
-ahash = "0.8.0"

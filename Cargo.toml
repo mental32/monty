@@ -1,36 +1,29 @@
 [workspace]
 members = [
-    "montyc/",
-    "montyc_ast/",
-    "montyc_parser/",
-    "montyc_lexer/",
-    "montyc_core_types/",
-    "montyc_interpreter/",
-    "montyc_codegen/",
-    "montyc_query/",
-    "montyc_hlist/",
-    "montyc_test_suite/",
-    "montyc_flatcode/",
-    "montyc_driver/",
-    "montyc_typing/",
-    "montyc_pyproject/",
-    "montyc_vfs/",
+    "montyc",
+    "montyc_parser",
+    "montyc_parser2",
+    "montyc_core",
+    "montyc_driver",
+    "montyc_hlirt",
+    "montyc_codegen",
+    "montyc_query",
+    "montyc_flatcode",
+    "montyc_hlirt",
 ]
 
 keyword = ["compilers", "typecheckers", "monty", "python"]
 
-# exclude = ["cranelift-structbuf"]
+exclude = ["cranelift-structbuf"]
 
 [profile.dev]
-codegen-units = 16
+codegen-units = 8
 lto = "off"
 incremental = false
-debug = true
 
 [profile.release]
 codegen-units = 1
 lto = "fat"
 opt-level = "s"
 debug-assertions = false
-debug = true
-
+debug = 0

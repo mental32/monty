@@ -1,4 +1,3 @@
-use crate::atom::Atom;
 use crate::expr::Expr;
 use crate::primary::Primary;
 use crate::spanned::Spanned;

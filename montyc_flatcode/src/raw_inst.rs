@@ -1,15 +1,14 @@
 use std::fmt::Display;
 
-use montyc_lexer::SpanRef;
-use montyc_parser::prelude::*;
+use montyc_core::SpanRef;
 
 #[derive(Debug, Clone, Copy)]
 #[allow(missing_docs)]
 pub enum Dunder {
     /// unary dunders i.e. __neg__
-    Unary(UnaryOp),
+    Unary(montyc_parser::ast::expr::UnaryOp),
     /// infix dunders i.e. __add__
-    Infix(InfixOp),
+    Infix(montyc_parser::ast::expr::InfixOp),
     /// __get_item__
     GetItem,
     /// __set_item__
@@ -160,7 +159,7 @@ pub trait InstVisitor<T, V = usize, R = SpanRef> {
     fn visit_get_dunder(&mut self, object: V, dunder: &Dunder) -> T;
     fn visit_set_dunder(&mut self, object: V, dunder: &Dunder, value: V) -> T;
     fn visit_import(&mut self, path: &[R], relative: usize) -> T;
-    fn visit_const(&mut self, cst: &montyc_ast::Constant) -> T;
+    fn visit_const(&mut self, cst: &montyc_core::ast::Constant) -> T;
     fn visit_tuple(&mut self, tple: &[V]) -> T;
     fn visit_nop(&mut self) -> T;
     fn visit_undef(&mut self) -> T;

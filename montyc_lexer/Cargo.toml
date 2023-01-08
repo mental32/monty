@@ -4,7 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-montyc_query = { path = "../montyc_query" }
-
 logos = "0.12.1"
 serde = { version = "1.0.147", features = ["derive"] }

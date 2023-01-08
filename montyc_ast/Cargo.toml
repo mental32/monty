@@ -5,5 +5,6 @@ edition = "2021"
 
 [dependencies]
 montyc_lexer = { path = "../montyc_lexer" }
-montyc_core_types = { path = "../montyc_core_types" }
+montyc_core = { path = "../montyc_core" }
+
 serde = { version = "1.0.147", features = ["derive"] }

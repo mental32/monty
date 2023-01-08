@@ -4,35 +4,24 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use ahash::{AHashMap, RandomState};
-
-use montyc_core_types::utils::SSAMap;
-use montyc_lexer::SpanRef;
-
-// -- struct SpanData
-
-#[derive(Debug, Clone)]
-pub struct SpanData<M> {
-    pub range: Range<usize>,
-    pub module: M,
-    pub hash: u64,
-}
+use montyc_core::{utils::SSAMap, ModuleRef, SpanData, SpanRef};
 
 // -- struct RawSpanInterner;
 
 #[derive(Debug)]
-struct RawSpanInterner<M> {
-    map: SSAMap<SpanData<M>>,
+struct RawSpanInterner {
+    map: SSAMap<SpanData>,
     groups: AHashMap<u64, u32>,
     ahash_rstate: RandomState,
 }
 
-impl<M> Default for RawSpanInterner<M> {
+impl Default for RawSpanInterner {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<M> RawSpanInterner<M> {
+impl RawSpanInterner {
     fn new() -> Self {
         Self {
             map: SSAMap::new(),
@@ -46,12 +35,9 @@ impl<M> RawSpanInterner<M> {
 
 /// A strong reference to a SpanInterner instance.
 #[derive(Debug, Clone, Default)]
-pub struct SpanInterner<M>(Rc<RefCell<RawSpanInterner<M>>>);
+pub struct SpanInterner(Rc<RefCell<RawSpanInterner>>);
 
-impl<M> SpanInterner<M>
-where
-    M: Clone,
-{
+impl SpanInterner {
     /// Create a new SpanInterner instance.
     #[inline]
     pub fn new() -> Self {
@@ -59,10 +45,7 @@ where
     }
 
     #[inline]
-    pub fn span_data(&self, sref: SpanRef) -> Option<SpanData<M>>
-    where
-        M: Clone,
-    {
+    pub fn span_data(&self, sref: SpanRef) -> Option<SpanData> {
         self.0.borrow().map.get(sref.distinct()).cloned()
     }
 
@@ -101,22 +84,19 @@ where
 
     /// Return the string slice of the span's string.
     #[inline]
-    pub fn spanref_to_str<'a>(
+    pub fn spanref_to_str<'a, T>(
         &self,
         sref: SpanRef,
-        resolver: impl Fn(M, Range<usize>) -> Option<&'a str>,
-    ) -> Option<&'a str> {
+        resolver: impl Fn(ModuleRef, Range<usize>) -> Option<T>,
+    ) -> Option<T> {
         let data = self.0.borrow().map.get(sref.distinct())?.clone();
         resolver(data.module, data.range)
     }
 
     /// Return a new span reference to the given string.
     #[inline]
-    pub fn str_to_spanref<const N: u32>(&self, name: &str) -> Result<SpanRef, ()>
-    where
-        M: From<u32>,
-    {
-        let mut bound = self.get(name, N.into())?;
+    pub fn str_to_spanref<const N: u32>(&self, name: &str) -> Result<SpanRef, ()> {
+        let mut bound = self.get(name, ModuleRef(N))?;
         Ok(bound.insert(0..name.len()))
     }
 
@@ -125,8 +105,8 @@ where
     pub fn get<'a, 'b>(
         &'b self,
         source: &'a str,
-        module: M,
-    ) -> Result<BoundMutInterner<'a, 'b, M>, ()> {
+        module: ModuleRef,
+    ) -> Result<BoundMutInterner<'a, 'b>, ()> {
         let inner = self.0.try_borrow_mut().map_err(|_| ())?;
 
         Ok(BoundMutInterner {
@@ -140,17 +120,13 @@ where
 // -- struct BoundMutInterner<'source, 'data>
 
 #[derive(Debug)]
-pub struct BoundMutInterner<'source, 'data, M> {
+pub struct BoundMutInterner<'source, 'data> {
     source: &'source str,
-    module: M,
-    inner: RefMut<'data, RawSpanInterner<M>>,
+    module: ModuleRef,
+    inner: RefMut<'data, RawSpanInterner>,
 }
 
-impl<'source, 'data, M> BoundMutInterner<'source, 'data, M>
-where
-    SpanRef: From<(u32, u32)>,
-    M: Clone,
-{
+impl<'source, 'data> BoundMutInterner<'source, 'data> {
     #[inline]
     pub fn insert(&mut self, range: Range<usize>) -> SpanRef {
         let data = self
@@ -167,7 +143,7 @@ where
         let distinct = self.inner.map.insert(SpanData {
             range,
             hash,
-            module: self.module.clone(),
+            module: self.module,
         });
 
         let group = self.inner.groups.entry(hash).or_insert(distinct).clone();

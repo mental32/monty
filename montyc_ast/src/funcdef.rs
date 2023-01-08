@@ -15,7 +15,7 @@ pub struct FunctionDefParam {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FunctionDef {
-    // pub reciever: Option<Spanned<Atom>>,
+    pub receiver: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
     pub args: Vec<Spanned<FunctionDefParam>>,
     pub body: Vec<Spanned<Statement>>,

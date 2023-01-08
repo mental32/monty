@@ -14,9 +14,8 @@ pub mod raw_inst;
 use std::fmt::Display;
 
 use montyc_ast::Constant;
-use montyc_core_types::module::ModuleRef;
-use montyc_lexer::{Span, SpanRef};
-use montyc_parser::prelude::*;
+use montyc_core::{ModuleRef, Span, SpanRef};
+use montyc_parser::ast::AstNode;
 
 use self::raw_inst::RawInst;
 

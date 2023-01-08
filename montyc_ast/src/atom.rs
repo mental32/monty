@@ -88,6 +88,7 @@ impl From<PyToken> for Atom {
             PyToken::True => Self::Bool(true),
             PyToken::False => Self::Bool(false),
             PyToken::Digits(n) => Self::Int(n),
+            PyToken::CommentRef(cref) => Self::Comment(cref),
             // PyToken::CommentRef(n) => Self::Comment(n),
             // PyToken::StringRef(n) => Self::Str(n),
             // PyToken::Ident(n) => Self::Name(n),

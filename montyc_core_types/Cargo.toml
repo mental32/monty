@@ -1,7 +1,0 @@
-[package]
-name = "montyc_core_types"
-version = "0.99.0"
-edition = "2018"
-
-[dependencies]
-ahash = "0.7.4"

@@ -1,0 +1,18 @@
+[package]
+name = "montyc_hlirt"
+version = "0.99.0"
+edition = "2021"
+
+[dependencies]
+montyc_core = { path = "../montyc_core" }
+montyc_query = { path = "../montyc_query" }
+montyc_flatcode = { path = "../montyc_flatcode" }
+montyc_parser = { path = "../montyc_parser" }
+
+ahash = "0.7.4"
+tracing = "0.1.37"
+derive_more = "0.99.16"
+dashmap = "5.1.0"
+
+[dev-dependencies]
+env_logger = "0.9.0"

@@ -93,28 +93,10 @@ pub enum AstNode {
     Pass(Pass),
 }
 
-// impl AstNode {
-//     pub fn as_inner(&self) -> &dyn AstObject {
-//         match self {
-//             AstNode::Import(import) => import,
-//             AstNode::ClassDef(classdef) => classdef,
-//             AstNode::FuncDef(fndef) => fndef,
-//             AstNode::If(ifch) => ifch,
-//             AstNode::Assign(asn) => asn,
-//             AstNode::Pass => self,
-//             _ => todo!(),
-//         }
-//     }
-// }
-
 impl AstObject for AstNode {
     fn into_ast_node(&self) -> AstNode {
         self.clone()
     }
-
-    //     fn span(&self) -> Option<Span> {
-    //         None
-    //     }
 
     fn unspanned<'a>(&'a self) -> &'a dyn AstObject {
         unimplemented!()
@@ -137,20 +119,6 @@ impl AstObject for AstNode {
         }
     }
 }
-
-// impl From<AstNode> for Box<dyn AstObject> {
-//     fn from(node: AstNode) -> Self {
-//         match node {
-//             AstNode::Import(import) => Box::new(import),
-//             AstNode::ClassDef(classdef) => Box::new(classdef),
-//             AstNode::FuncDef(funcdef) => Box::new(funcdef),
-//             AstNode::If(ifstmt) => Box::new(ifstmt),
-//             AstNode::Pass => Box::new(Statement::Pass),
-//             AstNode::Assign(asn) => Box::new(asn),
-//             _ => todo!(),
-//         }
-//     }
-// }
 
 /// An opaque representation of an AST node.
 pub trait AstObject {

@@ -1,5 +1,6 @@
 use crate::atom::Atom;
 use crate::expr::Expr;
+use crate::funcdef::FunctionDefParam;
 use crate::spanned::Spanned;
 use crate::AstObject;
 
@@ -7,6 +8,18 @@ use crate::AstObject;
 pub struct Annotation {
     pub name: Spanned<Atom>,
     pub annotation: Spanned<Expr>,
+}
+
+impl From<Spanned<FunctionDefParam>> for Annotation {
+    fn from(param: Spanned<FunctionDefParam>) -> Self {
+        Self {
+            name: Spanned {
+                span: param.span,
+                inner: Atom::Name(param.inner.named),
+            },
+            annotation: param.inner.annotation.unwrap(),
+        }
+    }
 }
 
 impl AstObject for Annotation {

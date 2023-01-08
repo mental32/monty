@@ -1,15 +1,9 @@
 [package]
 name = "montyc_query"
-version = "0.1.0"
+version = "0.99.0"
 edition = "2021"
 
 [dependencies]
-montyc_hlist = { path = "../montyc_hlist" }
-futures = "0.3.21"
-ahash = { version = "0.8.0", default-features = false, features = ["compile-time-rng"] }
-dashmap = "5.3.4"
-tinyvec = "1.6.0"
-pin-project = "1.0.12"
-
-[dev-dependencies]
-tokio = { version = "1.20.1", features = ["full"] }
+montyc_core = { path = "../montyc_core" }
+montyc_parser = { path = "../montyc_parser" }
+montyc_flatcode = { path = "../montyc_flatcode" }

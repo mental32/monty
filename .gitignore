@@ -156,5 +156,3 @@ static
 cpython/
 
 *.out
-
-*.data

@@ -1,9 +1,0 @@
-[package]
-name = "montyc_test_suite"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-montyc_query = { path = "../montyc_query" }
-
-tokio = { version = "1.20.0", features = ["full"] }

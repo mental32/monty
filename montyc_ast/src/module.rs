@@ -11,6 +11,15 @@ pub struct Module {
     pub body: Vec<Spanned<Statement>>,
 }
 
+impl Module {
+    pub fn span(&self) -> Option<Span> {
+        let fst = self.body.first()?;
+        let lst = self.body.last()?;
+
+        Some(fst.span.start..lst.span.end)
+    }
+}
+
 impl AstObject for Module {
     fn into_ast_node(&self) -> AstNode {
         todo!()
