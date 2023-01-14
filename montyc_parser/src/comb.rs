@@ -382,13 +382,6 @@ where
 }
 
 pub fn funcdef(indent: usize) -> p!(Spanned<FunctionDef>) {
-    let dec = tokens::at()
-        .ignore_then(expr())
-        .debug("funcdef.decorator")
-        .then_ignore(tokens::newline())
-        .repeated()
-        .debug("funcdef.decorator_list");
-
     let parameters = annotated_identifier_list().delimited_by(tokens::lparen(), tokens::rparen());
 
     let return_type_annotation = tokens::minus()

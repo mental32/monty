@@ -1,16 +1,18 @@
 [package]
 name = "montyc_parser"
-version = "0.99.0"
-edition = "2018"
+version = "0.0.0"
+edition = "2021"
 
 [dependencies]
-montyc_core = { path = "../montyc_core" }
-montyc_ast = { path = "../montyc_ast" }
 montyc_lexer = { path = "../montyc_lexer" }
-montyc_parser2 = { path = "../montyc_parser2" }
+montyc_ast = { path = "../montyc_ast" }
+montyc_core = { path = "../montyc_core" }
 
-logos = "0.12"
-nom = "6"
+ariadne = "0.1.5"
+chumsky = "0.8.0"
+ahash = "0.8.0"
 tracing = "0.1.37"
-ahash = { version = "0.7", features = ["std"] }
-derive_more = "0.99"
+
+[dev-dependencies]
+serde = "1.0.147"
+serde_json = "1.0.87"
