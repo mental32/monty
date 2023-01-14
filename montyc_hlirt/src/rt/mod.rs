@@ -416,9 +416,9 @@ impl Runtime {
     {
         let code = host
             .accept_input(input)
+            .map_err(RuntimeError::Host)
             .map(Into::into)
-            .map(Rc::new)
-            .map_err(RuntimeError::Host)?;
+            .map(Rc::new)?;
 
         let mref = code.mref;
 

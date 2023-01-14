@@ -12,7 +12,7 @@ use montyc_hlirt::{
     ObjectId, ObjectSpace, PyException, PyResult, PyResultExt,
 };
 
-use crate::prelude::SessionContext;
+use crate::global_context::SessionContext;
 
 // -- ModuleSpec
 

@@ -7,6 +7,7 @@ edition = "2018"
 montyc_core = { path = "../montyc_core" }
 montyc_ast = { path = "../montyc_ast" }
 montyc_lexer = { path = "../montyc_lexer" }
+montyc_parser2 = { path = "../montyc_parser2" }
 
 logos = "0.12"
 nom = "6"

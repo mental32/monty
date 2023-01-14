@@ -10,7 +10,7 @@ use montyc_lexer::PyToken;
 
 use crate::ast::atom::Atom;
 use crate::ast::primary::Primary;
-use crate::Token;
+use crate::{ast, Token};
 
 macro_rules! p {
     ($out:ty; $bound:ident) => {
@@ -29,13 +29,24 @@ macro_rules! p {
 mod tokens {
     use super::*;
 
+    use chumsky::error::Error;
+    use chumsky::primitive::filter_map;
+
     macro_rules! token_parser {
         ($i:ident, $debug:literal, $p:pat) => {
             #[track_caller]
+            #[allow(dead_code)]
             pub fn $i() -> impl Parser<super::Token, Spanned<PyToken>, Error = Simple<Token>> + Clone {
-                select! {
-                    (e @ $p, span) => Spanned::new(e, span),
-                }
+                filter_map(move |span, x| {
+                    tracing::trace!(expected = ?stringify!($i), ?x, ?span, "parse token");
+                    match x {
+                        (e @ $p, span) => {
+                            ::core::result::Result::Ok(Spanned::new(e, span))
+                        },
+                    _ => ::core::result::Result::Err(Error::expected_input_found(span, ::core::option::Option::None, ::core::option::Option::Some(x))),
+                    }
+                })
+
                 .debug($debug)
             }
         };
@@ -107,6 +118,14 @@ mod tokens {
 }
 
 #[track_caller]
+pub fn string_literal() -> p!(Spanned<Atom>; Clone) {
+    select! {
+        (PyToken::StringRef(sr), span) => Spanned::new(Atom::Str(sr), span)
+    }
+    .debug("string_literal")
+}
+
+#[track_caller]
 pub fn ident() -> p!(Spanned<Atom>; Clone) {
     select! {
         (PyToken::IdentRef(sr), span) => Spanned::new(Atom::Name(sr), span)
@@ -162,6 +181,7 @@ pub fn atom() -> p!(Spanned<Atom>; Clone) {
         .or(none())
         .or(int())
         .or(ellipsis())
+        .or(string_literal())
         .debug("atom.value");
 
     recursive(|atom| {
@@ -362,6 +382,13 @@ where
 }
 
 pub fn funcdef(indent: usize) -> p!(Spanned<FunctionDef>) {
+    let dec = tokens::at()
+        .ignore_then(expr())
+        .debug("funcdef.decorator")
+        .then_ignore(tokens::newline())
+        .repeated()
+        .debug("funcdef.decorator_list");
+
     let parameters = annotated_identifier_list().delimited_by(tokens::lparen(), tokens::rparen());
 
     let return_type_annotation = tokens::minus()
@@ -369,10 +396,11 @@ pub fn funcdef(indent: usize) -> p!(Spanned<FunctionDef>) {
         .ignore_then(tokens::whitespace().repeated().or_not())
         .ignore_then(expr());
 
-    let decorator = tokens::at().ignore_then(expr()).debug("funcdef.decorator");
-
-    let decorator_list = decorator
-        .separated_by(tokens::newline())
+    let decorator_list = tokens::at()
+        .ignore_then(expr())
+        .debug("funcdef.decorator")
+        .then_ignore(tokens::newline())
+        .repeated()
         .debug("funcdef.decorator_list");
 
     let prefix = indent + 4;
@@ -536,24 +564,35 @@ pub fn while_(indent: usize) -> p!(Spanned<while_::While>) {
 pub fn classdef(indent: usize) -> p!(Spanned<classdef::ClassDef>) {
     let prefix = indent + 4;
 
-    tokens::classdef()
+    let dec = tokens::at()
+        .ignore_then(expr())
+        .debug("classdef.decorator")
+        .then_ignore(tokens::newline())
+        .repeated()
+        .debug("classdef.decorator_list");
+
+    dec.then(tokens::classdef())
         .then_ignore(tokens::whitespace().repeated())
-        .then(ident())
+        .then(ident().debug("classdef.name"))
         .then_ignore(tokens::whitespace().repeated())
         .then(
             expr()
                 .padded_by(tokens::whitespace().repeated())
                 .separated_by(tokens::comma())
+                .delimited_by(tokens::lparen(), tokens::rparen())
                 .or_not(),
         )
         .then_ignore(tokens::whitespace().repeated())
         .then_ignore(tokens::colon())
         .then(tokens::newline().ignore_then(indented_block(prefix, move || statement(prefix))))
         .map(
-            |(((_, name), _), body): (
+            |((((decorator_list, _), name), _), body): (
                 (
                     (
-                        montyc_ast::spanned::Spanned<montyc_lexer::PyToken>,
+                        (
+                            Vec<Spanned<Expr>>,
+                            montyc_ast::spanned::Spanned<montyc_lexer::PyToken>,
+                        ),
                         montyc_ast::spanned::Spanned<Atom>,
                     ),
                     Option<Vec<montyc_ast::spanned::Spanned<montyc_ast::expr::Expr>>>,
@@ -561,7 +600,11 @@ pub fn classdef(indent: usize) -> p!(Spanned<classdef::ClassDef>) {
                 Vec<montyc_ast::spanned::Spanned<Statement>>,
             )| {
                 let span = 0..0;
-                let classdef = classdef::ClassDef { name, body };
+                let classdef = classdef::ClassDef {
+                    decorator_list,
+                    name,
+                    body,
+                };
                 Spanned::new(classdef, span)
             },
         )
@@ -581,11 +624,13 @@ pub fn return_() -> p!(Spanned<return_::Return>; Clone) {
 pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
     let comment = select! {
         (PyToken::Comment, _) => PyToken::Comment,
-    };
+        (PyToken::CommentRef(_), _) => PyToken::Comment,
+    }
+    .debug("comment");
 
     let w_expr = expr()
         .map(|expr| expr.replace_with(Statement::Expr))
-        .then_ignore(comment.or_not())
+        .then_ignore(comment.clone().or_not())
         .boxed()
         .debug("statement().expr");
 
@@ -608,6 +653,39 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         })
         .boxed()
         .debug("statement().import");
+
+    let from_import = tokens::from()
+        .ignore_then(tokens::whitespace().repeated())
+        .ignore_then(
+            tokens::dot()
+                .repeated()
+                .then(expr().try_map(|expr, error| match expr.inner {
+                    Expr::Primary(p) => Ok(p),
+                    _ => Err(chumsky::error::Simple::custom(
+                        error,
+                        format!("invalid expression in from statement, expected a dotted name"),
+                    )),
+                }))
+                .then_ignore(tokens::import().padded_by(tokens::whitespace().repeated()))
+                .then(
+                    ident()
+                        .map(|id| id.replace_with(Primary::Atomic))
+                        .padded_by(tokens::whitespace().repeated())
+                        .separated_by(tokens::comma()),
+                )
+                .map(|((dots, module), names)| ast::import::Import::From {
+                    module,
+                    names,
+                    level: dots.len(),
+                }),
+        )
+        .map(|import_stmt| {
+            let span = 0..0;
+            tracing::trace!("parsed from-import statement");
+            Spanned::new(import_stmt, span).replace_with(Statement::Import)
+        })
+        .boxed()
+        .debug("statement().from_import");
 
     let ifch = if_stmt(indent)
         .map(|ifch| ifch.replace_with(Statement::If))
@@ -680,27 +758,34 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         .boxed()
         .debug("statement().assign");
 
-    assign
+    let stmt = assign
         .or(annotation)
         .or(pass)
         .or(classdef)
         .or(ret)
         .or(whl)
         .or(ifch)
+        .or(from_import)
         .or(import)
         .or(fndef)
-        .or(w_expr)
+        .or(w_expr);
+
+    comment
+        .repeated()
+        .ignore_then(tokens::newline().repeated())
+        .ignore_then(stmt)
 }
 
 pub fn module() -> p!(Spanned<crate::ast::module::Module>) {
     statement(0)
         .separated_by(tokens::newline().repeated())
+        .allow_trailing()
+        .allow_leading()
         .map(|stmts| {
             let span = match stmts.as_slice() {
                 [] => 0..0,
                 [one] => one.span.clone(),
                 [first, .., last] => first.span_to(last),
-                _ => unreachable!(),
             };
 
             let t = montyc_ast::module::Module { body: stmts };
@@ -724,6 +809,7 @@ mod test {
         crate::token_stream_iter::TokenStreamIter {
             bound: sr.get(input, ()).unwrap(),
             lexer,
+            previous: None,
         }
         .map(|res| res.unwrap())
         .collect()

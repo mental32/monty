@@ -189,20 +189,6 @@ impl<V> SSAMap<V> {
         self.inner.get(key.try_into().unwrap())?.as_ref()
     }
 
-    /// # Safety
-    ///
-    /// The key index is not bounds checked, calling this with an out of bounds index
-    /// is undefined behavior.
-    ///
-    #[inline]
-    pub unsafe fn get_unchecked<K>(&self, key: K) -> Option<&V>
-    where
-        K: TryInto<SSAKey>,
-        <K as TryInto<SSAKey>>::Error: Debug,
-    {
-        self.inner.get_unchecked(key.try_into().ok()?).as_ref()
-    }
-
     #[inline]
     pub fn get_mut<K>(&mut self, key: K) -> Option<&mut V>
     where

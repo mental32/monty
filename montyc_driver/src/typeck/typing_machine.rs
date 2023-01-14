@@ -66,11 +66,14 @@ impl TypingMachine {
             tracing::trace!(" %{} := {}", inst.value, inst.op);
 
             match &inst.op {
-                RawInst::SetAnnotation { name, annotation } => {
-                    let (inst, block) = Self::find_inst(cfg, *annotation).unwrap();
+                RawInst::SetAnnotation {
+                    name: _,
+                    annotation,
+                } => {
+                    let (inst, _block) = Self::find_inst(cfg, *annotation).unwrap();
 
                     match inst.op {
-                        RawInst::UseVar { variable } => todo!(),
+                        RawInst::UseVar { .. } => todo!(),
                         _ => todo!("annotation is too complex, can only refer to names."),
                     }
                 }
@@ -287,7 +290,7 @@ impl TypingMachine {
                     let callable_pytype = cx.tcx().get_python_type_of(callable_t).unwrap();
 
                     match callable_pytype {
-                        PythonType::Class { object_id, members } => {
+                        PythonType::Class { .. } => {
                             todo!()
                         }
 
@@ -313,7 +316,7 @@ impl TypingMachine {
                                     montyc_core::UnifyFailure::UnequalArity(_, _) => todo!(),
 
                                     montyc_core::UnifyFailure::BadArgumentTypes(mismatch) => {
-                                        for (n, expected, actual) in mismatch {
+                                        for (_, expected, actual) in mismatch {
                                             tracing::error!(
                                                 "{:?} != {:?}",
                                                 cx.tcx().display_type(expected, &|v| cx
@@ -437,7 +440,7 @@ impl TypingMachine {
                                             })
                                         }
 
-                                        montyc_core::PropertyValue::Builtin(kind, slot_name) => {
+                                        montyc_core::PropertyValue::Builtin(_, _) => {
                                             todo!()
                                         }
                                     }
@@ -448,7 +451,7 @@ impl TypingMachine {
                         PythonType::Generic { .. } => todo!(),
                         PythonType::Builtin { inner } => match inner {
                             BuiltinType::Type => {
-                                let klass = nonlocals[callable];
+                                let _klass = nonlocals[callable];
                                 todo!();
                                 // let init = cx.typing_context.get_property(base_t, name)
                             }
@@ -503,7 +506,7 @@ impl TypingMachine {
                     let dunder_t = match property {
                         Ok(p) => p.type_id,
                         Err(exc) => {
-                            todo!("{:?}", exc);
+                            tracing::error!("{exc:?}");
                             errors.push(exc);
                             continue;
                         }

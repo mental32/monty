@@ -1,5 +1,3 @@
-use montyc_lexer::PyToken;
-
 use crate::spanned::Spanned;
 
 use super::*;

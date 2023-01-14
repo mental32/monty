@@ -1,9 +1,12 @@
+use std::borrow::Cow;
 use std::cell::{RefCell, RefMut};
 use std::convert::TryInto;
-use std::ops::Deref;
+use std::fmt;
+use std::io;
+use std::panic;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fmt, io, panic, rc::Rc};
 
 use ahash::AHashSet;
 
@@ -13,6 +16,7 @@ use montyc_hlirt::argparse::{ObjectParserExt, Parser};
 use montyc_hlirt::ObjectSpace;
 
 use montyc_hlirt::rt::singletons::Singletons;
+use montyc_parser::span_interner::SpanInterner;
 use parking_lot::Mutex;
 
 use montyc_core::dict::PyDictRaw;
@@ -20,17 +24,16 @@ use montyc_core::utils::SSAMap;
 use montyc_core::{
     patma, BuiltinType, LocalTypeId, MapT, ModuleData, ModuleRef, MontyError, MontyResult,
     PythonType, SpanRef, TaggedValueId, Type, TypeId, TypingConstants, TypingContext, Value,
-    ValueId, FUNCTION, MODULE,
+    ValueId, FUNCTION,
 };
 use montyc_flatcode::FlatCode;
 use montyc_hlirt::ctx::{CallCx, EvalGlue};
 use montyc_hlirt::object::{FuncLike, IntoPyValue, ObjectBuilder, PyValue, ReadyCallable};
 use montyc_hlirt::rt::{AcceptInput, Runtime, RuntimeHost, RuntimeHostExt};
-use montyc_hlirt::{argparse, ObjectId, PyException, PyResult, PyResultExt};
-use montyc_parser::SpanInterner;
+use montyc_hlirt::{argparse, ObjectId, PyException, PyResult};
+
 use montyc_query::Queries;
 
-use crate::prelude::*;
 use crate::value_store::{GVKey, GlobalValueStore};
 
 pub mod host;
@@ -302,7 +305,7 @@ impl TypingContext for TypingData {
                 } = self;
 
                 match root {
-                    PythonType::Class { object_id, members } => todo!(),
+                    PythonType::Class { .. } => todo!(),
                     PythonType::Instance { of } => write!(
                         f,
                         "Instance of {}",
@@ -415,14 +418,27 @@ pub struct Pot {
     pub(crate) n_objects: AtomicUsize,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionOpts {
+    pub input: PathBuf,
+    pub libstd: PathBuf,
+    pub mode: SessionMode,
+}
+
+#[derive(Debug, Clone)]
+pub enum SessionMode {
+    Check,
+    Build,
+}
+
 /// Global state for the current compilation.
 #[derive(Debug)]
 pub struct SessionContext {
     /// The options this context was created with.
-    pub(crate) opts: CompilerOptions,
+    pub(crate) opts: SessionOpts,
 
     /// A Span interner shared between all parsing sessions.
-    pub(crate) spanner: SpanInterner,
+    pub(crate) spanner: SpanInterner<ModuleRef>,
 
     /// Static names that get loaded at startup.
     static_names: StaticNames,
@@ -434,7 +450,10 @@ pub struct SessionContext {
     pub(crate) module_sources: DashMap<ModuleRef, Box<str>>,
 
     /// A map of module -> ast.
-    pub(crate) module_asts: DashMap<ModuleRef, Rc<montyc_parser::ast::module::Module>>,
+    pub(crate) module_asts: DashMap<
+        ModuleRef,
+        Rc<montyc_parser::ast::spanned::Spanned<montyc_parser::ast::module::Module>>,
+    >,
 
     /// An interpreter runtime for consteval.
     pub(crate) const_runtime: Rc<RefCell<montyc_hlirt::rt::Runtime>>,
@@ -448,33 +467,17 @@ pub struct SessionContext {
     pot: Pot,
 }
 
-impl SessionContext {
-    fn new(opts: CompilerOptions) -> Self {
-        let value_store = Box::new(GlobalValueStore::default());
-        let const_runtime = Rc::new(RefCell::new(Runtime::new_uninit()));
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct UninitializedSession(SessionContext);
 
-        Self {
-            opts,
-            spanner: SpanInterner::new(),
-            static_names: Default::default(),
-            modules: Default::default(),
-            module_sources: Default::default(),
-            module_asts: Default::default(),
-            const_runtime: Rc::clone(&const_runtime),
-            typing_context: TypingData::initialized(),
-            value_store,
-            pot: Pot::default(),
-        }
-    }
-
-    /// Initiate a new context with the given, verified, options.
-    pub fn initialize(
-        VerifiedCompilerOptions(opts): &VerifiedCompilerOptions,
-    ) -> Result<Self, (Self, MontyError)> {
-        let mut gcx = Self::new(opts.clone());
+impl UninitializedSession {
+    pub fn initialize(self) -> SessionContext {
+        let Self(mut gcx) = self;
+        let opts = gcx.opts.clone();
 
         tracing::debug!("{:?}", opts);
-        tracing::debug!("stdlib := {:?}", opts.libstd());
+        tracing::debug!("stdlib := {:?}", opts.libstd);
 
         let monty_mdata = Rc::new(ModuleData {
             mref: ModuleRef(0),
@@ -504,13 +507,33 @@ impl SessionContext {
 
         tracing::debug!("initialized {:?} static names", gcx.static_names.len());
 
-        match gcx.initialize_hlirt(monty_mdata.as_ref()) {
-            Ok(_) => Ok(gcx),
-            Err(err) => match err {
-                montyc_hlirt::rt::RuntimeError::Host(e) => Err((gcx, e)),
-                _ => todo!("{:#?}", err),
-            },
-        }
+        let () = gcx
+            .initialize_hlirt(monty_mdata.as_ref())
+            .expect("failed initializing hlirt");
+
+        gcx
+    }
+}
+
+impl SessionContext {
+    pub fn new_uninit(opts: SessionOpts) -> UninitializedSession {
+        let value_store = Box::new(GlobalValueStore::default());
+        let const_runtime = Rc::new(RefCell::new(Runtime::new_uninit()));
+
+        let this = Self {
+            opts,
+            spanner: SpanInterner::new(),
+            static_names: Default::default(),
+            modules: Default::default(),
+            module_sources: Default::default(),
+            module_asts: Default::default(),
+            const_runtime: Rc::clone(&const_runtime),
+            typing_context: TypingData::initialized(),
+            value_store,
+            pot: Pot::default(),
+        };
+
+        UninitializedSession(this)
     }
 
     /// Initialize the interpreter runtime, setting .
@@ -618,7 +641,7 @@ impl SessionContext {
             std::mem::drop(rt_mut);
 
             let (_, builtins) = self
-                .include_module(self.opts.libstd().join("builtins.py"), "builtins")
+                .include_module(self.opts.libstd.join("builtins.py"), "builtins")
                 .map_err(|e| montyc_hlirt::rt::RuntimeError::Host(e))?;
 
             let mut rt = rt.borrow_mut();
@@ -646,6 +669,7 @@ impl SessionContext {
                 if let PythonType::Builtin { inner } =
                     self.typing_context.get_python_type_of(*ty).unwrap()
                 {
+                    tracing::trace!(ty = ?inner, "accessing builtin type");
                     let hash = rt.hash(inner.name());
                     let (_, real_class) = rt
                         .objects
@@ -709,7 +733,7 @@ impl SessionContext {
         // until this gets fixed we gotta do this.
 
         let bootstrap = {
-            let bootstrap_path = self.opts.libstd().join("importlib/_bootstrap.py");
+            let bootstrap_path = self.opts.libstd.join("importlib/_bootstrap.py");
 
             self.include_module(bootstrap_path, "importlib._bootstrap")
                 .map_err(RuntimeError::Host)?
@@ -722,16 +746,23 @@ impl SessionContext {
 
     #[inline]
     pub(crate) fn resolve_sref_as_str(&self, sref: SpanRef) -> Option<String> {
-        self.spanner.spanref_to_str(sref, |mref, span| {
+        let resolver = |mref, span| {
             if mref == ModuleRef(0) {
                 self.static_names
                     .get(&sref.group())
                     .cloned()
-                    .map(|st| st.to_string())
+                    .map(|st| Cow::Owned(st.to_owned()))
             } else {
-                Some(self.module_sources.get(&mref)?.get(span)?.to_string())
+                self.module_sources
+                    .get(&mref)?
+                    .get(span)
+                    .map(|st: &str| Cow::Owned(st.to_owned()))
             }
-        })
+        };
+
+        self.spanner
+            .spanref_to_str(sref, resolver)
+            .map(|cow| cow.to_string())
     }
 
     #[inline]
@@ -739,18 +770,23 @@ impl SessionContext {
         let mut modules = self.modules.lock();
         let mref = (modules.reserve() as u32).into();
 
-        let module_ast = montyc_parser::parse(
-            &source,
-            montyc_parser::comb::module,
-            Some(self.spanner.clone()),
-            mref,
-        );
+        let (module_ast, errors) = montyc_parser::parse(&self.spanner, mref, &source);
 
-        // if module_ast.is_err() {
-        //     self.modules.cancel_reserve(mref).unwrap();
-        // }
+        let module = if !errors.is_empty() {
+            for error in errors {
+                tracing::error!(?error, "parser error");
+            }
 
-        let module = ModuleData {
+            panic!("parser errors");
+        } else {
+            module_ast.unwrap()
+        };
+
+        if module.inner.body.is_empty() {
+            tracing::debug!("module is empty");
+        }
+
+        let module_data = ModuleData {
             path: path.to_path_buf(),
             mref,
             name: module_name.to_string(),
@@ -761,8 +797,8 @@ impl SessionContext {
             .module_sources
             .insert(mref, source.to_string().into_boxed_str());
 
-        let _ = self.module_asts.insert(mref, Rc::new(module_ast));
-        let _ = modules.try_set_value(mref, module).unwrap();
+        let _ = self.module_asts.insert(mref, Rc::new(module));
+        let _ = modules.try_set_value(mref, module_data).unwrap();
 
         mref
     }
@@ -835,6 +871,8 @@ impl SessionContext {
             Ok(module) => module,
             Err(exc) => todo!("runtime exception! {:#?}", exc),
         };
+
+        tracing::trace!("module eval complete");
 
         Ok(module)
     }
@@ -931,21 +969,7 @@ impl SessionContext {
         let store = &self.value_store;
 
         let mref = match self.resolve_fancy_path_to_modules(path).as_slice() {
-            [] => match &self.opts {
-                CompilerOptions::Check { input, .. } | CompilerOptions::Build { input, .. } => {
-                    if !self
-                        .modules
-                        .lock()
-                        .iter()
-                        .any(|(_, data)| data.path == *input)
-                    {
-                        self.include_module(input, "__main__")?;
-                        return self.get_func_from_path(path);
-                    } else {
-                        todo!("could not find a module matching the path {:?}", path);
-                    }
-                }
-            },
+            [] => return Err(MontyError::None),
 
             [mref] => mref.clone(),
             [_, ..] => todo!("ambiguity in resolving module."),

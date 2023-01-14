@@ -13,7 +13,6 @@ use montyc_parser::ast::Constant;
 use tempfile::NamedTempFile;
 
 use montyc_core::codegen::{CgBlockId, CgInst};
-use montyc_core::opts::CompilerOptions;
 use montyc_core::{
     BuiltinType, MapT, MontyResult, PythonType, TaggedValueId, TypeId, ValueId, FUNCTION,
 };
@@ -64,6 +63,8 @@ pub(crate) mod data;
 
 use data::CgFuncData;
 
+use crate::CgOpts;
+
 fn ir_type_of(tcx: &dyn montyc_core::TypingContext, type_id: TypeId) -> ir::Type {
     match tcx.get_python_type_of(type_id).unwrap() {
         montyc_core::PythonType::Builtin { inner } => match inner {
@@ -104,14 +105,8 @@ impl core::fmt::Debug for BackendImpl {
 }
 
 impl BackendImpl {
-    fn codegen_flags(opts: &CompilerOptions) -> settings::Flags {
-        let settings = match opts {
-            CompilerOptions::Build {
-                cranelift_settings, ..
-            } => cranelift_settings,
-
-            _ => unreachable!("cant generate codegen settings for a non-build option."),
-        };
+    fn codegen_flags(opts: &CgOpts) -> settings::Flags {
+        let settings = opts.settings.clone();
 
         let mut flags_builder = cranelift_codegen::settings::builder();
 
@@ -457,26 +452,16 @@ impl BackendImpl {
 }
 
 impl BackendImpl {
-    pub fn new(opts: &CompilerOptions) -> Self {
+    pub fn new(opts: &CgOpts) -> Self {
         let settings = Self::codegen_flags(opts);
-
-        let cc = match opts {
-            CompilerOptions::Build { cc, .. } => cc.clone(),
-            _ => None,
-        }
-        .unwrap_or_else(|| PathBuf::from("cc"));
-
-        let output = match opts {
-            CompilerOptions::Build { output, .. } => output.clone(),
-            _ => unreachable!(),
-        };
-
+        let cc = opts.cc.clone();
+        let output = opts.output.clone();
+        let data = data::CgData::default();
         Self {
             settings,
             output,
-
             cc,
-            data: data::CgData::default(),
+            data,
         }
     }
 
@@ -531,11 +516,7 @@ impl BackendImpl {
         Ok(())
     }
 
-    pub fn finish(mut self, queries: &dyn Queries) -> MontyResult<PathBuf> {
-        let entry_path = queries
-            .entry_path()
-            .expect("when building an entry path should always be present.");
-
+    pub fn finish(mut self, queries: &dyn Queries, entry_path: &str) -> MontyResult<PathBuf> {
         let (mut funcs, entry) = queries.call_graph_of(&entry_path)?;
 
         for func in funcs.drain(..) {

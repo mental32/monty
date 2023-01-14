@@ -862,7 +862,7 @@ where
             const BUILTINS: &[&str] = &["int", "bool", "str"];
 
             if self.rt.singletons.builtins.is_uninit() {
-                tracing::warn!("builtins is unit, only defining int, bool, and str.");
+                tracing::debug!("builtins is not initialized, only defining int, bool, and str.");
 
                 let builtin_values = [
                     self.rt.singletons.int_class,

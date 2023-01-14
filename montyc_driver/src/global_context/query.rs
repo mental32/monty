@@ -10,13 +10,6 @@ impl Queries for SessionContext {
         &self.typing_context
     }
 
-    fn entry_path(&self) -> Option<&str> {
-        match &self.opts {
-            CompilerOptions::Build { entry, .. } => Some(&entry),
-            CompilerOptions::Check { .. } => None,
-        }
-    }
-
     fn get_type_of(&self, val: ValueId) -> MontyResult<TypeId> {
         match self.value_store.with_metadata(val, |m| m.type_id) {
             Some(Some(ty)) => Ok(ty),
@@ -38,7 +31,7 @@ impl Queries for SessionContext {
 
                     let ty = Type::new_class(object_id, None);
 
-                    for (_, (k, v)) in self
+                    for (_, (k, _)) in self
                         .const_runtime
                         .borrow()
                         .objects
@@ -48,15 +41,17 @@ impl Queries for SessionContext {
                         })
                         .iter()
                     {
-                        let attr_name = self
+                        let _attr_name = self
                             .const_runtime
                             .borrow()
                             .objects
                             .with_object(*k, |m| m.as_str().unwrap().to_string());
 
-                        let property = Property::new(todo!(), todo!());
+                        let (type_id, property_value) = todo!();
 
-                        ty.properties.insert(attr_name, property);
+                        let property = Property::new(type_id, property_value);
+
+                        ty.properties.insert(_attr_name, property);
                     }
 
                     return Ok(self.typing_context.insert(ty));
@@ -141,8 +136,7 @@ impl Queries for SessionContext {
 
             false => {
                 let ast = self.module_asts.get(&mref).unwrap();
-                let code =
-                    ast_to_flatcode(mref, ast.as_ref(), dbg!(ast.span()).unwrap_or_default());
+                let code = ast_to_flatcode(mref, ast.as_ref(), ast.span.clone());
 
                 Ok(code)
             }
@@ -288,6 +282,17 @@ impl Queries for SessionContext {
         &self,
         entry_path: &str,
     ) -> MontyResult<(Vec<TaggedValueId<{ FUNCTION }>>, ValueId)> {
+        let SessionOpts { input, .. } = &self.opts;
+
+        if !self
+            .modules
+            .lock()
+            .iter()
+            .any(|(_, data)| data.path == *input)
+        {
+            self.include_module(input, "__main__")?;
+        }
+
         let entry_func = self.get_func_from_path(entry_path)?;
         let entry_func_t = self.get_type_of(entry_func.0)?;
 

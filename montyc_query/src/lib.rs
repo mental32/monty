@@ -25,9 +25,6 @@ pub trait Queries {
     /// Get the associated typing context with this query provider.
     fn tcx<'a>(&'a self) -> &'a dyn TypingContext;
 
-    /// A fancy path to the entry function.
-    fn entry_path(&self) -> Option<&str>;
-
     /// Given some `ValueId` compute its type and return the corresponding `TypeId`.
     fn get_type_of(&self, val: ValueId) -> MontyResult<TypeId>;
 

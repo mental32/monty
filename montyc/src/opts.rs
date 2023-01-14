@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 
-use structopt::*;
+use clap::Parser;
 
 #[derive(Debug)]
 pub struct VerifiedCompilerOptions(pub CompilerOptions);
@@ -15,7 +15,7 @@ impl Deref for VerifiedCompilerOptions {
     }
 }
 
-#[derive(Debug, StructOpt, Clone)]
+#[derive(Debug, Parser, Clone)]
 pub enum CompilerOptions {
     // `libstd` and `input` are duplicated because I can't figure out how to
     // have them shared between subcommands.
@@ -23,46 +23,42 @@ pub enum CompilerOptions {
     /// Typecheck the provided input but do not build anything.
     Check {
         /// The path to a monty compatible stdlib.
-        #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
+        #[clap(short, long, default_value = "libstd/")]
         libstd: PathBuf,
 
         /// The input file to check.
-        #[structopt(parse(from_os_str))]
         input: PathBuf,
     },
 
     /// Compile the provided input.
     Build {
         /// The path to the entry function, for instance `main` in a `__main__.py` would be `__main__:main` (and is the default.)
-        #[structopt(short, long, default_value = "__main__:main")]
+        #[clap(short, long, default_value = "__main__:main")]
         entry: String,
 
         /// The path to a monty compatible stdlib.
-        #[structopt(short, long, parse(from_os_str), default_value = "libstd/")]
+        #[clap(short, long, default_value = "libstd/")]
         libstd: PathBuf,
 
         /// The input file to compile.
-        #[structopt(parse(from_os_str))]
         input: PathBuf,
 
         // The name of the output binary, defaults to the input file's name.
-        #[structopt(parse(from_os_str))]
         output: PathBuf,
 
         /// Show the Cranelift IR for the specified function.
-        #[structopt(long)]
+        #[clap(long)]
         show_ir: Option<String>,
 
         /// The C compiler to use.
-        #[structopt(short, long, parse(from_os_str))]
+        #[clap(short, long)]
         cc: Option<PathBuf>,
 
         /// The linker to use.
-        #[structopt(parse(from_os_str))]
         ld: Option<PathBuf>,
 
         /// Low level codegen settings to pass to Cranelift.
-        #[structopt(multiple = true, short = "C", long = "codegen")]
+        #[clap(short = 'C', long = "codegen")]
         cranelift_settings: Vec<String>,
     },
 }
@@ -83,6 +79,13 @@ impl CompilerOptions {
             )),
 
             Ok(path) => Ok(path), // provided path exists.
+        }
+    }
+    pub fn input(&self) -> PathBuf {
+        match self {
+            CompilerOptions::Check { input, .. } | CompilerOptions::Build { input, .. } => {
+                input.clone()
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{RefCell, RefMut};
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Range;
@@ -104,8 +105,8 @@ where
     pub fn spanref_to_str<'a>(
         &self,
         sref: SpanRef,
-        resolver: impl Fn(M, Range<usize>) -> Option<&'a str>,
-    ) -> Option<&'a str> {
+        resolver: impl Fn(M, Range<usize>) -> Option<Cow<'a, str>>,
+    ) -> Option<Cow<'a, str>> {
         let data = self.0.borrow().map.get(sref.distinct())?.clone();
         resolver(data.module, data.range)
     }

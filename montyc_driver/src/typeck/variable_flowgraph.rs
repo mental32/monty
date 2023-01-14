@@ -1,4 +1,4 @@
-use montyc_core::{MapT, MontyResult, SpanRef};
+use montyc_core::MontyResult;
 use montyc_flatcode::raw_inst::RawInst;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, EdgeDirection};
 
@@ -34,7 +34,7 @@ impl CFGReducer for VFGBuilder {
 
     fn make_output(&self) -> Self::OutputT {
         let mut graph = RawVFG::default();
-        self.inp.0.raw_nodes().iter().for_each(|n| {
+        self.inp.0.raw_nodes().iter().for_each(|_n| {
             graph.add_node(Default::default());
         });
         graph
@@ -53,7 +53,7 @@ impl CFGReducer for VFGBuilder {
         cx: &crate::global_context::SessionContext,
         output: &mut Self::OutputT,
         ix: Self::IndexT,
-        errors: &mut Vec<montyc_core::error::TypeError>,
+        _errors: &mut Vec<montyc_core::error::TypeError>,
     ) -> montyc_core::MontyResult<Vec<Self::IndexT>> {
         let block = self.do_block(cx, ix);
 
@@ -70,7 +70,7 @@ impl CFGReducer for VFGBuilder {
 }
 
 impl VFGBuilder {
-    fn do_block(&self, cx: &SessionContext, ix: NodeIndex) -> VFGNode {
+    fn do_block(&self, _cx: &SessionContext, ix: NodeIndex) -> VFGNode {
         let block = self.inp.0.node_weight(ix).unwrap();
         let mut node = VFGNode::default();
 

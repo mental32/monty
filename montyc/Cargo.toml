@@ -8,6 +8,7 @@ documentation = "https://docs.rs/montyc"
 readme = "README.md"
 repository = "https://github.com/mental32/monty"
 license = "MIT"
+keywords = ["compilers", "typecheckers", "monty", "python"]
 
 [dependencies]
 montyc_driver = { path = "../montyc_driver" }
@@ -19,3 +20,4 @@ structopt = "0.3.21"
 anyhow = "1.0.52"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter", "std", "fmt", "default", "time"] }
+clap = { version = "4", features = ["derive"] }

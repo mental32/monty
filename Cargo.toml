@@ -12,8 +12,6 @@ members = [
     "montyc_hlirt",
 ]
 
-keyword = ["compilers", "typecheckers", "monty", "python"]
-
 exclude = ["cranelift-structbuf"]
 
 [profile.dev]

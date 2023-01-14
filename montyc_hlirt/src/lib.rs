@@ -3,10 +3,12 @@
 
 #[cfg(test)]
 pub(crate) mod test {
+    use std::borrow::Cow;
+
     use ahash::AHashMap;
     use montyc_core::ModuleRef;
     use montyc_flatcode::FlatCode;
-    use montyc_parser::{ast::AstObject, SpanInterner};
+    use montyc_parser::{prelude::AstObject, span_interner::SpanInterner};
 
     use crate::{
         eval::ctx::EvalGlue,
@@ -16,10 +18,10 @@ pub(crate) mod test {
         ObjectId,
     };
 
-    #[derive(Debug, Default)]
+    #[derive(Debug)]
     pub struct TestHost {
         pub sources: AHashMap<ModuleRef, String>,
-        pub sint: SpanInterner,
+        pub sint: SpanInterner<ModuleRef>,
         pub mrefs: u32,
         pub objs: u64,
     }
@@ -60,7 +62,10 @@ pub(crate) mod test {
         fn spanref_to_str(&self, sref: montyc_core::SpanRef) -> String {
             self.sint
                 .spanref_to_str(sref, |mref, range| {
-                    self.sources.get(&mref).and_then(|st| st.get(range))
+                    self.sources
+                        .get(&mref)
+                        .and_then(|st| st.get(range))
+                        .map(|st| Cow::Borrowed(st))
                 })
                 .unwrap()
                 .into()
@@ -106,17 +111,13 @@ pub(crate) mod test {
     impl AcceptInput<&str, FlatCode> for TestHost {
         fn accept_input(&mut self, input: &str) -> Result<montyc_flatcode::FlatCode, Self::Error> {
             let mref = self.mrefs.into();
-            let module = montyc_parser::parse(
-                input,
-                montyc_parser::comb::module,
-                Some(self.sint.clone()),
-                mref,
-            );
+            let (Some(module), errs) = montyc_parser::parse(&self.sint, mref, input) else { unreachable!() };
+            assert!(errs.is_empty());
 
             self.mrefs += 1;
             self.sources.insert(mref, input.to_string());
 
-            let mut code = FlatCode::new((mref, module.span().unwrap_or(0..0)));
+            let mut code = FlatCode::new((mref, module.span.clone()));
 
             module.visit_with(&mut code, None);
 
@@ -183,7 +184,12 @@ pub(crate) mod test {
         let _ = env_logger::try_init();
 
         let rt = Runtime::new_uninit();
-        let host = TestHost::default();
+        let host = TestHost {
+            sources: Default::default(),
+            sint: SpanInterner::new(),
+            mrefs: Default::default(),
+            objs: Default::default(),
+        };
 
         (rt, host)
     }

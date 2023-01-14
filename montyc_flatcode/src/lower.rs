@@ -734,12 +734,10 @@ impl AstVisitor<usize> for FlatCode {
     fn visit_attr(&mut self, attr: &Primary, _span: Option<Span>) -> usize {
         let (base, attr) = patma!((left, attr), Primary::Attribute { left, attr } in attr).unwrap();
 
-        let object = base.visit_with(self, None);
+        let lhs = base.visit_with(self, Some(base.span.clone()));
+        let rhs = attr.visit_with(self, Some(attr.span.clone()));
 
-        let r = attr.inner.as_name().unwrap();
-        let attr = self.inst(RawInst::RefAsStr { r });
-
-        self.inst(RawInst::GetAttribute { object, attr })
+        self.inst(RawInst::GetAttribute { object: lhs, attr: rhs })
     }
 
     fn visit_module(&mut self, module: &Module, _: Option<Span>) -> usize {

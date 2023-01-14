@@ -1,7 +1,12 @@
-use montyc_driver::prelude::{CompilerOptions, SessionContext};
+use std::path::PathBuf;
 
-use structopt::StructOpt;
+use clap::Parser;
+use montyc_driver::{SessionContext, SessionMode, SessionOpts};
+
+use opts::{CompilerOptions, VerifiedCompilerOptions};
 use tracing_subscriber::EnvFilter;
+
+mod opts;
 
 fn install_logger() {
     let display_filename = std::env::var("MONTYC_DEBUG_FILE").map_or(true, |st| st != "0");
@@ -19,8 +24,8 @@ fn install_logger() {
 fn main() -> anyhow::Result<()> {
     install_logger();
 
-    let opts = CompilerOptions::from_args();
-    let opts_verified = match opts.clone().verify() {
+    let opts = CompilerOptions::parse();
+    let VerifiedCompilerOptions(opts) = match opts.verify() {
         Ok(i) => i,
         Err(mut errors) => {
             for err in errors.drain(..) {
@@ -31,23 +36,37 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let gcx = match SessionContext::initialize(&opts_verified) {
-        Ok(cx) => cx,
-
-        Err((_cx, err)) => {
-            // TODO: cx.fmt_error(err)
-            eprintln!("error: {}", err);
-            std::process::exit(1)
-        }
-    };
+    let gcx = SessionContext::new_uninit(SessionOpts {
+        input: opts.input(),
+        libstd: opts.libstd(),
+        mode: match opts {
+            CompilerOptions::Check { .. } => SessionMode::Check,
+            CompilerOptions::Build { .. } => SessionMode::Build,
+        },
+    })
+    .initialize();
 
     match opts {
         CompilerOptions::Check { input, .. } => {
             gcx.include_module(input, "__main__")?;
         }
 
-        CompilerOptions::Build { .. } => {
-            montyc_codegen::compile(&opts, &gcx)?;
+        CompilerOptions::Build {
+            entry,
+            output,
+            cc,
+            cranelift_settings: settings,
+            ..
+        } => {
+            montyc_codegen::compile(
+                montyc_codegen::CgOpts {
+                    settings,
+                    cc: cc.unwrap_or(PathBuf::from("cc")),
+                    output,
+                },
+                &gcx,
+                &entry,
+            )?;
         }
     }
 

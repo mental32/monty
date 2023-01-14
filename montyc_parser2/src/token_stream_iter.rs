@@ -10,6 +10,7 @@ where
 {
     pub bound: BoundMutInterner<'source, 'data, M>,
     pub lexer: L,
+    pub(crate) previous: Option<crate::Token>,
 }
 
 impl<'source, 'data, L, M> Iterator for TokenStreamIter<'source, 'data, L, M>
@@ -48,10 +49,20 @@ where
 
             PyToken::Invalid => unreachable!(),
 
+            PyToken::Newline
+                if self
+                    .previous
+                    .as_ref()
+                    .map_or(false, |(t, _)| *t == PyToken::Newline) =>
+            {
+                return self.next();
+            }
+
             _ => (token, span_range),
         };
 
         assert_ne!(token, PyToken::Invalid, "{:?}", span);
+        self.previous.replace((token.clone(), span_range.clone()));
 
         Some(Ok((token, span_range)))
     }

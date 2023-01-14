@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
 use montyc_core::codegen::{CgBlockId, CgInst};
-use montyc_core::opts::CompilerOptions;
+
 use montyc_core::{
     Function, MapT, ModuleRef, MontyError, MontyResult, PythonType, TypeError, TypeId,
-    TypingConstants, TypingContext, ValueId,
+    TypingConstants, ValueId,
 };
 
 use montyc_flatcode::{raw_inst::RawInst, FlatInst};
@@ -13,7 +13,8 @@ use montyc_parser::ast::{AstNode, Constant};
 use montyc_query::Queries;
 use petgraph::{data::DataMap, graph::NodeIndex, EdgeDirection};
 
-use crate::prelude::SessionContext;
+use crate::global_context::SessionContext;
+use crate::global_context::SessionMode;
 
 mod block_cfg;
 mod cfg_reducer;
@@ -77,9 +78,9 @@ pub fn typecheck(
 
     let code = cx.get_function_flatcode(fun.value_id)?;
 
-    match &cx.opts {
-        CompilerOptions::Check { libstd, input } => todo!(),
-        CompilerOptions::Build { .. } => {
+    match &cx.opts.mode {
+        SessionMode::Check => todo!(),
+        SessionMode::Build => {
             let (return_t, params_t) = match cx.tcx().get_python_type_of(fun.type_id).unwrap() {
                 PythonType::Callable { ret, params } => (ret, params),
                 _ => unreachable!(),

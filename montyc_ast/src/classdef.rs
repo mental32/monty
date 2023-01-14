@@ -1,6 +1,7 @@
 use montyc_lexer::Span;
 
 use crate::atom::Atom;
+use crate::expr::Expr;
 use crate::spanned::Spanned;
 use crate::AstVisitor;
 
@@ -9,6 +10,7 @@ use super::{AstNode, AstObject};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClassDef {
+    pub decorator_list: Vec<Spanned<Expr>>,
     pub name: Spanned<Atom>,
     pub body: Vec<Spanned<Statement>>,
 }

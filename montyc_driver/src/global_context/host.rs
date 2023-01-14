@@ -214,12 +214,9 @@ impl AcceptInput<&str, FlatCode> for &SessionContext {
         let mut modules = self.modules.lock();
         let mref = (modules.reserve() as u32).into();
 
-        let module_ast = montyc_parser::parse(
-            &input,
-            montyc_parser::comb::module,
-            Some(self.spanner.clone()),
-            mref,
-        );
+        let (module_ast, errs) = montyc_parser::parse(&self.spanner, mref, &input);
+        assert!(errs.is_empty());
+        let Some(module_ast) = module_ast else { unreachable!() };
 
         let _ = self
             .module_sources

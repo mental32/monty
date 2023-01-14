@@ -159,7 +159,7 @@ pub trait InstVisitor<T, V = usize, R = SpanRef> {
     fn visit_get_dunder(&mut self, object: V, dunder: &Dunder) -> T;
     fn visit_set_dunder(&mut self, object: V, dunder: &Dunder, value: V) -> T;
     fn visit_import(&mut self, path: &[R], relative: usize) -> T;
-    fn visit_const(&mut self, cst: &montyc_core::ast::Constant) -> T;
+    fn visit_const(&mut self, cst: &montyc_ast::Constant) -> T;
     fn visit_tuple(&mut self, tple: &[V]) -> T;
     fn visit_nop(&mut self) -> T;
     fn visit_undef(&mut self) -> T;

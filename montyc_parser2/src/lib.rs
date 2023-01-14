@@ -3,7 +3,6 @@
 
 #![forbid(unsafe_code)]
 #![warn(warnings)]
-#![feature(trace_macros)]
 
 use chumsky::Parser;
 
@@ -51,9 +50,21 @@ where
     let tokens: Vec<Token> = crate::token_stream_iter::TokenStreamIter {
         bound: span_interner.get(input, input_module_ref).unwrap(),
         lexer,
+        previous: None,
     }
     .map(|res| res.unwrap())
     .collect();
 
-    comb::module().parse_recovery(tokens)
+    tracing::trace!(n_tokens = ?tokens.len(), "collected lexer tokens");
+
+    let verbose =
+        std::env::var("MONTYC_PARSER_VERBOSE").map_or(false, |st| st == "1" || st == "true");
+
+    if verbose {
+        comb::module()
+            .then_ignore(chumsky::primitive::end())
+            .parse_recovery_verbose(tokens)
+    } else {
+        comb::module().parse_recovery(tokens)
+    }
 }
