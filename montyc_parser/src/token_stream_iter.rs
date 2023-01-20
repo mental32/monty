@@ -13,6 +13,19 @@ where
     pub(crate) previous: Option<crate::Token>,
 }
 
+impl<'source, 'data, L, M> TokenStreamIter<'source, 'data, L, M>
+where
+    L: Lexer + Iterator<Item = Token> + 'source,
+{
+    pub fn new(bound: BoundMutInterner<'source, 'data, M>, lexer: L) -> Self {
+        Self {
+            bound,
+            lexer,
+            previous: None,
+        }
+    }
+}
+
 impl<'source, 'data, L, M> Iterator for TokenStreamIter<'source, 'data, L, M>
 where
     L: Lexer + Iterator<Item = Token> + 'source,

@@ -46,8 +46,14 @@ impl<M> RawSpanInterner<M> {
 // -- struct SpanInterner;
 
 /// A strong reference to a SpanInterner instance.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct SpanInterner<M>(Rc<RefCell<RawSpanInterner<M>>>);
+
+impl<M> Clone for SpanInterner<M> {
+    fn clone(&self) -> Self {
+        Self(Rc::clone(&self.0))
+    }
+}
 
 impl<M> SpanInterner<M>
 where
