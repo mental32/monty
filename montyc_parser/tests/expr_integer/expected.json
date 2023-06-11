@@ -1,0 +1,25 @@
+{
+    "inner": {
+        "Primary": {
+            "inner": {
+                "Atomic": {
+                    "inner": {
+                        "Int": 1234
+                    },
+                    "span": {
+                        "end": 4,
+                        "start": 0
+                    }
+                }
+            },
+            "span": {
+                "end": 4,
+                "start": 0
+            }
+        }
+    },
+    "span": {
+        "end": 4,
+        "start": 0
+    }
+}

@@ -33,7 +33,7 @@ pub(crate) fn create_builtins(
     cx: &BackendImpl,
     object_module: &mut ObjectModule,
 ) -> MapT<(TypeId, &'static str), cranelift_codegen::ir::Function> {
-    log::trace!("[builtins::install_builtins] Installing builtins and intrinsics...");
+    tracing::trace!("Installing builtins and intrinsics...");
 
     let mut fids = MapT::new();
 

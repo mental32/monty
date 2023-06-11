@@ -1,27 +1,28 @@
 #![allow(dead_code)]
 
-use montyc_core::ast::Constant;
 use montyc_core::codegen::{CgBlockId, CgInst};
-use montyc_core::opts::CompilerOptions;
+
 use montyc_core::{
     Function, MapT, ModuleRef, MontyError, MontyResult, PythonType, TypeError, TypeId,
-    TypingConstants, TypingContext, ValueId,
+    TypingConstants, ValueId,
 };
 
 use montyc_flatcode::{raw_inst::RawInst, FlatInst};
 
+use montyc_parser::ast::{AstNode, Constant};
 use montyc_query::Queries;
-use petgraph::{data::DataMap, graph::NodeIndex, visit::EdgeRef, EdgeDirection};
+use petgraph::{data::DataMap, graph::NodeIndex, EdgeDirection};
 
-use crate::prelude::SessionContext;
+use crate::global_context::SessionContext;
+use crate::global_context::SessionMode;
 
 mod block_cfg;
 mod cfg_reducer;
 mod typing_machine;
 mod variable_flowgraph;
 
-use block_cfg::{BlockCFG, BlockCFGEdge};
-use cfg_reducer::{CFGReducer, GraphLike};
+use block_cfg::BlockCFG;
+use cfg_reducer::CFGReducer;
 use typing_machine::TypingMachine;
 
 /// run through a sequence of instructions and group linear sequences of instructions into "blocks"
@@ -34,16 +35,12 @@ fn flatseq_to_blocks(inst: &[FlatInst]) -> Vec<Vec<FlatInst>> {
     inst.iter().fold(vec![], |mut blocks, inst| {
         match (&inst.op, blocks.last_mut()) {
             (_, None) | (RawInst::JumpTarget | RawInst::PhiRecv, _) => {
-                log::trace!("[typeck::flatseq_to_blocks] %{} := {}", inst.value, inst.op);
+                tracing::trace!("%{} := {}", inst.value, inst.op);
                 blocks.push(vec![inst.clone()])
             }
 
             (_, Some(seq)) => {
-                log::trace!(
-                    "[typeck::flatseq_to_blocks]     %{} := {}",
-                    inst.value,
-                    inst.op
-                );
+                tracing::trace!("    %{} := {}", inst.value, inst.op);
 
                 seq.push(inst.clone())
             }
@@ -76,17 +73,14 @@ type ErrorTy = TypeError;
 pub fn typecheck(
     cx: &SessionContext,
     fun: &mut Function,
-) -> MontyResult<montyc_core::codegen::CgBlockCFG> {
-    log::trace!(
-        "[typeck::typecheck] typechecking funtion: {:?}",
-        fun.value_id
-    );
+) -> MontyResult<montyc_core::codegen::CgBlockCFG<Constant>> {
+    tracing::trace!("typechecking funtion: {:?}", fun.value_id);
 
     let code = cx.get_function_flatcode(fun.value_id)?;
 
-    match &cx.opts {
-        CompilerOptions::Check { libstd, input } => todo!(),
-        CompilerOptions::Build { .. } => {
+    match &cx.opts.mode {
+        SessionMode::Check => todo!(),
+        SessionMode::Build => {
             let (return_t, params_t) = match cx.tcx().get_python_type_of(fun.type_id).unwrap() {
                 PythonType::Callable { ret, params } => (ret, params),
                 _ => unreachable!(),
@@ -98,14 +92,13 @@ pub fn typecheck(
                 None => unreachable!("code should always have one block."),
             };
 
-            if let Some(montyc_parser::AstNode::FuncDef(f)) = code.ast {
-                for ((sref, _), type_id) in f
+            if let Some(AstNode::FuncDef(f)) = code.ast {
+                for (param, type_id) in f
                     .args
-                    .unwrap_or_default()
                     .into_iter()
                     .zip(params_t.unwrap_or_default().into_iter())
                 {
-                    let var = tm.locals.entry(sref.group()).or_default();
+                    let var = tm.locals.entry(param.inner.named.group()).or_default();
 
                     var.0.push(Binding {
                         block: entry,

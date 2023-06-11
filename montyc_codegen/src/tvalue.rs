@@ -4,7 +4,7 @@ use montyc_core::TypeId;
 pub enum ValueKind<V> {
     Imm(V),
     ThinRef(V),
-    FatRef(V, V),
+    // FatRef(V, V),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -28,16 +28,16 @@ impl<V> TValue<V> {
         }
     }
 
-    pub fn fat(left: V, right: V, ty: TypeId) -> Self {
-        Self {
-            inner: ValueKind::FatRef(left, right),
-            type_id: ty,
-        }
-    }
+    // pub fn fat(left: V, right: V, ty: TypeId) -> Self {
+    //     Self {
+    //         inner: ValueKind::FatRef(left, right),
+    //         type_id: ty,
+    //     }
+    // }
 
     pub fn as_value(&self) -> &V {
         match &self.inner {
-            ValueKind::Imm(a) | ValueKind::ThinRef(a) | ValueKind::FatRef(a, _) => a,
+            ValueKind::Imm(a) | ValueKind::ThinRef(a) /* |  ValueKind::FatRef(a, _) */ => a,
         }
     }
 }

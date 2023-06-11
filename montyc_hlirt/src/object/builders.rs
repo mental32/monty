@@ -89,8 +89,8 @@ impl<const OB_TYPE: usize> ObjectBuilder<{ OB_TYPE }> {
             let key_as_str = rt.objects.insert(key.clone().into_py_val());
             let value_as_obj = rt.objects.insert(value);
 
-            log::trace!(
-                "[ObjectBuilder::properties_into_dict] __dict__[{:?} ({:?})] = {:?}",
+            tracing::trace!(
+                "__dict__[{:?} ({:?})] = {:?}",
                 key,
                 key_as_str,
                 value_as_obj
@@ -105,7 +105,7 @@ impl<const OB_TYPE: usize> ObjectBuilder<{ OB_TYPE }> {
 
 impl ObjectBuilder<{ OBJECT }> {
     pub fn synthesise_within(self, rt: &mut Runtime) -> PyResult<ObjectId> {
-        log::trace!("[ObjectBuilder::synthesise_within] synthesizing an `any` object");
+        tracing::trace!("synthesizing an `any` object");
 
         let __dict__ = self.properties_into_dict(rt);
         let __class__ = rt.singletons.object_class;
@@ -123,7 +123,7 @@ impl ObjectBuilder<{ OBJECT }> {
 
 impl ObjectBuilder<{ CLASS }> {
     pub fn synthesise_within(self, rt: &mut Runtime) -> PyResult<ObjectId> {
-        log::trace!("[ObjectBuilder::synthesise_within] synthesizing a class object");
+        tracing::trace!("synthesizing a class object");
 
         let __dict__ = self.properties_into_dict(rt);
         let __class__ = rt.singletons.type_class;
@@ -143,7 +143,7 @@ impl ObjectBuilder<{ CLASS }> {
 
 impl ObjectBuilder<{ MODULE }> {
     pub fn synthesise_within(self, rt: &mut Runtime) -> PyResult<ObjectId> {
-        log::trace!("[ObjectBuilder::synthesise_within] synthesizing a module object");
+        tracing::trace!("synthesizing a module object");
 
         let __class__ = rt.singletons.module_class;
         let module = rt.objects.insert_with(|alloc_id| PyValue::Module {

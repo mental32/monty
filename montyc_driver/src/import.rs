@@ -12,7 +12,7 @@ use montyc_hlirt::{
     ObjectId, ObjectSpace, PyException, PyResult, PyResultExt,
 };
 
-use crate::prelude::SessionContext;
+use crate::global_context::SessionContext;
 
 // -- ModuleSpec
 
@@ -92,11 +92,7 @@ impl FileFinder {
         let mut head = fullname_st.rsplit('.');
         let tail = head.next().ok_or_else(|| todo!("IndexError"))?;
 
-        log::trace!(
-            "[FileFinder::find_spec] fullname={:?}, tail={:?}",
-            fullname_st,
-            tail
-        );
+        tracing::trace!("fullname={:?}, tail={:?}", fullname_st, tail);
 
         let mut cache = MapT::new();
 
@@ -110,15 +106,12 @@ impl FileFinder {
                     .to_string();
 
                 if name == tail {
-                    log::trace!("[FileFinder::find_spec] found tail={:?} in cache", tail);
+                    tracing::trace!("found tail={:?} in cache", tail);
 
                     // check if the module is the name of a directory and thus a package.
                     let base_path = path.join(tail);
 
-                    log::trace!(
-                        "[FileFinder::find_spec] base_path ++ tail = {:?}",
-                        base_path
-                    );
+                    tracing::trace!("base_path ++ tail = {:?}", base_path);
 
                     for (suffix, _loader) in self.loaders.iter() {
                         let init_filename = format!("__init__{}", suffix);
@@ -135,27 +128,19 @@ impl FileFinder {
                     _is_namespace = self.base_path.is_dir();
                 }
 
-                log::trace!(
-                    "[FileFinder::fill_cache]     Mapping {:?} -> {:?}",
-                    name,
-                    path
-                );
+                tracing::trace!("    Mapping {:?} -> {:?}", name, path);
 
                 cache.insert(name, path);
             }
         }
 
         for (suffix, loader) in self.loaders.iter() {
-            log::trace!(
-                "[FileFinder::find_spec] Trying loader={:?} with suffix={:?}",
-                loader,
-                suffix
-            );
+            tracing::trace!("Trying loader={:?} with suffix={:?}", loader, suffix);
 
             let partial = format!("{}{}", tail, suffix);
 
             if let Some(path) = cache.get(&partial) {
-                log::trace!("[FileFinder::find_spec]  cache hit for path={:?}", path);
+                tracing::trace!(" cache hit for path={:?}", path);
 
                 let full_path = self.base_path.join(partial);
                 let path = ecx
@@ -172,8 +157,8 @@ impl FileFinder {
         todo!("is_namespace");
 
         // if is_namespace {
-        //     log::trace!(
-        //         "[FileFinder::find_space] Potential namespace package {}",
+        //     tracing::trace!(
+        //         "Potential namespace package {}",
         //         fullname
         //     );
 
@@ -325,10 +310,10 @@ mod path_finder {
     ) -> PyResult<ObjectId> {
         let none_v = ecx.runtime_mut().singletons.none_v;
 
-        log::trace!("[PathFinder::get_path_from_importer_cache] path={:?}", path);
+        tracing::trace!("path={:?}", path);
 
         if path == ecx.new_string("").trace()? {
-            log::trace!("[PathFinder::get_path_from_importer_cache] path is an empty string!");
+            tracing::trace!("path is an empty string!");
 
             path = match ecx
                 .runtime_host_mut()
@@ -338,10 +323,7 @@ mod path_finder {
                 Ok(path) => {
                     let path = format!("{}", path.display());
 
-                    log::trace!(
-                        "[PathFinder::get_path_from_importer_cache] path is set to cwd={:?}",
-                        path
-                    );
+                    tracing::trace!("path is set to cwd={:?}", path);
 
                     ecx.new_string(path.as_str()).trace()?
                 }
@@ -352,10 +334,7 @@ mod path_finder {
 
         let finder = path_hooks(ecx, path).trace()?;
 
-        log::trace!(
-            "[PathFinder::get_path_from_importer_cache] hook produced finder={:?}",
-            finder
-        );
+        tracing::trace!("hook produced finder={:?}", finder);
 
         Ok(finder)
     }
@@ -365,7 +344,7 @@ mod path_finder {
         let none_v = ecx.runtime_mut().singletons.none_v;
         let sys = ecx.runtime_mut().singletons.sys;
 
-        log::trace!("[PathFinder::path_hooks] finding path hook for {:?}", path);
+        tracing::trace!("finding path hook for {:?}", path);
 
         let sys_path_hooks = ecx.getattr(sys, &"path_hooks").trace()?;
         let mut sys_path_hooks_iter = ecx.iter_object(sys_path_hooks);
@@ -373,12 +352,12 @@ mod path_finder {
         while let Some(hook) = sys_path_hooks_iter.next(ecx) {
             let hook = hook.trace()?;
 
-            log::trace!("[PathFinder::path_hooks] calling hook {:?}", hook,);
+            tracing::trace!("calling hook {:?}", hook,);
 
             let finder = ecx.call_object(hook, &[path]);
 
             if matches!(&finder, Err(exc) if exc.is_import_error()) {
-                log::trace!("[PathFinder::path_hooks]  hook rejected path.",);
+                tracing::trace!(" hook rejected path.",);
 
                 continue;
             }
@@ -386,7 +365,7 @@ mod path_finder {
             return finder.trace();
         }
 
-        log::trace!("[PathFinder::path_hooks]  no hook found, returning None.",);
+        tracing::trace!(" no hook found, returning None.",);
 
         Ok(none_v)
     }
@@ -397,8 +376,8 @@ mod path_finder {
         path: ObjectId,
         target: Option<ObjectId>,
     ) -> PyResult<ObjectId> {
-        log::trace!(
-            "[PathFinder::get_spec] get_spec(fullname={:?}, path={:?}, target={:?})",
+        tracing::trace!(
+            "get_spec(fullname={:?}, path={:?}, target={:?})",
             fullname,
             path,
             target,
@@ -410,20 +389,22 @@ mod path_finder {
         let mut path_iter = ecx.iter_object(path);
 
         while let Some(entry) = path_iter.next(ecx) {
-            log::trace!("[PathFinder::get_spec]   path_iter -> {:?}", entry);
+            tracing::trace!("  path_iter -> {:?}", entry);
 
             let entry = entry.trace()?;
 
             let finder = get_path_from_importer_cache(ecx, entry).trace()?;
 
             if finder == none_v {
-                log::trace!("[PathFinder::get_spec]   no finder was produced for this path, skipping to the next one.");
+                tracing::trace!(
+                    "  no finder was produced for this path, skipping to the next one."
+                );
 
                 continue;
             }
 
-            log::trace!(
-                "[PathFinder::get_spec]   calling finder.find_spec(fullname={:?}, target={:?})",
+            tracing::trace!(
+                "  calling finder.find_spec(fullname={:?}, target={:?})",
                 fullname,
                 target
             );
@@ -433,23 +414,17 @@ mod path_finder {
                 .trace()?;
 
             if spec == none_v {
-                log::trace!("[PathFinder::get_spec]   finder.find_spec returned None, skipping to the next path.");
+                tracing::trace!("  finder.find_spec returned None, skipping to the next path.");
 
                 continue;
             }
 
-            log::trace!(
-                "[PathFinder::get_spec]   finder.find_spec returned a spec={:?}",
-                spec
-            );
+            tracing::trace!("  finder.find_spec returned a spec={:?}", spec);
 
             let spec_loader = ecx.getattr(spec, &"loader").trace()?;
 
             if spec_loader != none_v {
-                log::trace!(
-                    "[PathFinder::get_spec]     spec even has associated loader={:?}",
-                    spec_loader
-                );
+                tracing::trace!("    spec even has associated loader={:?}", spec_loader);
 
                 return Ok(spec);
             }
@@ -473,7 +448,7 @@ mod path_finder {
     pub fn find_spec(cx: CallCx) -> PyResult<ObjectId> {
         let none_v = cx.ecx.runtime_mut().singletons.none_v;
 
-        log::trace!("[PathFinder::find_spec] find_spec with args={:?}", cx.args);
+        tracing::trace!("find_spec with args={:?}", cx.args);
 
         let ([fullname], [mut path, target]) = cx
             .parse_args_with(montyc_hlirt::argparse::args_opt_unboxed(
@@ -498,7 +473,7 @@ mod path_finder {
         let spec = get_spec(cx.ecx, fullname, path, target).trace()?;
 
         if spec == none_v {
-            log::trace!("[PathFinder::find_spec] get_spec returned None");
+            tracing::trace!("get_spec returned None");
 
             return Ok(none_v);
         }

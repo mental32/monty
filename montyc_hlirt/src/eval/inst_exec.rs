@@ -1,7 +1,7 @@
-use montyc_core::ast::Constant;
 use montyc_core::SpanRef;
 use montyc_flatcode::raw_inst::{Dunder, RawInst};
 use montyc_flatcode::FlatInst;
+use montyc_parser::ast::Constant;
 
 use crate::exception::PyResult;
 
@@ -22,7 +22,7 @@ pub trait InstExec {
             ..
         } = &inst;
 
-        log::trace!("[BoundEvaluationContext::eval] {:?}", inst);
+        tracing::trace!("{:?}", inst);
 
         match op {
             RawInst::SetAnnotation { .. } => {

@@ -1,6 +1,6 @@
 use crate::global_context::SessionContext;
 
-use super::cfg_reducer::{CFGReducer, GraphLike};
+use super::cfg_reducer::GraphLike;
 use super::variable_flowgraph::VariableFlowGraph;
 use super::{FlatInst, NodeIndex, RawInst};
 

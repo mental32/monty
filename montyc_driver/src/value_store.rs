@@ -3,12 +3,12 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use dashmap::DashMap;
+use montyc_parser::ast::{AstNode, Constant};
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use montyc_core::{Function, MapT, ModuleRef, TaggedValueId, TypeId, Value, ValueId};
 use montyc_flatcode::{FlatCode, FlatSeq};
 use montyc_hlirt::ObjectId;
-use montyc_parser::AstNode;
 
 pub type RawValueGraph = DiGraph<Value, ()>;
 
@@ -88,7 +88,7 @@ pub struct ValueMetadata {
     pub internal_refs: Option<Vec<ValueId>>,
 
     /// CFG for Codegen.
-    pub cg_flowgraph: Option<montyc_core::codegen::CgBlockCFG>,
+    pub cg_flowgraph: Option<montyc_core::codegen::CgBlockCFG<Constant>>,
 }
 
 #[derive(Debug, Default)]
@@ -137,9 +137,9 @@ impl GlobalValueStore {
     {
         let ((_, hash), _) = self.hash_assoc_key(key);
 
-        let value = self.assoc_cache.get(&hash)?.value();
+        let value = self.assoc_cache.get(&hash)?.value().clone();
 
-        Some(*value)
+        Some(value)
     }
 
     /// "associates" a given key with the ValueId.
@@ -189,7 +189,8 @@ impl GlobalValueStore {
         f: impl FnOnce(&ValueMetadata) -> T,
     ) -> Option<T> {
         let value = key.resolve(self)?;
-        let meta = self.metadata.get(&value)?.value();
+        let get = self.metadata.get(&value)?;
+        let meta = get.value();
 
         Some(f(meta))
     }

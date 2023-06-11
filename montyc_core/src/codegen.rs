@@ -13,14 +13,14 @@ pub enum Field {
 ///
 #[derive(Debug, Clone)]
 #[rustfmt::skip]
-pub enum CgInst {
+pub enum CgInst<C> {
     Jump { to: CgBlockId, with: Vec<usize> },
     JumpIfTrue { to: CgBlockId, ctrl: usize },
     JumpIfFalse { to: CgBlockId, ctrl: usize },
 
     Use { value: ValueId, ret: usize, },
     Call { value: ValueId, args: Vec<usize>, ret: usize },
-    Const { cst: crate::ast::Constant, ret: usize },
+    Const { cst: C, ret: usize },
 
     FieldLoad { orig: usize, orig_t: TypeId, field: Field, field_t: TypeId, ret: usize },
 
@@ -35,4 +35,4 @@ pub enum CgInst {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CgBlockId(pub usize);
 
-pub type CgBlockCFG<E = ()> = petgraph::Graph<Vec<CgInst>, E>;
+pub type CgBlockCFG<C, E = ()> = petgraph::Graph<Vec<CgInst<C>>, E>;

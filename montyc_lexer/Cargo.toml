@@ -1,0 +1,8 @@
+[package]
+name = "montyc_lexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+logos = "0.12.1"
+serde = { version = "1.0.147", features = ["derive"] }

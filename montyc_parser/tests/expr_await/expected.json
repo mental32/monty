@@ -1,0 +1,44 @@
+{
+    "inner": {
+        "Primary": {
+            "inner": {
+                "Await": {
+                    "inner": {
+                        "Primary": {
+                            "inner": {
+                                "Atomic": {
+                                    "inner": {
+                                        "Name": [
+                                            0,
+                                            0
+                                        ]
+                                    },
+                                    "span": {
+                                        "end": 9,
+                                        "start": 6
+                                    }
+                                }
+                            },
+                            "span": {
+                                "end": 9,
+                                "start": 6
+                            }
+                        }
+                    },
+                    "span": {
+                        "end": 9,
+                        "start": 6
+                    }
+                }
+            },
+            "span": {
+                "end": 9,
+                "start": 6
+            }
+        }
+    },
+    "span": {
+        "end": 9,
+        "start": 6
+    }
+}

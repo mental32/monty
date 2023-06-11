@@ -1,12 +1,21 @@
-use montyc_core::ast::Constant;
-use montyc_core::{patma, Span};
-
-use montyc_parser::ast::{
-    Annotation, Assign, Atom, ClassDef, Expr, FunctionDef, IfChain, Import, Primary, Return, While,
-};
-use montyc_parser::{AstNode, AstObject, AstVisitor};
-
 use crate::SequenceType;
+
+use montyc_ast::ann::Annotation;
+use montyc_ast::assign::Assign;
+use montyc_ast::classdef::ClassDef;
+use montyc_ast::funcdef::{FunctionDef, FunctionDefParam};
+use montyc_ast::ifstmt::IfChain;
+use montyc_ast::import::Import;
+use montyc_ast::module::Module;
+use montyc_ast::primary::Primary;
+use montyc_ast::return_::Return;
+use montyc_ast::while_::While;
+use montyc_ast::{AstNode, AstObject, AstVisitor, Constant};
+
+use montyc_core::patma;
+use montyc_lexer::Span;
+use montyc_parser::ast::atom::Atom;
+use montyc_parser::ast::expr::Expr;
 
 use super::raw_inst::{Dunder, RawInst};
 use super::{FlatCode, INVALID_VALUE};
@@ -34,7 +43,7 @@ fn visit_const(this: &mut FlatCode, node: &Atom, span: Option<Span>) -> usize {
 impl AstVisitor<usize> for FlatCode {
     fn visit_any(&mut self, o: &dyn AstObject) -> usize {
         match o.into_ast_node() {
-            AstNode::Comment(_) => self.visit_pass(),
+            AstNode::Comment(_) => self.visit_pass(&montyc_ast::Pass, None),
             node => todo!("{:#?}", node),
         }
     }
@@ -47,7 +56,14 @@ impl AstVisitor<usize> for FlatCode {
             .map(|dec| dec.visit_with(self, None))
             .collect();
 
-        let params = match (&fndef.reciever, &fndef.args) {
+        let params = match (
+            None::<montyc_ast::spanned::Spanned<montyc_ast::atom::Atom>>,
+            if fndef.args.is_empty() {
+                None
+            } else {
+                Some(&fndef.args)
+            },
+        ) {
             (None, None) => vec![],
             (Some(recv), None) => vec![(recv.inner.as_name().unwrap(), None)],
 
@@ -58,7 +74,11 @@ impl AstVisitor<usize> for FlatCode {
                     parameters.push((reciever.inner.as_name().unwrap(), None));
                 }
 
-                for (name, annotation) in params.iter() {
+                for FunctionDefParam {
+                    named: name,
+                    annotation,
+                } in params.iter().map(|p| p.inner.clone())
+                {
                     let ann = annotation.as_ref().map(|ann| ann.visit_with(self, None));
                     parameters.push((name.clone(), ann));
                 }
@@ -289,7 +309,7 @@ impl AstVisitor<usize> for FlatCode {
 
                     match node.inner.into_ast_node() {
                         AstNode::FuncDef(def) => {
-                            let function = def.visit_with(this, None);
+                            let function = def.visit_with(this, Some(node.span.clone()));
 
                             let setter =
                                 this.sequences[this.sequence_index].inst.last_mut().unwrap();
@@ -461,7 +481,7 @@ impl AstVisitor<usize> for FlatCode {
         INVALID_VALUE
     }
 
-    fn visit_pass(&mut self) -> usize {
+    fn visit_pass(&mut self, _pass: &montyc_ast::Pass, _span: Option<Span>) -> usize {
         self.inst(RawInst::Nop)
     }
 
@@ -506,8 +526,8 @@ impl AstVisitor<usize> for FlatCode {
 
     fn visit_return(&mut self, ret: &Return, span: Option<Span>) -> usize {
         let rv = match &ret.value {
-            Ok(expr) => expr.visit_with(self, None),
-            Err(_) => self.inst(RawInst::Const(Constant::None)),
+            Some(expr) => expr.visit_with(self, None),
+            None => self.inst(RawInst::Const(Constant::None)),
         };
 
         let ret = self.inst(RawInst::Return { value: rv });
@@ -714,15 +734,13 @@ impl AstVisitor<usize> for FlatCode {
     fn visit_attr(&mut self, attr: &Primary, _span: Option<Span>) -> usize {
         let (base, attr) = patma!((left, attr), Primary::Attribute { left, attr } in attr).unwrap();
 
-        let object = base.visit_with(self, None);
+        let lhs = base.visit_with(self, Some(base.span.clone()));
+        let rhs = attr.visit_with(self, Some(attr.span.clone()));
 
-        let r = attr.inner.as_name().unwrap();
-        let attr = self.inst(RawInst::RefAsStr { r });
-
-        self.inst(RawInst::GetAttribute { object, attr })
+        self.inst(RawInst::GetAttribute { object: lhs, attr: rhs })
     }
 
-    fn visit_module(&mut self, module: &montyc_parser::ast::Module, _: Option<Span>) -> usize {
+    fn visit_module(&mut self, module: &Module, _: Option<Span>) -> usize {
         for stmt in &module.body {
             stmt.visit_with(self, None);
         }
@@ -730,12 +748,11 @@ impl AstVisitor<usize> for FlatCode {
         INVALID_VALUE
     }
 
-    fn visit_annotation(
-        &mut self,
-        ann: &montyc_parser::ast::Annotation,
-        _span: Option<Span>,
-    ) -> usize {
-        let Annotation { name, kind } = ann;
+    fn visit_annotation(&mut self, ann: &Annotation, _span: Option<Span>) -> usize {
+        let Annotation {
+            name,
+            annotation: kind,
+        } = ann;
 
         let name = match name.inner.as_name() {
             Some(sref) => sref,

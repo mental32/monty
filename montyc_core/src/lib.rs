@@ -43,7 +43,6 @@ pub mod dict;
 pub mod error;
 pub mod func;
 pub mod module;
-pub mod opts;
 pub mod span;
 pub mod typing;
 pub mod utils;

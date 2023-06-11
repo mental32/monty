@@ -9,6 +9,7 @@ use montyc_core::{
     Function, ModuleData, ModuleRef, MontyError, Qualname, TypeId, TypingContext, Value, FUNCTION,
 };
 use montyc_flatcode::{FlatCode, FlatSeq};
+use montyc_parser::ast::Constant;
 
 pub(crate) type MontyResult<T> = Result<T, MontyError>;
 
@@ -23,9 +24,6 @@ pub(crate) type MontyResult<T> = Result<T, MontyError>;
 pub trait Queries {
     /// Get the associated typing context with this query provider.
     fn tcx<'a>(&'a self) -> &'a dyn TypingContext;
-
-    /// A fancy path to the entry function.
-    fn entry_path(&self) -> Option<&str>;
 
     /// Given some `ValueId` compute its type and return the corresponding `TypeId`.
     fn get_type_of(&self, val: ValueId) -> MontyResult<TypeId>;
@@ -55,7 +53,7 @@ pub trait Queries {
     fn get_function_cg_cfg(
         &self,
         fid: TaggedValueId<FUNCTION>,
-    ) -> MontyResult<montyc_core::codegen::CgBlockCFG>;
+    ) -> MontyResult<montyc_core::codegen::CgBlockCFG<Constant>>;
 
     /// Get the associated function for this value.
     fn get_function(&self, value_id: ValueId) -> MontyResult<Function>;
@@ -64,7 +62,7 @@ pub trait Queries {
     fn spanref_to_value(&self, sref: SpanRef) -> MontyResult<ValueId>;
 
     /// Given a `SpanRef` try and resolve it to its corresponding string slice.
-    fn spanref_to_str(&self, sref: SpanRef) -> MontyResult<&str>;
+    fn spanref_to_str(&self, sref: SpanRef) -> MontyResult<String>;
 
     /// Create a new `SpanRef` from a given string slice.
     fn str_to_spanref(&self, st: &str) -> SpanRef;

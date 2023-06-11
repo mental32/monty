@@ -1,8 +1,12 @@
+use std::borrow::Cow;
 use std::cell::{RefCell, RefMut};
 use std::convert::TryInto;
+use std::fmt;
+use std::io;
+use std::panic;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fmt, io, panic, rc::Rc};
 
 use ahash::AHashSet;
 
@@ -12,6 +16,7 @@ use montyc_hlirt::argparse::{ObjectParserExt, Parser};
 use montyc_hlirt::ObjectSpace;
 
 use montyc_hlirt::rt::singletons::Singletons;
+use montyc_parser::span_interner::SpanInterner;
 use parking_lot::Mutex;
 
 use montyc_core::dict::PyDictRaw;
@@ -19,17 +24,16 @@ use montyc_core::utils::SSAMap;
 use montyc_core::{
     patma, BuiltinType, LocalTypeId, MapT, ModuleData, ModuleRef, MontyError, MontyResult,
     PythonType, SpanRef, TaggedValueId, Type, TypeId, TypingConstants, TypingContext, Value,
-    ValueId, FUNCTION, MODULE,
+    ValueId, FUNCTION,
 };
 use montyc_flatcode::FlatCode;
 use montyc_hlirt::ctx::{CallCx, EvalGlue};
 use montyc_hlirt::object::{FuncLike, IntoPyValue, ObjectBuilder, PyValue, ReadyCallable};
 use montyc_hlirt::rt::{AcceptInput, Runtime, RuntimeHost, RuntimeHostExt};
-use montyc_hlirt::{argparse, ObjectId, PyException, PyResult, PyResultExt};
-use montyc_parser::{AstObject, SpanInterner};
+use montyc_hlirt::{argparse, ObjectId, PyException, PyResult};
+
 use montyc_query::Queries;
 
-use crate::prelude::*;
 use crate::value_store::{GVKey, GlobalValueStore};
 
 pub mod host;
@@ -217,7 +221,7 @@ impl TypingContext for TypingData {
         name: String,
         property: montyc_core::Property,
     ) -> Option<montyc_core::Property> {
-        log::trace!(
+        tracing::trace!(
             "[<TypingData as TypingContext>::insert_property] setting type property: {} {} {}",
             self.display_type(base, &|_| None)
                 .unwrap_or_else(|| format!("{:?}", base)),
@@ -301,7 +305,7 @@ impl TypingContext for TypingData {
                 } = self;
 
                 match root {
-                    PythonType::Class { object_id, members } => todo!(),
+                    PythonType::Class { .. } => todo!(),
                     PythonType::Instance { of } => write!(
                         f,
                         "Instance of {}",
@@ -414,14 +418,27 @@ pub struct Pot {
     pub(crate) n_objects: AtomicUsize,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionOpts {
+    pub input: PathBuf,
+    pub libstd: PathBuf,
+    pub mode: SessionMode,
+}
+
+#[derive(Debug, Clone)]
+pub enum SessionMode {
+    Check,
+    Build,
+}
+
 /// Global state for the current compilation.
 #[derive(Debug)]
 pub struct SessionContext {
     /// The options this context was created with.
-    pub(crate) opts: CompilerOptions,
+    pub(crate) opts: SessionOpts,
 
     /// A Span interner shared between all parsing sessions.
-    pub(crate) spanner: SpanInterner,
+    pub(crate) spanner: SpanInterner<ModuleRef>,
 
     /// Static names that get loaded at startup.
     static_names: StaticNames,
@@ -433,7 +450,10 @@ pub struct SessionContext {
     pub(crate) module_sources: DashMap<ModuleRef, Box<str>>,
 
     /// A map of module -> ast.
-    pub(crate) module_asts: DashMap<ModuleRef, Rc<montyc_parser::ast::Module>>,
+    pub(crate) module_asts: DashMap<
+        ModuleRef,
+        Rc<montyc_parser::ast::spanned::Spanned<montyc_parser::ast::module::Module>>,
+    >,
 
     /// An interpreter runtime for consteval.
     pub(crate) const_runtime: Rc<RefCell<montyc_hlirt::rt::Runtime>>,
@@ -447,33 +467,17 @@ pub struct SessionContext {
     pot: Pot,
 }
 
-impl SessionContext {
-    fn new(opts: CompilerOptions) -> Self {
-        let value_store = Box::new(GlobalValueStore::default());
-        let const_runtime = Rc::new(RefCell::new(Runtime::new_uninit()));
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct UninitializedSession(SessionContext);
 
-        Self {
-            opts,
-            spanner: SpanInterner::new(),
-            static_names: Default::default(),
-            modules: Default::default(),
-            module_sources: Default::default(),
-            module_asts: Default::default(),
-            const_runtime: Rc::clone(&const_runtime),
-            typing_context: TypingData::initialized(),
-            value_store,
-            pot: Pot::default(),
-        }
-    }
+impl UninitializedSession {
+    pub fn initialize(self) -> SessionContext {
+        let Self(mut gcx) = self;
+        let opts = gcx.opts.clone();
 
-    /// Initiate a new context with the given, verified, options.
-    pub fn initialize(
-        VerifiedCompilerOptions(opts): &VerifiedCompilerOptions,
-    ) -> Result<Self, (Self, MontyError)> {
-        let mut gcx = Self::new(opts.clone());
-
-        log::debug!("[global_context:initialize] {:?}", opts);
-        log::debug!("[global_context:initialize] stdlib := {:?}", opts.libstd());
+        tracing::debug!("{:?}", opts);
+        tracing::debug!("stdlib := {:?}", opts.libstd);
 
         let monty_mdata = Rc::new(ModuleData {
             mref: ModuleRef(0),
@@ -501,18 +505,35 @@ impl SessionContext {
             gcx.static_names.insert(name_ref.group(), raw_name);
         }
 
-        log::debug!(
-            "[global_context:initialize] initialized {:?} static names",
-            gcx.static_names.len()
-        );
+        tracing::debug!("initialized {:?} static names", gcx.static_names.len());
 
-        match gcx.initialize_hlirt(monty_mdata.as_ref()) {
-            Ok(_) => Ok(gcx),
-            Err(err) => match err {
-                montyc_hlirt::rt::RuntimeError::Host(e) => Err((gcx, e)),
-                _ => todo!("{:#?}", err),
-            },
-        }
+        let () = gcx
+            .initialize_hlirt(monty_mdata.as_ref())
+            .expect("failed initializing hlirt");
+
+        gcx
+    }
+}
+
+impl SessionContext {
+    pub fn new_uninit(opts: SessionOpts) -> UninitializedSession {
+        let value_store = Box::new(GlobalValueStore::default());
+        let const_runtime = Rc::new(RefCell::new(Runtime::new_uninit()));
+
+        let this = Self {
+            opts,
+            spanner: SpanInterner::new(),
+            static_names: Default::default(),
+            modules: Default::default(),
+            module_sources: Default::default(),
+            module_asts: Default::default(),
+            const_runtime: Rc::clone(&const_runtime),
+            typing_context: TypingData::initialized(),
+            value_store,
+            pot: Pot::default(),
+        };
+
+        UninitializedSession(this)
     }
 
     /// Initialize the interpreter runtime, setting .
@@ -530,18 +551,18 @@ impl SessionContext {
 
                 rt.try_init(&mut &*self); // initialize interpreter builtins and classes.
 
-                rt.singletons.monty = ObjectBuilder::<{ MODULE }>::new()
+                rt.singletons.monty = ObjectBuilder::module()
                     .setattr(
                         "intrinsic",
                         ReadyCallable::from(move |cx: CallCx| -> PyResult<ObjectId> {
-                            log::trace!("[__monty.intrinsic] applied intrinsic.");
+                            tracing::trace!("[__monty.intrinsic] applied intrinsic.");
                             return Ok(cx.args[0]);
                         }),
                     )
                     .setattr(
                         "extern",
                         ReadyCallable::from(move |cx: CallCx| -> PyResult<ObjectId> {
-                            log::trace!("[__monty.extern] called extern.");
+                            tracing::trace!("[__monty.extern] called extern.");
 
                             let (cx, (callconv,)) = argparse::arg("callconv")
                                 .map_value(|id, v| {
@@ -558,7 +579,7 @@ impl SessionContext {
                                     .into()
                             })?;
 
-                            log::trace!("[__monty.extern]   callconv: {:?}", callconv_st);
+                            tracing::trace!("[__monty.extern]   callconv: {:?}", callconv_st);
 
                             let decorator =
                                 ReadyCallable::from(move |cx: CallCx| -> PyResult<ObjectId> {
@@ -599,12 +620,33 @@ impl SessionContext {
                     .synthesise_within(&mut *rt)?;
             }
 
+            let mut rt_mut = rt.borrow_mut();
+
+            // initialize the sys module with stuff necessary for importing.
+            rt_mut.singletons.sys = {
+                let sys = ObjectBuilder::module()
+                    .setattr("path", Vec::<ObjectId>::new())
+                    .setattr("path_hooks", Vec::<ObjectId>::new())
+                    .setattr("meta_path", Vec::<ObjectId>::new())
+                    .setattr("modules", {
+                        let mut dict = PyDictRaw::from(MapT::new());
+                        let key = rt_mut.new_string("__monty");
+                        dict.insert(rt_mut.hash("__monty"), (key, rt_mut.singletons.monty));
+                        dict
+                    });
+
+                sys.synthesise_within(&mut *rt_mut)?
+            };
+
+            std::mem::drop(rt_mut);
+
             let (_, builtins) = self
-                .include_module(self.opts.libstd().join("builtins.py"), "builtins")
+                .include_module(self.opts.libstd.join("builtins.py"), "builtins")
                 .map_err(|e| montyc_hlirt::rt::RuntimeError::Host(e))?;
 
             let mut rt = rt.borrow_mut();
 
+            assert!(!builtins.is_uninit());
             rt.singletons.builtins = builtins;
 
             let default_builtin_classes: &[(TypeId, fn(&mut Singletons) -> &mut ObjectId)] = &[
@@ -619,12 +661,15 @@ impl SessionContext {
                 (TypingConstants::UntypedFunc, |s| &mut s.function_class),
             ];
 
-            log::trace!("[SessionContext::initialize_hlirt] proceeding to overwrite builtin singletons with classes from builtins.py");
+            tracing::trace!(
+                "proceeding to overwrite builtin singletons with classes from builtins.py"
+            );
 
             for (ty, as_mut_ref) in default_builtin_classes {
                 if let PythonType::Builtin { inner } =
                     self.typing_context.get_python_type_of(*ty).unwrap()
                 {
+                    tracing::trace!(ty = ?inner, "accessing builtin type");
                     let hash = rt.hash(inner.name());
                     let (_, real_class) = rt
                         .objects
@@ -669,18 +714,7 @@ impl SessionContext {
                 }
             }
 
-            log::trace!("[SessionContext::initialize_hlirt] done");
-
-            // initialize the sys module with stuff necessary for importing.
-            rt.singletons.sys = {
-                let sys = ObjectBuilder::<{ MODULE }>::new()
-                    .setattr("path", Vec::<ObjectId>::new())
-                    .setattr("path_hooks", Vec::<ObjectId>::new())
-                    .setattr("meta_path", Vec::<ObjectId>::new())
-                    .setattr("modules", PyDictRaw::from(MapT::new()));
-
-                sys.synthesise_within(&mut *rt)?
-            };
+            tracing::trace!("done");
         }
 
         // short version: "take the current bootstrap file and eval it and simply natively define stuff its missing."
@@ -699,7 +733,7 @@ impl SessionContext {
         // until this gets fixed we gotta do this.
 
         let bootstrap = {
-            let bootstrap_path = self.opts.libstd().join("importlib/_bootstrap.py");
+            let bootstrap_path = self.opts.libstd.join("importlib/_bootstrap.py");
 
             self.include_module(bootstrap_path, "importlib._bootstrap")
                 .map_err(RuntimeError::Host)?
@@ -711,14 +745,24 @@ impl SessionContext {
     }
 
     #[inline]
-    pub(crate) fn resolve_sref_as_str(&self, sref: SpanRef) -> Option<&str> {
-        self.spanner.spanref_to_str(sref, |mref, span| {
+    pub(crate) fn resolve_sref_as_str(&self, sref: SpanRef) -> Option<String> {
+        let resolver = |mref, span| {
             if mref == ModuleRef(0) {
-                self.static_names.get(&sref.group()).cloned()
+                self.static_names
+                    .get(&sref.group())
+                    .cloned()
+                    .map(|st| Cow::Owned(st.to_owned()))
             } else {
-                self.module_sources.get(&mref)?.value().get(span)
+                self.module_sources
+                    .get(&mref)?
+                    .get(span)
+                    .map(|st: &str| Cow::Owned(st.to_owned()))
             }
-        })
+        };
+
+        self.spanner
+            .spanref_to_str(sref, resolver)
+            .map(|cow| cow.to_string())
     }
 
     #[inline]
@@ -726,18 +770,23 @@ impl SessionContext {
         let mut modules = self.modules.lock();
         let mref = (modules.reserve() as u32).into();
 
-        let module_ast = montyc_parser::parse(
-            &source,
-            montyc_parser::comb::module,
-            Some(self.spanner.clone()),
-            mref,
-        );
+        let (module_ast, errors) = montyc_parser::parse(&self.spanner, mref, &source);
 
-        // if module_ast.is_err() {
-        //     self.modules.cancel_reserve(mref).unwrap();
-        // }
+        let module = if !errors.is_empty() {
+            for error in errors {
+                tracing::error!(?error, "parser error");
+            }
 
-        let module = ModuleData {
+            panic!("parser errors");
+        } else {
+            module_ast.unwrap()
+        };
+
+        if module.inner.body.is_empty() {
+            tracing::debug!("module is empty");
+        }
+
+        let module_data = ModuleData {
             path: path.to_path_buf(),
             mref,
             name: module_name.to_string(),
@@ -748,8 +797,8 @@ impl SessionContext {
             .module_sources
             .insert(mref, source.to_string().into_boxed_str());
 
-        let _ = self.module_asts.insert(mref, Rc::new(module_ast));
-        let _ = modules.try_set_value(mref, module).unwrap();
+        let _ = self.module_asts.insert(mref, Rc::new(module));
+        let _ = modules.try_set_value(mref, module_data).unwrap();
 
         mref
     }
@@ -770,7 +819,10 @@ impl SessionContext {
             .filter(|(_, module)| module.path == path)
             .next()
         {
-            log::error!("[global_context:load_module_with] Found a module with the same path as one we're trying to load! path={:?}", path);
+            tracing::error!(
+                "Found a module with the same path as one we're trying to load! path={:?}",
+                path
+            );
 
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
@@ -778,18 +830,12 @@ impl SessionContext {
             ));
         }
 
-        log::debug!(
-            "[global_context:load_module_with] Loading module {:?}",
-            path
-        );
+        tracing::debug!("Loading module {:?}", path);
 
         let source = match std::fs::read_to_string(path) {
             Ok(st) => st.into_boxed_str(),
             Err(why) => {
-                log::error!(
-                    "[global_context:load_module_with] Failed to read path contents! {:?}",
-                    why
-                );
+                tracing::error!("Failed to read path contents! {:?}", why);
                 return Err(why);
             }
         };
@@ -825,6 +871,8 @@ impl SessionContext {
             Ok(module) => module,
             Err(exc) => todo!("runtime exception! {:#?}", exc),
         };
+
+        tracing::trace!("module eval complete");
 
         Ok(module)
     }
@@ -921,21 +969,7 @@ impl SessionContext {
         let store = &self.value_store;
 
         let mref = match self.resolve_fancy_path_to_modules(path).as_slice() {
-            [] => match &self.opts {
-                CompilerOptions::Check { input, .. } | CompilerOptions::Build { input, .. } => {
-                    if !self
-                        .modules
-                        .lock()
-                        .iter()
-                        .any(|(_, data)| data.path == *input)
-                    {
-                        self.include_module(input, "__main__")?;
-                        return self.get_func_from_path(path);
-                    } else {
-                        todo!("could not find a module matching the path {:?}", path);
-                    }
-                }
-            },
+            [] => return Err(MontyError::None),
 
             [mref] => mref.clone(),
             [_, ..] => todo!("ambiguity in resolving module."),
@@ -1109,7 +1143,7 @@ impl SessionContext {
     }
 
     fn resolve_type_annotation(&self, rt: &Runtime, ann: ObjectId) -> MontyResult<TypeId> {
-        log::trace!("[SessionContext::resolve_type_annotation] ann={:?}", ann);
+        tracing::trace!("ann={:?}", ann);
 
         if ann == rt.singletons.none_v {
             return Ok(TypingConstants::None);
@@ -1137,13 +1171,10 @@ impl SessionContext {
     }
 
     fn object_type(&self, rt: &Runtime, val: &PyValue, val_class: ObjectId) -> MontyResult<TypeId> {
-        log::trace!("[SessionContext::object_type] class={:?}", val_class);
+        tracing::trace!("class={:?}", val_class);
 
         if let Some(elems) = val.as_list() {
-            log::trace!(
-                "[SessionContext::object_type]  value is a list(len={}).",
-                elems.len()
-            );
+            tracing::trace!(" value is a list(len={}).", elems.len());
 
             let it = elems
                 .iter()
@@ -1161,8 +1192,8 @@ impl SessionContext {
 
             let list = self.typing_context.list(inner);
 
-            log::trace!(
-                "[SessionContext::object_type]  produced type {}",
+            tracing::trace!(
+                " produced type {}",
                 self.typing_context
                     .display_type(list, &|v| self.value_store.type_id_of(v))
                     .unwrap()
@@ -1176,8 +1207,8 @@ impl SessionContext {
                     params,
                     returns,
                 } => {
-                    log::trace!(
-                        "[SessionContext::object_type]  value is a function(args={}, ret={:?}).",
+                    tracing::trace!(
+                        " value is a function(args={}, ret={:?}).",
                         params.len(),
                         returns
                     );
@@ -1195,24 +1226,18 @@ impl SessionContext {
                                 }
                             }
 
-                            log::trace!(
-                                "[SessionContext::object_type]  resolving parameter annotations",
-                            );
+                            tracing::trace!(" resolving parameter annotations",);
 
                             for (name, ann) in params {
-                                log::trace!(
-                                    "[SessionContext::object_type]    resolving {:?} : {:?}",
-                                    name,
-                                    ann,
-                                );
+                                tracing::trace!("   resolving {:?} : {:?}", name, ann,);
 
                                 let type_id = match ann {
                                     Some(o) => self.resolve_type_annotation(rt, *o)?,
                                     None => TypingConstants::None,
                                 };
 
-                                log::trace!(
-                                    "[SessionContext::object_type]    argument annotation is: {:?}",
+                                tracing::trace!(
+                                    "   argument annotation is: {:?}",
                                     self.typing_context
                                         .display_type(type_id, &|v| self.value_store.type_id_of(v))
                                         .unwrap()
@@ -1227,9 +1252,7 @@ impl SessionContext {
 
                     let ret = match returns {
                         Some(ret) => {
-                            log::trace!(
-                                "[SessionContext::object_type]  resolving return annotation",
-                            );
+                            tracing::trace!(" resolving return annotation",);
 
                             self.resolve_type_annotation(rt, ret)?
                         }
@@ -1237,8 +1260,8 @@ impl SessionContext {
                         None => TypingConstants::None,
                     };
 
-                    log::trace!(
-                        "[SessionContext::object_type]  return annotation is: {:?}",
+                    tracing::trace!(
+                        " return annotation is: {:?}",
                         self.typing_context
                             .display_type(ret, &|v| self.value_store.type_id_of(v))
                             .unwrap()
@@ -1247,8 +1270,8 @@ impl SessionContext {
                     let py = PythonType::Callable { params: args, ret };
                     let fn_type = self.typing_context.insert(Type::from(py));
 
-                    log::trace!(
-                        "[SessionContext::object_type]  produced type: {:?}",
+                    tracing::trace!(
+                        " produced type: {:?}",
                         self.typing_context
                             .display_type(fn_type, &|v| self.value_store.type_id_of(v))
                             .unwrap()
@@ -1265,12 +1288,12 @@ impl SessionContext {
     }
 
     fn klass_to_instance_type(&self, rt: &Runtime, klass: ObjectId) -> MontyResult<TypeId> {
-        log::trace!("[SessionContext::klass_to_instance_type] klass={:?}", klass);
+        tracing::trace!("klass={:?}", klass);
 
         macro_rules! switch {
             ($k:ident, $t:ident) => {
                 if rt.singletons.$k == klass {
-                    log::trace!("[SessionContext::klass_to_instance_type]  klass is a: {:?}", stringify!($k));
+                    tracing::trace!(" klass is a: {:?}", stringify!($k));
 
                     return Ok(::montyc_core::TypingConstants::$t);
                 }
@@ -1300,10 +1323,7 @@ impl SessionContext {
     }
 
     fn compute_type_of(&self, rt: &Runtime, val: ValueId) -> MontyResult<TypeId> {
-        log::trace!(
-            "[SessionContext::compute_type_of] called with value={:?}",
-            val
-        );
+        tracing::trace!("called with value={:?}", val);
 
         let obj = self
             .value_store
@@ -1312,19 +1332,15 @@ impl SessionContext {
             .unwrap(); // TODO: handle values that do not have an object repr.
 
         rt.objects.with_object(obj, |v| {
-            log::trace!("[SessionContext::compute_type_of] {:?} is {:?}", val, obj);
-            log::trace!("[SessionContext::compute_type_of] {:?} is {}", obj, v)
+            tracing::trace!("{:?} is {:?}", val, obj);
+            tracing::trace!("{:?} is {}", obj, v)
         });
 
         let object_class = rt.class_of(obj);
 
         assert!(!object_class.is_uninit());
 
-        log::trace!(
-            "[SessionContext::compute_type_of] class of {:?} is {:?}",
-            val,
-            object_class
-        );
+        tracing::trace!("class of {:?} is {:?}", val, object_class);
 
         match self.klass_to_instance_type(&*rt, object_class) {
             Ok(t) => Ok(t),

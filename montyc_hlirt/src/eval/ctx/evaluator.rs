@@ -2,10 +2,10 @@ use std::collections::hash_map::Entry;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::{num::NonZeroU64, rc::Rc};
 
-use montyc_core::ast::Constant;
 use montyc_core::{patma, ModuleRef, SpanRef};
 use montyc_flatcode::SequenceType;
 use montyc_flatcode::{raw_inst::Dunder, FlatCode};
+use montyc_parser::ast::Constant;
 
 use crate::eval::frame::FrameState;
 use crate::eval::inst_exec::{InstExec, InstResult};
@@ -418,7 +418,7 @@ where
         frame.values.insert(frame.current_inst_ix, func_obj);
 
         let name_as_str = self.host.spanref_to_str(name);
-        let name_str_obj = self.rt.new_string(name_as_str);
+        let name_str_obj = self.rt.new_string(&name_as_str);
 
         let name_str_hash = self.rt.hash("__name__");
         let name_slot = self.rt.new_string("__name__");
@@ -464,7 +464,7 @@ where
         Err(PyException::return_(object))
     }
 
-    fn const_(&mut self, frame: &mut FrameState, cst: &Constant) -> InstResult {
+    fn const_(&mut self, frame: &mut FrameState, cst: &montyc_parser::ast::Constant) -> InstResult {
         let slot = frame.values.entry(frame.current_inst_ix);
 
         let value = match cst {
@@ -487,7 +487,7 @@ where
 
             Constant::String(st) => {
                 let st = self.host.spanref_to_str(*st);
-                self.rt.new_string(st)
+                self.rt.new_string(&st)
             }
         };
 
@@ -555,15 +555,15 @@ where
         var: u32,
         value: ObjectId,
     ) -> Result<Option<ObjectId>, PyException> {
-        log::trace!(
-            "[EvaluationContext::define] defining variable({:?}) := {:?}",
+        tracing::trace!(
+            "defining variable({:?}) := {:?}",
             self.host.spangroup_to_str(var),
             value
         );
 
         if let Some(object) = frame.frame_object.as_ref() {
             let k = self.host.spangroup_to_str(var);
-            let k = self.rt.new_string(k);
+            let k = self.rt.new_string(&k);
 
             self.setattr(*object, k, value)?;
         }
@@ -629,7 +629,7 @@ where
     }
 
     fn call_any_func(&mut self, func: &AnyFunc, arguments: &[ObjectId]) -> PyResult<ObjectId> {
-        log::trace!("[call_any_func] {:?}", func);
+        tracing::trace!("{:?}", func);
 
         let none_v = self.rt.singletons.none_v;
 
@@ -862,7 +862,7 @@ where
             const BUILTINS: &[&str] = &["int", "bool", "str"];
 
             if self.rt.singletons.builtins.is_uninit() {
-                log::warn!("builtins is unit, only defining int, bool, and str.");
+                tracing::debug!("builtins is not initialized, only defining int, bool, and str.");
 
                 let builtin_values = [
                     self.rt.singletons.int_class,

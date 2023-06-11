@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use cranelift_codegen::ir::{self, ExternalName, InstBuilder, Signature};
 use cranelift_codegen::isa::{self, CallConv, TargetIsa};
 use cranelift_codegen::settings::{self, Configurable, Flags};
-use cranelift_codegen::{binemit, Context};
+use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use montyc_core::ast::Constant;
+use montyc_parser::ast::AstNode;
+use montyc_parser::ast::Constant;
 use tempfile::NamedTempFile;
 
 use montyc_core::codegen::{CgBlockId, CgInst};
-use montyc_core::opts::CompilerOptions;
 use montyc_core::{
     BuiltinType, MapT, MontyResult, PythonType, TaggedValueId, TypeId, ValueId, FUNCTION,
 };
@@ -63,6 +63,8 @@ pub(crate) mod data;
 
 use data::CgFuncData;
 
+use crate::CgOpts;
+
 fn ir_type_of(tcx: &dyn montyc_core::TypingContext, type_id: TypeId) -> ir::Type {
     match tcx.get_python_type_of(type_id).unwrap() {
         montyc_core::PythonType::Builtin { inner } => match inner {
@@ -103,14 +105,8 @@ impl core::fmt::Debug for BackendImpl {
 }
 
 impl BackendImpl {
-    fn codegen_flags(opts: &CompilerOptions) -> settings::Flags {
-        let settings = match opts {
-            CompilerOptions::Build {
-                cranelift_settings, ..
-            } => cranelift_settings,
-
-            _ => unreachable!("cant generate codegen settings for a non-build option."),
-        };
+    fn codegen_flags(opts: &CgOpts) -> settings::Flags {
+        let settings = opts.settings.clone();
 
         let mut flags_builder = cranelift_codegen::settings::builder();
 
@@ -133,6 +129,7 @@ impl BackendImpl {
         isa::lookup(target_lexicon::Triple::host())
             .unwrap()
             .finish(self.settings.clone())
+            .unwrap()
     }
 
     fn define_main(
@@ -183,12 +180,8 @@ impl BackendImpl {
         }
 
         let mut ctx = Context::for_function(main_fn);
-        let mut ts = binemit::NullTrapSink {};
-        let mut ss = binemit::NullStackMapSink {};
 
-        object_module
-            .define_function(fid, &mut ctx, &mut ts, &mut ss)
-            .unwrap();
+        object_module.define_function(fid, &mut ctx).unwrap();
     }
 
     fn define_builtins(
@@ -208,14 +201,14 @@ impl BackendImpl {
 
             if let PythonType::Callable { ret, .. } = tcx.get_python_type_of(func_t).unwrap() {
                 let name = queries.spanref_to_str(queries.get_function(*ix)?.name)?;
-                let key = (ret, name);
+                let key = (ret, &*name);
 
                 let tcx = queries.tcx();
 
                 let mut func = match bltns.get(&key) {
                     Some(func) => func.clone(),
                     None => {
-                        log::error!(
+                        tracing::error!(
                             "Missing builtin function for type {:?} method {}",
                             tcx.display_type(ret, &|v| queries.get_type_of(v).ok())
                                 .unwrap(),
@@ -236,19 +229,15 @@ impl BackendImpl {
                 }
 
                 let mut ctx = Context::for_function(func.clone());
-                let mut ts = binemit::NullTrapSink {};
-                let mut ss = binemit::NullStackMapSink {};
 
-                log::info!(
+                tracing::info!(
                     "Defining {:?} {} -> {}",
                     tcx.get_python_type_of(func_t),
                     name,
                     fid
                 );
 
-                object_module
-                    .define_function(fid, &mut ctx, &mut ts, &mut ss)
-                    .unwrap();
+                object_module.define_function(fid, &mut ctx).unwrap();
             } else {
                 unimplemented!()
             }
@@ -267,8 +256,8 @@ impl BackendImpl {
         fisa: &Flags,
         alloc: ExternalName,
     ) -> cranelift_module::ModuleResult<&'a mut FunctionBuilderContext> {
-        log::info!("[build_func] building func {:?}", func.value_id);
-        log::trace!("    with cfg: {:#?}", func.cfg.raw_nodes());
+        tracing::info!("building func {:?}", func.value_id);
+        tracing::trace!("    with cfg: {:#?}", func.cfg.raw_nodes());
 
         let CgFuncData { name, sig, cfg, .. } = func;
 
@@ -323,11 +312,11 @@ impl BackendImpl {
                     .ast
                     .unwrap()
                 {
-                    montyc_parser::AstNode::FuncDef(f) => f.args.unwrap_or_default(),
+                    AstNode::FuncDef(f) => f.args,
                     _ => unreachable!(),
                 };
 
-                for (((param_name, _), param_t), param_v) in param_names
+                for ((param, param_t), param_v) in param_names
                     .iter()
                     .zip(params.iter())
                     .zip(entry_block_params.iter())
@@ -337,7 +326,7 @@ impl BackendImpl {
                     ir::InstBuilder::stack_store(fx.inner.ins(), *param_v, param_ss, 0);
 
                     fx.locals.insert(
-                        param_name.group(),
+                        param.inner.named.group(),
                         (param_ss, *param_t, ir_type_of(fx.host.tcx(), *param_t)),
                     );
                 }
@@ -356,14 +345,12 @@ impl BackendImpl {
             panic!("{}", err);
         }
 
-        log::info!("Defining user function {:?} -> {}", func.value_id, fid);
-        log::trace!("{:?}", clir);
+        tracing::info!("Defining user function {:?} -> {}", func.value_id, fid);
+        tracing::trace!("{:?}", clir);
 
         let mut ctx = Context::for_function(clir);
-        let mut ts = binemit::NullTrapSink {};
-        let mut ss = binemit::NullStackMapSink {};
 
-        object_module.define_function(*fid, &mut ctx, &mut ts, &mut ss)?;
+        object_module.define_function(*fid, &mut ctx)?;
 
         Ok(builder_cx)
     }
@@ -415,17 +402,17 @@ impl BackendImpl {
             .map(|(ix, func)| (*ix, func))
             .partition::<MapT<_, _>, _>(|(_, func)| is_stubbed(func));
 
-        log::trace!("{:#?}", stubbed);
+        tracing::trace!("{:#?}", stubbed);
 
         let fids = {
             let mut fids = MapT::new();
 
             for (f_name, f_linkage, signature, ix) in self.data.funcs_ordered() {
                 let fid = object_module
-                    .declare_function(&f_name, f_linkage.clone(), &signature)
+                    .declare_function(&f_name, f_linkage.clone(), signature)
                     .unwrap();
 
-                log::info!("Declaring function {:?} -> {}", f_name, fid);
+                tracing::info!("Declaring function {:?} -> {}", f_name, fid);
 
                 if let Some(ix) = ix {
                     fids.insert(*ix, fid);
@@ -465,26 +452,16 @@ impl BackendImpl {
 }
 
 impl BackendImpl {
-    pub fn new(opts: &CompilerOptions) -> Self {
+    pub fn new(opts: &CgOpts) -> Self {
         let settings = Self::codegen_flags(opts);
-
-        let cc = match opts {
-            CompilerOptions::Build { cc, .. } => cc.clone(),
-            _ => None,
-        }
-        .unwrap_or_else(|| PathBuf::from("cc"));
-
-        let output = match opts {
-            CompilerOptions::Build { output, .. } => output.clone(),
-            _ => unreachable!(),
-        };
-
+        let cc = opts.cc.clone();
+        let output = opts.output.clone();
+        let data = data::CgData::default();
         Self {
             settings,
             output,
-
             cc,
-            data: data::CgData::default(),
+            data,
         }
     }
 
@@ -495,11 +472,14 @@ impl BackendImpl {
     ) -> MontyResult<()> {
         let func = queries.get_function(value_id.0)?;
 
-        log::trace!(
-            "[cranelift::BackendImpl::include_function] adding function {:?} from module {:?} with type {}",
+        tracing::trace!(
+            "adding function {:?} from module {:?} with type {}",
             func.value_id,
             func.mref,
-            queries.tcx().display_type(func.type_id, &|v| queries.get_type_of(v).ok()).unwrap_or_else(|| "<error>".into()),
+            queries
+                .tcx()
+                .display_type(func.type_id, &|v| queries.get_type_of(v).ok())
+                .unwrap_or_else(|| "<error>".into()),
         );
 
         let cg_cfg = queries.get_function_cg_cfg(value_id)?;
@@ -528,7 +508,7 @@ impl BackendImpl {
         if func.is_extern {
             let name = queries.spanref_to_str(func.name)?;
             self.data
-                .decl_foreign_function(name, signature, Some(value_id.0));
+                .decl_foreign_function(&name, signature, Some(value_id.0));
         } else {
             self.data.insert_function(value_id, cg_cfg, signature);
         }
@@ -536,11 +516,7 @@ impl BackendImpl {
         Ok(())
     }
 
-    pub fn finish(mut self, queries: &dyn Queries) -> MontyResult<PathBuf> {
-        let entry_path = queries
-            .entry_path()
-            .expect("when building an entry path should always be present.");
-
+    pub fn finish(mut self, queries: &dyn Queries, entry_path: &str) -> MontyResult<PathBuf> {
         let (mut funcs, entry) = queries.call_graph_of(&entry_path)?;
 
         for func in funcs.drain(..) {
@@ -550,7 +526,7 @@ impl BackendImpl {
         let object_module = self
             .build_all_functions(queries, entry)
             .map_err(|st| {
-                log::error!("{}", st);
+                tracing::error!("{}", st);
                 std::io::ErrorKind::Other
             })
             .unwrap();
@@ -560,7 +536,7 @@ impl BackendImpl {
         let bytes = product
             .emit()
             .map_err(|why| {
-                log::warn!("{}", why);
+                tracing::warn!("{}", why);
                 std::io::ErrorKind::Other
             })
             .unwrap();
@@ -579,7 +555,7 @@ impl BackendImpl {
 
         let object_path = &*path.to_string_lossy();
 
-        log::info!("written object file to {:?}", object_path);
+        tracing::info!("written object file to {:?}", object_path);
 
         std::process::Command::new(self.cc.clone())
             .args(&[object_path, "-o", self.output.to_str().unwrap(), "-no-pie"])

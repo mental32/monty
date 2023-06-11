@@ -59,10 +59,7 @@ pub(crate) trait CFGReducer {
                     }
                 }
 
-                log::trace!(
-                    "[typeck::typecheck] blocks to analyze: {:?}",
-                    blocks_to_analyze
-                );
+                tracing::trace!("blocks to analyze: {:?}", blocks_to_analyze);
             } else {
                 todo!("{:#?}", errors)
             }

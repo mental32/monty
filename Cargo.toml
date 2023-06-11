@@ -2,7 +2,6 @@
 members = [
     "montyc",
     "montyc_parser",
-    "montyc_parser2",
     "montyc_core",
     "montyc_driver",
     "montyc_hlirt",
@@ -11,8 +10,6 @@ members = [
     "montyc_flatcode",
     "montyc_hlirt",
 ]
-
-keyword = ["compilers", "typecheckers", "monty", "python"]
 
 exclude = ["cranelift-structbuf"]
 

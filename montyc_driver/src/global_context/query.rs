@@ -1,6 +1,7 @@
+use montyc_core::Span;
 use montyc_core::{codegen::CgInst, patma, Function, Property, TaggedValueId, TypeId, ValueId};
 use montyc_hlirt::object::AnyFunc;
-use montyc_parser::AstNode;
+use montyc_parser::ast::{AstNode, AstObject, Constant};
 
 use super::*;
 
@@ -9,20 +10,13 @@ impl Queries for SessionContext {
         &self.typing_context
     }
 
-    fn entry_path(&self) -> Option<&str> {
-        match &self.opts {
-            CompilerOptions::Build { entry, .. } => Some(&entry),
-            CompilerOptions::Check { .. } => None,
-        }
-    }
-
     fn get_type_of(&self, val: ValueId) -> MontyResult<TypeId> {
         match self.value_store.with_metadata(val, |m| m.type_id) {
             Some(Some(ty)) => Ok(ty),
             Some(None) => {
                 let ty = self.compute_type_of(&*Rc::clone(&self.const_runtime).borrow(), val)?;
 
-                log::debug!(
+                tracing::debug!(
                     "[<SessionContext as Queries>::get_type_of] computed type of {:?} = {:?}",
                     val,
                     ty
@@ -35,9 +29,9 @@ impl Queries for SessionContext {
                         .unwrap()
                         .unwrap();
 
-                    let mut ty = Type::new_class(object_id, None);
+                    let ty = Type::new_class(object_id, None);
 
-                    for (_, (k, v)) in self
+                    for (_, (k, _)) in self
                         .const_runtime
                         .borrow()
                         .objects
@@ -47,15 +41,17 @@ impl Queries for SessionContext {
                         })
                         .iter()
                     {
-                        let attr_name = self
+                        let _attr_name = self
                             .const_runtime
                             .borrow()
                             .objects
                             .with_object(*k, |m| m.as_str().unwrap().to_string());
 
-                        let property = Property::new(type_id, value);
+                        let (type_id, property_value) = todo!();
 
-                        ty.properties.insert(attr_name, property);
+                        let property = Property::new(type_id, property_value);
+
+                        ty.properties.insert(_attr_name, property);
                     }
 
                     return Ok(self.typing_context.insert(ty));
@@ -114,11 +110,10 @@ impl Queries for SessionContext {
     }
 
     fn get_module_flatcode(&self, mref: ModuleRef) -> MontyResult<montyc_flatcode::FlatCode> {
-        fn ast_to_flatcode<T: AstObject>(mref: ModuleRef, ast: &T) -> FlatCode {
-            let span = ast.span().unwrap_or(0..0);
-            let mut code = montyc_flatcode::FlatCode::new((mref.clone(), span));
+        fn ast_to_flatcode<T: AstObject>(mref: ModuleRef, ast: &T, span: Span) -> FlatCode {
+            let mut code = montyc_flatcode::FlatCode::new((mref.clone(), span.clone()));
 
-            ast.visit_with(&mut code, None);
+            ast.visit_with(&mut code, Some(span));
 
             code
         }
@@ -130,7 +125,7 @@ impl Queries for SessionContext {
                     if let Some((_, Some(code))) = &metadata.flatcode {
                         Ok(code.as_ref().clone())
                     } else if let Some(ast) = &metadata.ast {
-                        let code = ast_to_flatcode(mref, ast);
+                        let code = ast_to_flatcode(mref, ast, 0..0);
 
                         Ok(code)
                     } else {
@@ -141,7 +136,7 @@ impl Queries for SessionContext {
 
             false => {
                 let ast = self.module_asts.get(&mref).unwrap();
-                let code = ast_to_flatcode(mref, ast.as_ref());
+                let code = ast_to_flatcode(mref, ast.as_ref(), ast.span.clone());
 
                 Ok(code)
             }
@@ -164,7 +159,7 @@ impl Queries for SessionContext {
     fn get_function_cg_cfg(
         &self,
         fid: TaggedValueId<FUNCTION>,
-    ) -> MontyResult<montyc_core::codegen::CgBlockCFG> {
+    ) -> MontyResult<montyc_core::codegen::CgBlockCFG<Constant>> {
         match self
             .value_store
             .with_metadata(fid.0, |m| m.cg_flowgraph.clone())
@@ -199,7 +194,7 @@ impl Queries for SessionContext {
                         })
                     }) {
                         if !refs.contains(&value) {
-                            log::trace!("[<SessionContext as Queries>::get_function_cg_cfg] Adding internal ref {:?}", value);
+                            tracing::trace!("[<SessionContext as Queries>::get_function_cg_cfg] Adding internal ref {:?}", value);
                             refs.push(value);
                         }
                     }
@@ -272,7 +267,7 @@ impl Queries for SessionContext {
         todo!()
     }
 
-    fn spanref_to_str(&self, sref: SpanRef) -> MontyResult<&str> {
+    fn spanref_to_str(&self, sref: SpanRef) -> MontyResult<String> {
         self.resolve_sref_as_str(sref)
             .ok_or_else(|| MontyError::None)
     }
@@ -287,6 +282,17 @@ impl Queries for SessionContext {
         &self,
         entry_path: &str,
     ) -> MontyResult<(Vec<TaggedValueId<{ FUNCTION }>>, ValueId)> {
+        let SessionOpts { input, .. } = &self.opts;
+
+        if !self
+            .modules
+            .lock()
+            .iter()
+            .any(|(_, data)| data.path == *input)
+        {
+            self.include_module(input, "__main__")?;
+        }
+
         let entry_func = self.get_func_from_path(entry_path)?;
         let entry_func_t = self.get_type_of(entry_func.0)?;
 
@@ -350,10 +356,7 @@ impl Queries for SessionContext {
                     _ => continue,
                 }
 
-                log::debug!(
-                    "[GlobalContext::compute_dependency_graph] adding function value {:?}",
-                    value_ref
-                );
+                tracing::debug!("adding function value {:?}", value_ref);
 
                 let ix = TaggedValueId(value_ref);
 

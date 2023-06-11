@@ -5,7 +5,7 @@ pub(crate) struct CgFuncData {
     pub name: ExternalName,
     pub sig: Signature,
     pub value_id: TaggedValueId<{ FUNCTION }>,
-    pub cfg: montyc_core::codegen::CgBlockCFG,
+    pub cfg: montyc_core::codegen::CgBlockCFG<Constant>,
 }
 
 #[derive(Debug, Default)]
@@ -63,7 +63,7 @@ impl CgData {
     pub fn insert_function(
         &mut self,
         value_id: TaggedValueId<{ FUNCTION }>,
-        cfg: montyc_core::codegen::CgBlockCFG,
+        cfg: montyc_core::codegen::CgBlockCFG<Constant>,
         signature: Signature,
     ) -> ExternalName {
         let name = ExternalName::User {

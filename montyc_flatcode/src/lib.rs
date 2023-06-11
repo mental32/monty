@@ -13,8 +13,9 @@ pub mod raw_inst;
 
 use std::fmt::Display;
 
-use montyc_core::{ast::Constant, ModuleRef, Span, SpanRef};
-use montyc_parser::AstNode;
+use montyc_ast::Constant;
+use montyc_core::{ModuleRef, Span, SpanRef};
+use montyc_parser::ast::AstNode;
 
 use self::raw_inst::RawInst;
 
@@ -24,7 +25,7 @@ const INVALID_VALUE: usize = std::usize::MAX;
 #[derive(Debug, Clone, Default)]
 pub struct InstAttrs {
     pub span: Option<Span>,
-    pub ast: Option<montyc_parser::AstNode>,
+    pub ast: Option<AstNode>,
 }
 
 /// An instruction in a sequence of code and it's output value.

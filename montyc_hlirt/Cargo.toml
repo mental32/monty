@@ -10,7 +10,7 @@ montyc_flatcode = { path = "../montyc_flatcode" }
 montyc_parser = { path = "../montyc_parser" }
 
 ahash = "0.7.4"
-log = "0.4"
+tracing = "0.1.37"
 derive_more = "0.99.16"
 dashmap = "5.1.0"
 

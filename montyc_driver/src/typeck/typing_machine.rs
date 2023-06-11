@@ -1,5 +1,8 @@
+use std::collections::HashSet;
+
 use montyc_core::{BuiltinType, TypingContext};
 use montyc_flatcode::FlatInst;
+use montyc_parser::ast::Constant;
 use montyc_query::Queries;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -41,11 +44,8 @@ impl TypingMachine {
         cx: &SessionContext,
         block_ix: NodeIndex,
         errors: &mut Vec<ErrorTy>,
-    ) -> MontyResult<Vec<montyc_core::codegen::CgInst>> {
-        log::trace!(
-            "[TypingMaching::analyze_block] analyzing block={:?}",
-            block_ix
-        );
+    ) -> MontyResult<Vec<montyc_core::codegen::CgInst<Constant>>> {
+        tracing::trace!("analyzing block={:?}", block_ix);
 
         let Self {
             cfg,
@@ -63,18 +63,17 @@ impl TypingMachine {
         let mref = *mref;
 
         for inst in block {
-            log::trace!(
-                "[TypingMaching::analyze_block]  %{} := {}",
-                inst.value,
-                inst.op
-            );
+            tracing::trace!(" %{} := {}", inst.value, inst.op);
 
             match &inst.op {
-                RawInst::SetAnnotation { name, annotation } => {
-                    let (inst, block) = Self::find_inst(cfg, *annotation).unwrap();
+                RawInst::SetAnnotation {
+                    name: _,
+                    annotation,
+                } => {
+                    let (inst, _block) = Self::find_inst(cfg, *annotation).unwrap();
 
                     match inst.op {
-                        RawInst::UseVar { variable } => todo!(),
+                        RawInst::UseVar { .. } => todo!(),
                         _ => todo!("annotation is too complex, can only refer to names."),
                     }
                 }
@@ -142,11 +141,7 @@ impl TypingMachine {
                     let sref = variable.clone();
                     let type_id = value_types[value];
 
-                    log::trace!(
-                        "[TypingMaching::analyze_block]   assigning var {:?} with type {:?}",
-                        sref,
-                        type_id
-                    );
+                    tracing::trace!("  assigning var {:?} with type {:?}", sref, type_id);
 
                     let var = locals.entry(sref.group()).or_default();
 
@@ -175,11 +170,7 @@ impl TypingMachine {
                                 .unwrap()
                                 .unwrap();
 
-                            log::trace!(
-                                "[TypingMaching::analyze_block::use_var]   variable {:?} references {:?}",
-                                variable,
-                                value
-                            );
+                            tracing::trace!("  variable {:?} references {:?}", variable, value);
 
                             let value_t = cx.get_type_of(value)?;
 
@@ -194,9 +185,14 @@ impl TypingMachine {
                         }
 
                         Some(Variable(bindings)) => {
-                            let vfg = BlockCFGBuilder(cfg.clone()).variable_flowgraph(cx); // TODO(mental): build this once and cache that.
+                            // let vfg = BlockCFGBuilder(cfg.clone()).variable_flowgraph(cx); // TODO(mental): build this once and cache that.
 
-                            panic!("{:#?}", vfg);
+                            let type_ids =
+                                bindings.iter().map(|b| b.type_id).collect::<HashSet<_>>();
+
+                            assert_eq!(type_ids.len(), 1);
+
+                            // panic!("{:#?}", vfg);
 
                             // let defs: Vec<Defs> = vfg.block(block_ix).unwrap().def_blocks(variable);
 
@@ -225,21 +221,21 @@ impl TypingMachine {
                             //                                         );
                             //
                             //                                         for (ix, binding) in bindings_it {
-                            //                                             log::trace!("{ix:?} {block_ix:?}");
+                            //                                             tracing::trace!("{ix:?} {block_ix:?}");
                             //
                             //                                             match binding {
                             //                                                 Some(Binding { type_id, .. }) => {
                             //                                                     types.insert(type_id);
                             //                                                 }
                             //                                                 None => {
-                            //                                                     log::trace!("no binding in {ix:?} checking predecessors.");
+                            //                                                     tracing::trace!("no binding in {ix:?} checking predecessors.");
                             //
                             //                                                     for ix_pred in cfg
                             //                                                         .edges_directed(ix, EdgeDirection::Incoming)
                             //                                                         .map(|e| e.source())
                             //                                                         .filter(|i| *i < ix)
                             //                                                     {
-                            //                                                         log::trace!("{ix_pred:?} is a predecessor to {ix:?}");
+                            //                                                         tracing::trace!("{ix_pred:?} is a predecessor to {ix:?}");
                             //                                                         if let Some(binding) = dbg!(bindings
                             //                                                             .iter()
                             //                                                             .find(|b| b.block == ix_pred)
@@ -272,7 +268,7 @@ impl TypingMachine {
                             //                                     .into(),
                             //                                 ),
                             //                             };
-                            value_types.insert(inst.value, todo!());
+                            value_types.insert(inst.value, type_ids.into_iter().next().unwrap());
 
                             cg_block.push(CgInst::ReadLocalVar {
                                 var: variable.clone(),
@@ -294,7 +290,7 @@ impl TypingMachine {
                     let callable_pytype = cx.tcx().get_python_type_of(callable_t).unwrap();
 
                     match callable_pytype {
-                        PythonType::Class { object_id, members } => {
+                        PythonType::Class { .. } => {
                             todo!()
                         }
 
@@ -320,8 +316,8 @@ impl TypingMachine {
                                     montyc_core::UnifyFailure::UnequalArity(_, _) => todo!(),
 
                                     montyc_core::UnifyFailure::BadArgumentTypes(mismatch) => {
-                                        for (n, expected, actual) in mismatch {
-                                            log::error!(
+                                        for (_, expected, actual) in mismatch {
+                                            tracing::error!(
                                                 "{:?} != {:?}",
                                                 cx.tcx().display_type(expected, &|v| cx
                                                     .get_type_of(v)
@@ -444,7 +440,7 @@ impl TypingMachine {
                                             })
                                         }
 
-                                        montyc_core::PropertyValue::Builtin(kind, slot_name) => {
+                                        montyc_core::PropertyValue::Builtin(_, _) => {
                                             todo!()
                                         }
                                     }
@@ -455,7 +451,7 @@ impl TypingMachine {
                         PythonType::Generic { .. } => todo!(),
                         PythonType::Builtin { inner } => match inner {
                             BuiltinType::Type => {
-                                let klass = nonlocals[callable];
+                                let _klass = nonlocals[callable];
                                 todo!();
                                 // let init = cx.typing_context.get_property(base_t, name)
                             }
@@ -472,7 +468,7 @@ impl TypingMachine {
                             let attr = cx.spanref_to_str(r)?;
                             let property = cx
                                 .typing_context
-                                .get_property(object_t, attr)
+                                .get_property(object_t, &attr)
                                 .ok_or_else(|| TypeError::InvalidAttributeAccess {
                                     base: object_t,
                                     access: (mref, inst.attrs.span.clone().unwrap_or_default()),
@@ -510,7 +506,7 @@ impl TypingMachine {
                     let dunder_t = match property {
                         Ok(p) => p.type_id,
                         Err(exc) => {
-                            todo!("{:?}", exc);
+                            tracing::error!("{exc:?}");
                             errors.push(exc);
                             continue;
                         }
@@ -601,7 +597,7 @@ impl TypingMachine {
 
 impl CFGReducer for TypingMachine {
     type InputGraphT = BlockCFG;
-    type OutputT = montyc_core::codegen::CgBlockCFG<()>;
+    type OutputT = montyc_core::codegen::CgBlockCFG<Constant, ()>;
     type IndexT = NodeIndex;
 
     fn make_output(&self) -> Self::OutputT {
@@ -631,7 +627,7 @@ impl CFGReducer for TypingMachine {
     ) -> Result<Vec<NodeIndex>, montyc_core::MontyError> {
         let cg_block = self.analyze_block(cx, ix, errors)?;
 
-        if let Some(block) = dbg!(output.node_weight_mut(ix)) {
+        if let Some(block) = output.node_weight_mut(ix) {
             let _ = std::mem::replace(block, cg_block);
         }
 

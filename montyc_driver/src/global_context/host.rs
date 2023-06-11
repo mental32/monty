@@ -3,11 +3,11 @@ use montyc_hlirt::PyResultExt;
 use super::*;
 
 impl RuntimeHost for &SessionContext {
-    fn spanref_to_str(&self, sref: SpanRef) -> &str {
+    fn spanref_to_str(&self, sref: SpanRef) -> String {
         self.resolve_sref_as_str(sref).unwrap()
     }
 
-    fn spangroup_to_str(&self, group: u32) -> &str {
+    fn spangroup_to_str(&self, group: u32) -> String {
         for sref in self.spanner.spanrefs_of_group(group).unwrap() {
             if let Some(st) = self.resolve_sref_as_str(sref) {
                 return st;
@@ -192,11 +192,11 @@ impl RuntimeHostExt for &SessionContext {
 
                     None => {
                         // no dots, no parent module.
-                        match find_spec(ecx, name).trace()? {
+                        match find_spec(ecx, name.clone()).trace()? {
                             Some(spec) => Ok(spec),
                             None => {
                                 return PyException::import_error()
-                                    .set_message("Module not found.")
+                                    .set_message(format!("Module not found. ({name})"))
                                     .into()
                             }
                         }
@@ -214,12 +214,9 @@ impl AcceptInput<&str, FlatCode> for &SessionContext {
         let mut modules = self.modules.lock();
         let mref = (modules.reserve() as u32).into();
 
-        let module_ast = montyc_parser::parse(
-            &input,
-            montyc_parser::comb::module,
-            Some(self.spanner.clone()),
-            mref,
-        );
+        let (module_ast, errs) = montyc_parser::parse(&self.spanner, mref, &input);
+        assert!(errs.is_empty());
+        let Some(module_ast) = module_ast else { unreachable!() };
 
         let _ = self
             .module_sources

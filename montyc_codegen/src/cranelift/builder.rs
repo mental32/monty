@@ -13,9 +13,9 @@ use cranelift_frontend::FunctionBuilder;
 use cranelift_module::{DataContext, FuncId, Module};
 use cranelift_object::ObjectModule;
 
-use montyc_core::ast::Constant;
 use montyc_core::codegen::{CgBlockId, CgInst, Field};
 use montyc_core::{patma, MapT, PythonType, TypeId, TypingConstants, ValueId};
+use montyc_parser::ast::Constant;
 
 use montyc_query::Queries;
 
@@ -54,14 +54,14 @@ impl Allocatable for TypeId {
                 layout
             }
 
-            PythonType::List { inner } => todo!(),
-            PythonType::Union { members } => todo!(),
-            PythonType::Type { of } => todo!(),
+            PythonType::List { inner: _ } => todo!(),
+            PythonType::Union { members: _ } => todo!(),
+            PythonType::Type { of: _ } => todo!(),
             PythonType::Instance { of: value } => fx.host.get_layout_of(value).unwrap(),
-            PythonType::TypeVar { name } => todo!(),
-            PythonType::Callable { params, ret } => todo!(),
-            PythonType::Generic { args } => todo!(),
-            PythonType::Builtin { inner } => todo!(),
+            PythonType::TypeVar { name: _ } => todo!(),
+            PythonType::Callable { params: _, ret: _ } => todo!(),
+            PythonType::Generic { args: _ } => todo!(),
+            PythonType::Builtin { inner: _ } => todo!(),
         };
 
         assert_ne!(
@@ -104,14 +104,14 @@ impl Allocatable for TypeId {
                         .store(MemFlags::new(), *elem.as_value(), addr, offset);
                 }
             }
-            PythonType::List { inner } => todo!(),
-            PythonType::Union { members } => todo!(),
-            PythonType::Type { of } => todo!(),
-            PythonType::Instance { of } => {}
-            PythonType::TypeVar { name } => todo!(),
-            PythonType::Callable { params, ret } => todo!(),
-            PythonType::Generic { args } => todo!(),
-            PythonType::Builtin { inner } => todo!(),
+            PythonType::List { inner: _ } => todo!(),
+            PythonType::Union { members: _ } => todo!(),
+            PythonType::Type { of: _ } => todo!(),
+            PythonType::Instance { of: _ } => {}
+            PythonType::TypeVar { name: _ } => todo!(),
+            PythonType::Callable { params: _, ret: _ } => todo!(),
+            PythonType::Generic { args: _ } => todo!(),
+            PythonType::Builtin { inner: _ } => todo!(),
         }
     }
 }
@@ -123,8 +123,8 @@ fn stack_alloc(builder: &mut FunctionBuilder, queries: &dyn Queries, tid: TypeId
     //        Cranelift gets a way to specify stack slot alignment.
     let slot_size = (size + 15) / 16 * 16;
 
-    log::trace!(
-        "[stack_alloc] allocating a stack slot of {:?} bytes for {:?}",
+    tracing::trace!(
+        "allocating a stack slot of {:?} bytes for {:?}",
         slot_size,
         tid
     );
@@ -134,7 +134,7 @@ fn stack_alloc(builder: &mut FunctionBuilder, queries: &dyn Queries, tid: TypeId
 
 pub(super) struct Builder<'a, 'b> {
     pub inner: FunctionBuilder<'a>,
-    pub cfg: &'b montyc_core::codegen::CgBlockCFG,
+    pub cfg: &'b montyc_core::codegen::CgBlockCFG<Constant>,
 
     pub values: MapT<usize, TValue<ir::Value>>,
     pub locals: MapT<u32, (StackSlot, TypeId, ir::Type)>,
@@ -180,26 +180,27 @@ impl Builder<'_, '_> {
         let mut block_indecies = VecDeque::from(vec![NodeIndex::new(0)]);
 
         while let Some(block_ix) = block_indecies.pop_front() {
-            log::trace!(
-                "[cranelift::builder::Builder::lower] lowering block {:?}",
-                &block_ix
-            );
+            tracing::trace!("lowering block {:?}", &block_ix);
 
             let current_block_id = CgBlockId(block_ix.index());
             let current_block = blocks[&current_block_id];
 
             if self.inner.current_block() != Some(current_block) {
-                log::trace!(
+                tracing::trace!(
                     "switching {:?} -> {:?}",
                     self.inner.current_block(),
                     current_block
                 );
 
+                if !self.inner.is_filled() {
+                    self.inner.ins().jump(current_block, &[]);
+                }
+
                 self.inner.switch_to_block(current_block);
             }
 
             for inst in &self.cfg[block_ix] {
-                log::trace!("[cranelift::builder::Builder::lower]   {:?}", inst);
+                tracing::trace!("  {:?}", inst);
 
                 match inst {
                     CgInst::Alloc {
@@ -466,6 +467,25 @@ impl Builder<'_, '_> {
                 if let None = block_indecies.iter().find(|ix| **ix == edge.target()) {
                     block_indecies.push_back(edge.target())
                 }
+            }
+        }
+
+        if !self.is_filled() {
+            let zero = self.ins().iconst(ir::types::I64, 0);
+            let value_type = self
+                .func
+                .signature
+                .returns
+                .first()
+                .unwrap()
+                .value_type
+                .clone();
+
+            if value_type != ir::types::I64 {
+                let zero = self.ins().bitcast(value_type, zero);
+                self.ins().return_(&[zero]);
+            } else {
+                self.ins().return_(&[zero]);
             }
         }
 

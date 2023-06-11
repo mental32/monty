@@ -31,10 +31,10 @@ pub trait RuntimeHost {
     fn spangroup_of_hash(&mut self, hash: u64, st: &str) -> u32;
 
     /// Resolve a spanref to a string.
-    fn spanref_to_str(&self, sref: SpanRef) -> &str;
+    fn spanref_to_str(&self, sref: SpanRef) -> String;
 
     /// Resolve a span **group** to a string.
-    fn spangroup_to_str(&self, group: u32) -> &str;
+    fn spangroup_to_str(&self, group: u32) -> String;
 
     /// Ask the host to read the contents of the file at the given path.
     fn try_read_file(&self, path: &Path) -> io::Result<String>;
@@ -137,7 +137,7 @@ impl<Space: ObjectSpace> Runtime<Space> {
 
     #[track_caller]
     pub fn class_of(&self, obj: ObjectId) -> ObjectId {
-        log::trace!("[Runtime::class_of] {:?}", obj);
+        tracing::trace!("{:?}", obj);
 
         let Singletons {
             function_class,
@@ -416,9 +416,9 @@ impl Runtime {
     {
         let code = host
             .accept_input(input)
+            .map_err(RuntimeError::Host)
             .map(Into::into)
-            .map(Rc::new)
-            .map_err(RuntimeError::Host)?;
+            .map(Rc::new)?;
 
         let mref = code.mref;
 
