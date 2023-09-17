@@ -40,6 +40,15 @@ fn test_parse_expr_integer() {
 }
 
 #[test]
+fn test_parse_expr_integer_hex_literal() {
+    parse(include_str!("hex_literal/expected.json"), || {
+        montyc_parser::comb::expr()
+            .parse(lex(include_str!("hex_literal/input.py")))
+            .expect("failed to parse expr")
+    })
+}
+
+#[test]
 fn test_parse_expr_await() {
     parse(include_str!("expr_await/expected.json"), || {
         montyc_parser::comb::expr()

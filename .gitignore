@@ -150,9 +150,9 @@ static
 
 
 # Added by cargo
-
 /target
 
+# Added by me
 cpython/
-
 *.out
+.idea/

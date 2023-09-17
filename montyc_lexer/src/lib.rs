@@ -275,8 +275,10 @@ pub enum PyToken {
     #[regex(r"\t| ")]
     Whitespace,
 
-    #[regex(r"-?\d+", |lex| lex.slice().parse())]
-    #[regex(r"-?0[xX][0-9a-fA-F]+", |lex| lex.slice().parse())]
+    #[regex(r"-?0[xX][0-9a-fA-F]+")]
+    HexDigits,
+
+    #[regex(r"-?\d+", |lex| lex.slice().parse(), priority = 2)]
     Digits(i64),
 
     #[regex(r"#[^\n]*")]
@@ -285,11 +287,11 @@ pub enum PyToken {
     // -- String regex
     #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'((\\.)|[^'\\\r\n])*'"#)]
     #[regex(
-        r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'''((\\.)|[^\\']|'((\\.)|[^\\'])|''((\\.)|[^\\']))*'''"#
+        r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'''((\\.)|[^']|'((\\.)|[^'])|''((\\.)|[^']))*'''"#
     )]
     #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"((\\.)|[^"\\\r\n])*""#)]
     #[regex(
-        r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"""((\\.)|[^\\"]|"((\\.)|[^\\"])|""((\\.)|[^\\"]))*""""#
+        r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"""((\\.)|[^"]|"((\\.)|[^"])|""((\\.)|[^"]))*""""#
     )]
     StringLiteral,
 
@@ -297,11 +299,26 @@ pub enum PyToken {
     #[regex(r#"([bB]|[rR][bB]|[bB][rR])'''((\\\p{ASCII})|[\p{ASCII}&&[^\\']]|'((\\\p{ASCII})|[\p{ASCII}&&[^\\']])|''((\\\p{ASCII})|[\p{ASCII}&&[^\\']]))*'''"#)]
     ByteLiteral,
 
-    #[regex("[a-zA-Z_][_a-zA-Z0-9]*")]
+    #[regex(r#"[\u{0}-\u{10FFFE}\u{10FFFF}]+"#)]
     RawIdent,
 
     // -- used for interning
     IdentRef(SpanRef),
     CommentRef(SpanRef),
     StringRef(SpanRef),
+    ByteLiteralRef(SpanRef),
+}
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn test_parse_expr_integer_hex_literal() {
+        let tok: Vec<_> = super::tokens("0xdeadbeef");
+        assert_eq!(tok.len(), 1);
+        assert_eq!(
+            tok[0].0,
+            super::PyToken::Digits(0xdeadbeef),
+        );
+    }
 }

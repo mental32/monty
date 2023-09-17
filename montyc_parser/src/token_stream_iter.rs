@@ -33,6 +33,7 @@ where
 {
     type Item = Result<crate::Token, &'static str>;
 
+    #[track_caller]
     fn next(&mut self) -> Option<Self::Item> {
         let token = self.lexer.next()?;
 
@@ -47,7 +48,8 @@ where
             }
 
             PyToken::ByteLiteral => {
-                todo!("byte literals.")
+                let n = self.bound.insert(span_range.clone());
+                (PyToken::ByteLiteralRef(n), span_range)
             }
 
             PyToken::StringLiteral => {
@@ -60,7 +62,7 @@ where
                 (PyToken::CommentRef(n), span_range)
             }
 
-            PyToken::Invalid => unreachable!(),
+            PyToken::Invalid => panic!("invalid token! {:?}", span),
 
             PyToken::Newline
                 if self
