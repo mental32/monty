@@ -17,7 +17,7 @@
 Monty `(/ˈmɒntɪ/)` is a gradually typed, statically compilable Python.
 With some baked in tricks to make it feel as dynamic as regular Python.
 
-### How does Monty differ from regular Python or the typing semantics of other type checkers?
+<!-- ### How does Monty differ from regular Python or the typing semantics of other type checkers?
 
 1. The most notable difference is that code in the global scope gets run at compile time instead of at program startup.
 
@@ -49,7 +49,7 @@ Like pytype: monty relies [heavily on inference and is lenient instead of strict
 
 Monty learnt about narrowing and guards from pyright [and supports many of the same guard and narrowing patterns](https://github.com/microsoft/pyright/blob/main/docs/type-concepts.md#type-narrowing)
 
-A lot of existing code in monty is designed to be embeddable and query-able [similar to pyre](https://pyre-check.org/docs/querying-pyre/).
+A lot of existing code in monty is designed to be embeddable and query-able [similar to pyre](https://pyre-check.org/docs/querying-pyre/). -->
 
 ## Building the compiler
 
