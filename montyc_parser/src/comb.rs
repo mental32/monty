@@ -113,7 +113,8 @@ mod tokens {
         (bang,        "<bang>",       PyToken::Bang);
         (newline,     "<newline>",    PyToken::Newline);
         (formfeed,    "<formfeed>",   PyToken::FormFeed);
-        (whitespace,  "<whitespace>", PyToken::Whitespace)
+        (whitespace,  "<whitespace>", PyToken::Whitespace);
+        (type_,       "<type>",       PyToken::Type)
     ];
 }
 
@@ -160,7 +161,8 @@ pub fn none() -> p!(Spanned<Atom>; Clone) {
 #[track_caller]
 pub fn int() -> p!(Spanned<Atom>; Clone) {
     select! {
-        (PyToken::Digits(n), span) => Spanned::new(Atom::Int(n), span)
+        (PyToken::Digits(n), span) => Spanned::new(Atom::Int(n), span),
+        (PyToken::HexDigits, span) => Spanned::new(Atom::Int(0), span),
     }
     .debug("int")
 }
@@ -404,10 +406,25 @@ pub fn funcdef(indent: usize) -> p!(Spanned<FunctionDef>) {
             .then_with(|_| statement(0))
             .map(|s| vec![s]));
 
+    let generic_parameters =
+        annotated_identifier_list().delimited_by(tokens::lbracket(), tokens::rbracket());
+
+    type FuncDefArgs = (
+        Vec<Spanned<Expr>>,                     // ["@" <primary>]*
+        Spanned<PyToken>,                       //"def"
+        Spanned<Atom>,                          // <ident>
+        Option<Vec<Spanned<FunctionDefParam>>>, // "[" (<ident> (":" <expr>)?),* "]"
+        Vec<Spanned<FunctionDefParam>>,         // "(" (<ident> (":" <expr>)?),* ")"
+        Option<Spanned<Expr>>,                  // "->" <expr>
+        Vec<Spanned<Statement>>,                // <body>
+    );
+
     decorator_list
         .then(tokens::fndef())
         .then_ignore(tokens::whitespace().repeated().or_not())
         .then(ident())
+        .then_ignore(tokens::whitespace().repeated().or_not())
+        .then(generic_parameters.or_not())
         .then_ignore(tokens::whitespace().repeated().or_not())
         .then(parameters)
         .then_ignore(tokens::whitespace().repeated().or_not())
@@ -417,23 +434,25 @@ pub fn funcdef(indent: usize) -> p!(Spanned<FunctionDef>) {
         .then_ignore(tokens::whitespace().repeated().or_not())
         .then(body)
         .map(
-            |(((((decorator_list, fndef), name), args), returns), body)| {
-                (decorator_list, fndef, name, args, returns, body)
+            |((((((decorator_list, fndef), name), generic_params), args), returns), body)| {
+                (
+                    decorator_list,
+                    fndef,
+                    name,
+                    generic_params,
+                    args,
+                    returns,
+                    body,
+                )
             },
         )
         .map(
-            |(decorator_list, fndef, name, args, returns, body): (
-                Vec<Spanned<_>>,                // ["@" <primary>]*
-                Spanned<PyToken>,               //"def"
-                Spanned<Atom>,                  // <ident>
-                Vec<Spanned<FunctionDefParam>>, // "(" (<ident> (":" <expr>)?),* ")"
-                Option<Spanned<Expr>>,          // "->" <expr>
-                Vec<Spanned<Statement>>,        // <body>
-            )| {
+            |(decorator_list, fndef, name, generic_params, args, returns, body): FuncDefArgs| {
                 let span = fndef.span.clone();
                 let fndef = FunctionDef {
                     receiver: None,
                     name,
+                    generic_params,
                     args,
                     body,
                     decorator_list,
@@ -564,9 +583,14 @@ pub fn classdef(indent: usize) -> p!(Spanned<classdef::ClassDef>) {
         .repeated()
         .debug("classdef.decorator_list");
 
+    let generic_parameters =
+        annotated_identifier_list().delimited_by(tokens::lbracket(), tokens::rbracket());
+
     dec.then(tokens::classdef())
         .then_ignore(tokens::whitespace().repeated())
         .then(ident().debug("classdef.name"))
+        .then_ignore(tokens::whitespace().repeated())
+        .then(generic_parameters.or_not())
         .then_ignore(tokens::whitespace().repeated())
         .then(
             expr()
@@ -579,23 +603,24 @@ pub fn classdef(indent: usize) -> p!(Spanned<classdef::ClassDef>) {
         .then_ignore(tokens::colon())
         .then(tokens::newline().ignore_then(indented_block(prefix, move || statement(prefix))))
         .map(
-            |((((decorator_list, _), name), _), body): (
-                (
-                    (
-                        (
-                            Vec<Spanned<Expr>>,
-                            montyc_ast::spanned::Spanned<montyc_lexer::PyToken>,
-                        ),
-                        montyc_ast::spanned::Spanned<Atom>,
-                    ),
-                    Option<Vec<montyc_ast::spanned::Spanned<montyc_ast::expr::Expr>>>,
-                ),
-                Vec<montyc_ast::spanned::Spanned<Statement>>,
+            |(((((decorator_list, _), name), generic_params), _), body)| {
+                (decorator_list, name, generic_params, body)
+            },
+        )
+        .map(
+            |(decorator_list, name, generic_params, body): (
+                Vec<Spanned<Expr>>, // decorator_list
+                //                montyc_ast::spanned::Spanned<montyc_lexer::PyToken>, // "class"
+                montyc_ast::spanned::Spanned<Atom>,     // <ident>
+                Option<Vec<Spanned<FunctionDefParam>>>, // "[" (<ident> (":" <expr>)?),* "]"
+                // Option<Vec<montyc_ast::spanned::Spanned<montyc_ast::expr::Expr>>>, // "(" <expr> ("," <expr>)* ")"
+                Vec<montyc_ast::spanned::Spanned<Statement>>, // <body>
             )| {
                 let span = 0..0;
                 let classdef = classdef::ClassDef {
                     decorator_list,
                     name,
+                    generic_params,
                     body,
                 };
                 Spanned::new(classdef, span)
@@ -646,6 +671,19 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         })
         .boxed()
         .debug("statement().import");
+
+    let type_alias = tokens::type_()
+        .ignore_then(tokens::whitespace().repeated())
+        .ignore_then(ident())
+        .then_ignore(tokens::whitespace().repeated())
+        .then_ignore(tokens::equal())
+        .then_ignore(tokens::whitespace().repeated())
+        .then(expr())
+        .map(|(name, value)| {
+            let span = name.span_to(&value);
+
+            Spanned::new(Statement::TypeAlias(name, value), span)
+        });
 
     let from_import = tokens::from()
         .ignore_then(tokens::whitespace().repeated())
@@ -973,7 +1011,7 @@ mod test {
                 montyc_ast::import::Import::Names(names) => assert_eq!(names.len(), 1),
                 montyc_ast::import::Import::From { .. } => panic!(),
             },
-            _ => unimplemented!(),
+            _ => panic!(),
         }
 
         let stream = lex("import x.y");
@@ -984,7 +1022,7 @@ mod test {
                 montyc_ast::import::Import::Names(names) => assert_eq!(names.len(), 2),
                 montyc_ast::import::Import::From { .. } => panic!(),
             },
-            _ => unimplemented!(),
+            _ => panic!(),
         }
     }
 
@@ -998,7 +1036,7 @@ mod test {
                 let whl = whl.inner;
                 expect_int(whl.body[0].clone());
             }
-            _ => unimplemented!(),
+            _ => panic!(),
         }
     }
 
@@ -1013,7 +1051,7 @@ mod test {
                 assert_eq!(ifch.branches.len(), 1);
                 assert!(ifch.orelse.is_none());
             }
-            _ => unimplemented!(),
+            st => panic!("{st:#?}"),
         }
 
         let stream = lex("if x:\n    1\nelse:\n    2");
@@ -1025,7 +1063,7 @@ mod test {
                 assert_eq!(ifch.branches.len(), 1);
                 assert!(ifch.orelse.is_some());
             }
-            _ => unimplemented!(),
+            _ => panic!(),
         }
 
         let stream = lex("if x:\n    1\nelif True:\n    2");
@@ -1037,7 +1075,7 @@ mod test {
                 assert_eq!(ifch.branches.len(), 2);
                 assert!(ifch.orelse.is_none());
             }
-            _ => unimplemented!(),
+            _ => panic!(),
         }
 
         let stream = lex("if x:\n    1\nelif True:\n    4\nelse:\n    2");
@@ -1049,7 +1087,7 @@ mod test {
                 assert_eq!(ifch.branches.len(), 2);
                 assert!(ifch.orelse.is_some());
             }
-            _ => unimplemented!(),
+            _ => panic!(),
         }
     }
 
@@ -1062,7 +1100,7 @@ mod test {
             Statement::Ret(r) => {
                 expect_bool(r.inner.value.unwrap().clone());
             }
-            _ => unreachable!(),
+            _ => panic!(),
         }
     }
 

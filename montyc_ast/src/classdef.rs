@@ -2,6 +2,7 @@ use montyc_lexer::Span;
 
 use crate::atom::Atom;
 use crate::expr::Expr;
+use crate::funcdef::FunctionDefParam;
 use crate::spanned::Spanned;
 use crate::AstVisitor;
 
@@ -12,6 +13,7 @@ use super::{AstNode, AstObject};
 pub struct ClassDef {
     pub decorator_list: Vec<Spanned<Expr>>,
     pub name: Spanned<Atom>,
+    pub generic_params: Option<Vec<Spanned<FunctionDefParam>>>,
     pub body: Vec<Spanned<Statement>>,
 }
 

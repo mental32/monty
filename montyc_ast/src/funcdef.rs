@@ -7,6 +7,7 @@ use crate::{atom::Atom, expr::Expr};
 use super::statement::Statement;
 use super::{AstNode, AstObject};
 
+// some "name : type"
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FunctionDefParam {
     pub named: SpanRef,
@@ -17,6 +18,7 @@ pub struct FunctionDefParam {
 pub struct FunctionDef {
     pub receiver: Option<Spanned<Atom>>,
     pub name: Spanned<Atom>,
+    pub generic_params: Option<Vec<Spanned<FunctionDefParam>>>,
     pub args: Vec<Spanned<FunctionDefParam>>,
     pub body: Vec<Spanned<Statement>>,
     pub decorator_list: Vec<Spanned<Expr>>,

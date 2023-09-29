@@ -1,0 +1,88 @@
+{
+    "inner": {
+        "Class": {
+            "inner": {
+                "body": [
+                    {
+                        "inner": {
+                            "Pass": {
+                                "inner": null,
+                                "span": {
+                                    "end": 27,
+                                    "start": 23
+                                }
+                            }
+                        },
+                        "span": {
+                            "end": 27,
+                            "start": 23
+                        }
+                    }
+                ],
+                "decorator_list": [],
+                "generic_params": [
+                    {
+                        "inner": {
+                            "annotation": {
+                                "inner": {
+                                    "Primary": {
+                                        "inner": {
+                                            "Atomic": {
+                                                "inner": {
+                                                    "Name": [
+                                                        2,
+                                                        2
+                                                    ]
+                                                },
+                                                "span": {
+                                                    "end": 16,
+                                                    "start": 13
+                                                }
+                                            }
+                                        },
+                                        "span": {
+                                            "end": 16,
+                                            "start": 13
+                                        }
+                                    }
+                                },
+                                "span": {
+                                    "end": 16,
+                                    "start": 13
+                                }
+                            },
+                            "named": [
+                                1,
+                                1
+                            ]
+                        },
+                        "span": {
+                            "end": 16,
+                            "start": 10
+                        }
+                    }
+                ],
+                "name": {
+                    "inner": {
+                        "Name": [
+                            0,
+                            0
+                        ]
+                    },
+                    "span": {
+                        "end": 9,
+                        "start": 6
+                    }
+                }
+            },
+            "span": {
+                "end": 0,
+                "start": 0
+            }
+        }
+    },
+    "span": {
+        "end": 0,
+        "start": 0
+    }
+}

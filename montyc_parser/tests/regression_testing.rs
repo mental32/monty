@@ -67,6 +67,18 @@ fn test_parse_statement_funcdef() {
 }
 
 #[test]
+fn test_parse_statement_generics() {
+    parse(
+        include_str!("statement_funcdef_generic/expected.json"),
+        || {
+            montyc_parser::comb::statement(0)
+                .parse(lex(include_str!("statement_funcdef_generic/input.py")))
+                .expect("failed to parse statement")
+        },
+    )
+}
+
+#[test]
 fn test_parse_statement_classdef() {
     parse(include_str!("statement_classdef/expected.json"), || {
         montyc_parser::comb::statement(0)
@@ -74,4 +86,16 @@ fn test_parse_statement_classdef() {
             .0
             .expect("failed to parse statement")
     })
+}
+
+#[test]
+fn test_parse_statement_classdef_generic() {
+    parse(
+        include_str!("statement_classdef_generic/expected.json"),
+        || {
+            montyc_parser::comb::statement(0)
+                .parse(lex(include_str!("statement_classdef_generic/input.py")))
+                .expect("failed to parse statement")
+        },
+    )
 }

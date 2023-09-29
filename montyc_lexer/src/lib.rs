@@ -127,6 +127,9 @@ pub enum PyToken {
     #[token("await")]
     Await,
 
+    #[token("type")]
+    Type,
+
     #[token("async")]
     Async,
 
@@ -286,20 +289,16 @@ pub enum PyToken {
 
     // -- String regex
     #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'((\\.)|[^'\\\r\n])*'"#)]
-    #[regex(
-        r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'''((\\.)|[^']|'((\\.)|[^'])|''((\\.)|[^']))*'''"#
-    )]
+    #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?'''((\\.)|[^']|'((\\.)|[^'])|''((\\.)|[^']))*'''"#)]
     #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"((\\.)|[^"\\\r\n])*""#)]
-    #[regex(
-        r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"""((\\.)|[^"]|"((\\.)|[^"])|""((\\.)|[^"]))*""""#
-    )]
+    #[regex(r#"([rR]|[fF]|u|[rR][fF]|[fF][rR])?"""((\\.)|[^"]|"((\\.)|[^"])|""((\\.)|[^"]))*""""#)]
     StringLiteral,
 
     #[regex(r#"([bB]|[rR][bB]|[bB][rR])'((\\\p{ASCII})|[\p{ASCII}&&[^'\\\r\n]])*'"#)]
     #[regex(r#"([bB]|[rR][bB]|[bB][rR])'''((\\\p{ASCII})|[\p{ASCII}&&[^\\']]|'((\\\p{ASCII})|[\p{ASCII}&&[^\\']])|''((\\\p{ASCII})|[\p{ASCII}&&[^\\']]))*'''"#)]
     ByteLiteral,
 
-    #[regex(r#"[\u{0}-\u{10FFFE}\u{10FFFF}]+"#)]
+    #[regex(r#"[a-zA-Z_][a-zA-Z_0-9]*"#)]
     RawIdent,
 
     // -- used for interning
@@ -316,9 +315,6 @@ mod test {
     fn test_parse_expr_integer_hex_literal() {
         let tok: Vec<_> = super::tokens("0xdeadbeef");
         assert_eq!(tok.len(), 1);
-        assert_eq!(
-            tok[0].0,
-            super::PyToken::Digits(0xdeadbeef),
-        );
+        assert_eq!(tok[0].0, super::PyToken::Digits(0xdeadbeef),);
     }
 }

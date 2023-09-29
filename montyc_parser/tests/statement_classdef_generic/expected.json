@@ -1,0 +1,239 @@
+{
+    "inner": {
+        "FnDef": {
+            "inner": {
+                "args": [
+                    {
+                        "inner": {
+                            "annotation": {
+                                "inner": {
+                                    "Primary": {
+                                        "inner": {
+                                            "Atomic": {
+                                                "inner": {
+                                                    "Name": [
+                                                        1,
+                                                        6
+                                                    ]
+                                                },
+                                                "span": {
+                                                    "end": 28,
+                                                    "start": 27
+                                                }
+                                            }
+                                        },
+                                        "span": {
+                                            "end": 28,
+                                            "start": 27
+                                        }
+                                    }
+                                },
+                                "span": {
+                                    "end": 28,
+                                    "start": 27
+                                }
+                            },
+                            "named": [
+                                5,
+                                5
+                            ]
+                        },
+                        "span": {
+                            "end": 28,
+                            "start": 24
+                        }
+                    },
+                    {
+                        "inner": {
+                            "annotation": {
+                                "inner": {
+                                    "Primary": {
+                                        "inner": {
+                                            "Atomic": {
+                                                "inner": {
+                                                    "Name": [
+                                                        3,
+                                                        8
+                                                    ]
+                                                },
+                                                "span": {
+                                                    "end": 34,
+                                                    "start": 33
+                                                }
+                                            }
+                                        },
+                                        "span": {
+                                            "end": 34,
+                                            "start": 33
+                                        }
+                                    }
+                                },
+                                "span": {
+                                    "end": 34,
+                                    "start": 33
+                                }
+                            },
+                            "named": [
+                                7,
+                                7
+                            ]
+                        },
+                        "span": {
+                            "end": 34,
+                            "start": 30
+                        }
+                    }
+                ],
+                "body": [
+                    {
+                        "inner": {
+                            "Pass": {
+                                "inner": null,
+                                "span": {
+                                    "end": 52,
+                                    "start": 48
+                                }
+                            }
+                        },
+                        "span": {
+                            "end": 52,
+                            "start": 48
+                        }
+                    }
+                ],
+                "decorator_list": [],
+                "generic_params": [
+                    {
+                        "inner": {
+                            "annotation": {
+                                "inner": {
+                                    "Primary": {
+                                        "inner": {
+                                            "Atomic": {
+                                                "inner": {
+                                                    "Name": [
+                                                        2,
+                                                        2
+                                                    ]
+                                                },
+                                                "span": {
+                                                    "end": 14,
+                                                    "start": 11
+                                                }
+                                            }
+                                        },
+                                        "span": {
+                                            "end": 14,
+                                            "start": 11
+                                        }
+                                    }
+                                },
+                                "span": {
+                                    "end": 14,
+                                    "start": 11
+                                }
+                            },
+                            "named": [
+                                1,
+                                1
+                            ]
+                        },
+                        "span": {
+                            "end": 14,
+                            "start": 8
+                        }
+                    },
+                    {
+                        "inner": {
+                            "annotation": {
+                                "inner": {
+                                    "Primary": {
+                                        "inner": {
+                                            "Atomic": {
+                                                "inner": {
+                                                    "Name": [
+                                                        2,
+                                                        4
+                                                    ]
+                                                },
+                                                "span": {
+                                                    "end": 22,
+                                                    "start": 19
+                                                }
+                                            }
+                                        },
+                                        "span": {
+                                            "end": 22,
+                                            "start": 19
+                                        }
+                                    }
+                                },
+                                "span": {
+                                    "end": 22,
+                                    "start": 19
+                                }
+                            },
+                            "named": [
+                                3,
+                                3
+                            ]
+                        },
+                        "span": {
+                            "end": 22,
+                            "start": 16
+                        }
+                    }
+                ],
+                "name": {
+                    "inner": {
+                        "Name": [
+                            0,
+                            0
+                        ]
+                    },
+                    "span": {
+                        "end": 7,
+                        "start": 4
+                    }
+                },
+                "receiver": null,
+                "returns": {
+                    "inner": {
+                        "Primary": {
+                            "inner": {
+                                "Atomic": {
+                                    "inner": {
+                                        "Name": [
+                                            2,
+                                            9
+                                        ]
+                                    },
+                                    "span": {
+                                        "end": 42,
+                                        "start": 39
+                                    }
+                                }
+                            },
+                            "span": {
+                                "end": 42,
+                                "start": 39
+                            }
+                        }
+                    },
+                    "span": {
+                        "end": 42,
+                        "start": 39
+                    }
+                }
+            },
+            "span": {
+                "end": 3,
+                "start": 0
+            }
+        }
+    },
+    "span": {
+        "end": 3,
+        "start": 0
+    }
+}

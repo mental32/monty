@@ -48,6 +48,7 @@
                     }
                 ],
                 "decorator_list": [],
+                "generic_params": null,
                 "name": {
                     "inner": {
                         "Name": [
@@ -60,6 +61,7 @@
                         "start": 4
                     }
                 },
+                "receiver": null,
                 "returns": {
                     "inner": {
                         "Primary": {

@@ -1,4 +1,4 @@
-use crate::spanned::Spanned;
+use crate::{atom::Atom, expr::Expr, spanned::Spanned};
 
 use super::*;
 
@@ -14,6 +14,7 @@ pub enum Statement {
     If(Spanned<ifstmt::IfChain>),
     While(Spanned<while_::While>),
     Pass(Spanned<Pass>),
+    TypeAlias(Spanned<Atom>, Spanned<Expr>),
 }
 
 impl AstObject for Statement {
@@ -29,6 +30,7 @@ impl AstObject for Statement {
             Self::Class(node) => node.into_ast_node(),
             Self::If(node) => node.into_ast_node(),
             Self::While(node) => node.into_ast_node(),
+            Self::TypeAlias(_, _) => todo!(),
         }
     }
 
@@ -44,6 +46,7 @@ impl AstObject for Statement {
             Statement::If(ref i) => i,
             Statement::While(ref w) => w,
             Statement::Pass(_) => self,
+            Statement::TypeAlias(_, _) => todo!(),
         }
     }
 
@@ -62,6 +65,7 @@ impl AstObject for Statement {
             Statement::If(inner) => inner.visit_with(visitor, span),
             Statement::While(inner) => inner.visit_with(visitor, span),
             Statement::Pass(_) => super::Pass.visit_with(visitor, span),
+            Statement::TypeAlias(_, _) => todo!(),
         }
     }
 }
