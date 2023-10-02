@@ -1,12 +1,11 @@
-use crate::global_context::SessionContext;
+use crate::session_context::SessionContext;
 
-use super::cfg_reducer::GraphLike;
 use super::variable_flowgraph::VariableFlowGraph;
 use super::{FlatInst, NodeIndex, RawInst};
 
 pub(crate) type BlockCFG = petgraph::graph::Graph<Vec<FlatInst>, BlockCFGEdge>;
 
-impl GraphLike<NodeIndex> for BlockCFG {
+impl crate::cfg_reducer::GraphLike<NodeIndex> for BlockCFG {
     fn n_nodes(&self) -> usize {
         self.raw_nodes().len()
     }

@@ -536,7 +536,7 @@ impl SessionContext {
         UninitializedSession(this)
     }
 
-    /// Initialize the interpreter runtime, setting .
+    /// Initialize the interpreter runtime
     fn initialize_hlirt(
         &mut self,
         _monty: &ModuleData,

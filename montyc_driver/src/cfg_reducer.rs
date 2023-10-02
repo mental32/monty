@@ -1,6 +1,6 @@
 use montyc_core::MontyResult;
 
-use crate::global_context::SessionContext;
+use crate::session_context::SessionContext;
 
 pub trait GraphLike<IndexT> {
     fn n_nodes(&self) -> usize;

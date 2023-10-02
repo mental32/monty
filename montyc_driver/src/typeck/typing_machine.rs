@@ -7,10 +7,10 @@ use montyc_query::Queries;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 
-use crate::global_context::SessionContext;
+use crate::session_context::SessionContext;
 
+use super::block_cfg::BlockCFGBuilder;
 use super::*;
-use super::{block_cfg::BlockCFGBuilder, cfg_reducer::CFGReducer};
 
 /// Akin to Pytype's VM this is a virtual machine for abstract interpretation of code.
 #[derive(Debug)]
@@ -595,7 +595,7 @@ impl TypingMachine {
     }
 }
 
-impl CFGReducer for TypingMachine {
+impl crate::cfg_reducer::CFGReducer for TypingMachine {
     type InputGraphT = BlockCFG;
     type OutputT = montyc_core::codegen::CgBlockCFG<Constant, ()>;
     type IndexT = NodeIndex;

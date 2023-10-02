@@ -2,9 +2,11 @@ use montyc_core::MontyResult;
 use montyc_flatcode::raw_inst::RawInst;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, EdgeDirection};
 
-use crate::{global_context::SessionContext, typeck::block_cfg::BlockCFGBuilder};
+use crate::{
+    cfg_reducer::CFGReducer, session_context::SessionContext, typeck::block_cfg::BlockCFGBuilder,
+};
 
-use super::{block_cfg::BlockCFG, cfg_reducer::CFGReducer};
+use super::block_cfg::BlockCFG;
 
 #[derive(Debug, Clone)]
 pub enum DefPlace<I, N> {
@@ -25,7 +27,7 @@ struct VFGBuilder {
     inp: BlockCFGBuilder,
 }
 
-impl CFGReducer for VFGBuilder {
+impl crate::cfg_reducer::CFGReducer for VFGBuilder {
     type IndexT = NodeIndex;
 
     type InputGraphT = BlockCFG;
@@ -50,7 +52,7 @@ impl CFGReducer for VFGBuilder {
 
     fn visit_block(
         &mut self,
-        cx: &crate::global_context::SessionContext,
+        cx: &crate::session_context::SessionContext,
         output: &mut Self::OutputT,
         ix: Self::IndexT,
         _errors: &mut Vec<montyc_core::error::TypeError>,

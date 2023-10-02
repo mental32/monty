@@ -13,16 +13,15 @@ use montyc_parser::ast::{AstNode, Constant};
 use montyc_query::Queries;
 use petgraph::{data::DataMap, graph::NodeIndex, EdgeDirection};
 
-use crate::global_context::SessionContext;
-use crate::global_context::SessionMode;
+use crate::cfg_reducer::CFGReducer;
+use crate::session_context::SessionContext;
+use crate::session_context::SessionMode;
 
 mod block_cfg;
-mod cfg_reducer;
 mod typing_machine;
 mod variable_flowgraph;
 
 use block_cfg::BlockCFG;
-use cfg_reducer::CFGReducer;
 use typing_machine::TypingMachine;
 
 /// run through a sequence of instructions and group linear sequences of instructions into "blocks"

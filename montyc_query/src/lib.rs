@@ -3,11 +3,9 @@
 
 use std::{alloc::Layout, fmt};
 
-use montyc_core::{
-    span::SpanRef,
-    value::{TaggedValueId, ValueId},
-    Function, ModuleData, ModuleRef, MontyError, Qualname, TypeId, TypingContext, Value, FUNCTION,
-};
+use montyc_core::span::SpanRef;
+use montyc_core::value::{TaggedValueId, ValueId};
+use montyc_core::{Function, ModuleData, ModuleRef, MontyError, TypeId, TypingContext, FUNCTION};
 use montyc_flatcode::{FlatCode, FlatSeq};
 use montyc_parser::ast::Constant;
 
@@ -34,15 +32,6 @@ pub trait Queries {
     /// Given a `ModuleRef` try and get its associated module data.
     fn get_module_data(&self, mref: ModuleRef) -> MontyResult<ModuleData>;
 
-    /// get the fully qualified name for this function.
-    fn get_qualname_of(&self, func: TaggedValueId<FUNCTION>) -> Qualname;
-
-    /// get the value from its value_id.
-    fn get_value(&self, value_id: ValueId) -> Option<Value>;
-
-    /// get the associated namespace rib of a value.
-    fn get_rib_of<'a>(&'a self, value_id: ValueId) -> Option<&'a montyc_core::Rib>;
-
     /// Get specified modules flatcode.
     fn get_module_flatcode(&self, mref: ModuleRef) -> MontyResult<FlatCode>;
 
@@ -57,9 +46,6 @@ pub trait Queries {
 
     /// Get the associated function for this value.
     fn get_function(&self, value_id: ValueId) -> MontyResult<Function>;
-
-    /// Get the computed value produced and assigned to a distinct ident spanref.
-    fn spanref_to_value(&self, sref: SpanRef) -> MontyResult<ValueId>;
 
     /// Given a `SpanRef` try and resolve it to its corresponding string slice.
     fn spanref_to_str(&self, sref: SpanRef) -> MontyResult<String>;

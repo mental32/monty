@@ -37,7 +37,6 @@ pub(crate) mod macros {
     }
 }
 
-pub mod ast;
 pub mod codegen;
 pub mod dict;
 pub mod error;
@@ -51,7 +50,5 @@ pub mod value;
 pub type Qualname = Vec<String>; // TODO: turn this into some cheap u64 ID type.
 
 pub type MapT<K, V> = ahash::AHashMap<K, V>;
-
-pub type Rib = ahash::AHashMap<u32, TypeId>;
 
 pub use {error::*, func::*, module::*, span::*, typing::*, value::*};

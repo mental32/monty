@@ -94,21 +94,6 @@ impl Queries for SessionContext {
         Ok(modules.get(mref).unwrap().as_ref().clone())
     }
 
-    fn get_qualname_of(
-        &self,
-        _func: TaggedValueId<{ montyc_core::FUNCTION }>,
-    ) -> montyc_core::Qualname {
-        todo!()
-    }
-
-    fn get_value(&self, _value_id: ValueId) -> Option<Value> {
-        todo!()
-    }
-
-    fn get_rib_of<'a>(&'a self, _value_id: ValueId) -> Option<&'a montyc_core::Rib> {
-        todo!()
-    }
-
     fn get_module_flatcode(&self, mref: ModuleRef) -> MontyResult<montyc_flatcode::FlatCode> {
         fn ast_to_flatcode<T: AstObject>(mref: ModuleRef, ast: &T, span: Span) -> FlatCode {
             let mut code = montyc_flatcode::FlatCode::new((mref.clone(), span.clone()));
@@ -261,10 +246,6 @@ impl Queries for SessionContext {
             .with_metadata_mut(value_id, |m| m.function.replace(func.clone()));
 
         Ok(func)
-    }
-
-    fn spanref_to_value(&self, _sref: SpanRef) -> MontyResult<ValueId> {
-        todo!()
     }
 
     fn spanref_to_str(&self, sref: SpanRef) -> MontyResult<String> {
