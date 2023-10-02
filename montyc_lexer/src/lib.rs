@@ -127,9 +127,6 @@ pub enum PyToken {
     #[token("await")]
     Await,
 
-    #[token("type")]
-    Type,
-
     #[token("async")]
     Async,
 
@@ -315,6 +312,6 @@ mod test {
     fn test_parse_expr_integer_hex_literal() {
         let tok: Vec<_> = super::tokens("0xdeadbeef");
         assert_eq!(tok.len(), 1);
-        assert_eq!(tok[0].0, super::PyToken::Digits(0xdeadbeef),);
+        assert_eq!(tok[0].0, super::PyToken::HexDigits,);
     }
 }

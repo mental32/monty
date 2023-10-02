@@ -113,8 +113,8 @@ mod tokens {
         (bang,        "<bang>",       PyToken::Bang);
         (newline,     "<newline>",    PyToken::Newline);
         (formfeed,    "<formfeed>",   PyToken::FormFeed);
-        (whitespace,  "<whitespace>", PyToken::Whitespace);
-        (type_,       "<type>",       PyToken::Type)
+        (whitespace,  "<whitespace>", PyToken::Whitespace)
+        // (type_,       "<type>",       PyToken::Type)
     ];
 }
 
@@ -677,18 +677,18 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         .boxed()
         .debug("statement().import");
 
-    let type_alias = tokens::type_()
-        .ignore_then(whitespace())
-        .ignore_then(ident())
-        .then_ignore(whitespace())
-        .then_ignore(tokens::equal())
-        .then_ignore(whitespace())
-        .then(expr())
-        .map(|(name, value)| {
-            let span = name.span_to(&value);
+    // let type_alias = tokens::type_()
+    //     .ignore_then(whitespace())
+    //     .ignore_then(ident())
+    //     .then_ignore(whitespace())
+    //     .then_ignore(tokens::equal())
+    //     .then_ignore(whitespace())
+    //     .then(expr())
+    //     .map(|(name, value)| {
+    //         let span = name.span_to(&value);
 
-            Spanned::new(Statement::TypeAlias(name, value), span)
-        });
+    //         Spanned::new(Statement::TypeAlias(name, value), span)
+    //     });
 
     let from_import = tokens::from()
         .ignore_then(whitespace())
@@ -804,13 +804,14 @@ pub fn statement(indent: usize) -> p!(Spanned<Statement>; Clone) {
         .or(from_import)
         .or(import)
         .or(fndef)
-        .or(type_alias)
+        // .or(type_alias)
         .or(w_expr);
 
     comment
         .repeated()
         .ignore_then(tokens::newline().repeated())
         .ignore_then(stmt)
+        .boxed()
 }
 
 pub fn module() -> p!(Spanned<crate::ast::module::Module>) {

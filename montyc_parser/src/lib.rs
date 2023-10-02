@@ -63,6 +63,8 @@ where
             .then_ignore(chumsky::primitive::end())
             .parse_recovery_verbose(tokens)
     } else {
-        comb::module().parse_recovery(tokens)
+        comb::module()
+            .then_ignore(chumsky::primitive::end())
+            .parse_recovery(tokens)
     }
 }
