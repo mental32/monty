@@ -6,10 +6,11 @@ use montyc_driver::{SessionContext, SessionMode, SessionOpts};
 use opts::{CompilerOptions, VerifiedCompilerOptions};
 use tracing_subscriber::EnvFilter;
 
+mod env;
 mod opts;
 
 fn install_logger() {
-    let display_filename = std::env::var("MONTYC_DEBUG_FILE").map_or(true, |st| st != "0");
+    let display_filename = std::env::var(env::MONTYC_DEBUG_FILE).map_or(true, |st| st != "0");
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_env("RUST_LOG"))
