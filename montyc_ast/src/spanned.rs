@@ -4,6 +4,14 @@ pub struct Spanned<T> {
     pub inner: T,
 }
 
+impl<T> std::ops::Deref for Spanned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
 impl<T> Spanned<T> {
     pub fn reveal<'a>(&self, source: &'a str) -> Option<&'a str> {
         source.get(self.span.clone())

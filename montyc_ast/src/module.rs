@@ -6,7 +6,7 @@ use super::{AstNode, AstObject};
 use crate::spanned::Spanned;
 use crate::AstVisitor;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Module {
     pub body: Vec<Spanned<Statement>>,
 }

@@ -1,16 +1,20 @@
 use std::path::PathBuf;
 
-fn main() {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+use clap::Parser;
 
-    if args.len() == 0 {
-        eprintln!("usage: montyc-parser <input>");
-        std::process::exit(1);
-    }
+#[derive(Debug, Parser)]
+struct Args {
+    #[clap(long)]
+    emit_json: bool,
+    files: Vec<PathBuf>,
+}
+
+fn main() {
+    let args = Args::parse();
 
     let mut span_interner = montyc_parser::span_interner::SpanInterner::new();
 
-    let files = args.into_iter().map(|st| {
+    let files = args.files.into_iter().map(|st| {
         let file_path = PathBuf::from(st);
         if !file_path.exists() {
             eprintln!("{}: no such file", file_path.display());
@@ -26,7 +30,6 @@ fn main() {
 
         let contents = std::fs::read_to_string(&path).unwrap();
 
-
         let (module, errors) = montyc_parser::parse(&mut span_interner, (), &contents);
 
         if errors.len() > 0 {
@@ -35,8 +38,13 @@ fn main() {
                 eprintln!("  {err:?}");
             }
         } else {
-            assert!(module.is_some(), "no module returned");
+            let Some(module) = module else { unreachable!() };
+
+            if args.emit_json {
+                let json_as_str =
+                    serde_json::to_string(&module).expect("failed to serialize module to json");
+                println!("{json_as_str}")
+            }
         }
     }
-
 }

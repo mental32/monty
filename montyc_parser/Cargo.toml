@@ -8,10 +8,12 @@ montyc_lexer = { path = "../montyc_lexer" }
 montyc_ast = { path = "../montyc_ast" }
 montyc_core = { path = "../montyc_core" }
 
+ahash = "0.8.0"
 ariadne = "0.1.5"
 chumsky = "0.9.2"
-ahash = "0.8.0"
+clap = { version = "4", features = ["derive"] }
 tracing = "0.1.37"
+serde_json = "1.0.107"
 
 [dev-dependencies]
 serde = "1.0.147"
