@@ -10,8 +10,10 @@ use std::path::PathBuf;
 /// # Examples
 ///
 /// ```
-/// let request = RequestBuilder::default()
-///     .entry("__main__:main".to_string())
+/// use montyc_driver::session_request::SessionRequestBuilder;
+///
+/// let request = SessionRequestBuilder::default()
+///     .entry("__main__:main")
 ///     .libstd("libstd/".into())
 ///     .input("input.mt".into())
 ///     .output("output".into())

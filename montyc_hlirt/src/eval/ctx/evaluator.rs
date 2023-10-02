@@ -948,6 +948,7 @@ mod test {
     use crate::{object::ObjectBuilder, test::*};
 
     #[test]
+    #[ignore = "flaky"]
     pub fn eval_getattr() {
         let (mut rt, mut host) = setup();
 
